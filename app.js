@@ -33,6 +33,8 @@
   let spacePressed = false;
   let nodes = [];
   let view = { x: 25, y: 0, scale: 0.88 };
+  let spaces = [];
+  let activeSpaceId = "personal";
 
   const uid = () => "node-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -70,6 +72,38 @@
         x: 395, y: 510, w: 820, h: 205, z: 2, createdAt: new Date().toISOString()
       }
     ];
+  }
+
+
+  function defaultSpaces() {
+    return [
+      { id: "personal", name: "My workspace", nodes: defaultNodes(), view: { x: 25, y: 0, scale: 0.88 } },
+      { id: "research", name: "Research lab", nodes: [], view: { x: 25, y: 0, scale: 1 } },
+      { id: "projects", name: "Projects", nodes: [], view: { x: 25, y: 0, scale: 1 } }
+    ];
+  }
+
+  function normalizeSpace(space, index) {
+    if (!space || typeof space !== "object") return null;
+    const id = String(space.id || uid()).slice(0, 80);
+    const name = String(space.name || ("Space " + (index + 1))).trim().slice(0, 48) || ("Space " + (index + 1));
+    const cleanNodes = Array.isArray(space.nodes) ? space.nodes.map(validateNode).filter(Boolean).slice(0, MAX_NODES) : [];
+    const rawView = space.view || {};
+    const cleanView = Number.isFinite(rawView.x) && Number.isFinite(rawView.y) && Number.isFinite(rawView.scale)
+      ? { x: clamp(rawView.x, -100000, 100000), y: clamp(rawView.y, -100000, 100000), scale: clamp(rawView.scale, MIN_SCALE, MAX_SCALE) }
+      : { x: 25, y: 0, scale: 1 };
+    return { id, name, nodes: cleanNodes, view: cleanView };
+  }
+
+  function activeSpace() {
+    return spaces.find((space) => space.id === activeSpaceId) || spaces[0] || null;
+  }
+
+  function syncActiveSpace() {
+    const current = activeSpace();
+    if (!current) return;
+    current.nodes = nodes.map((node) => ({ ...node }));
+    current.view = { x: view.x, y: view.y, scale: view.scale };
   }
 
   function normalizeUrl(raw) {
@@ -141,18 +175,39 @@
         saved = raw ? JSON.parse(raw) : null;
       } catch (_) { saved = null; }
     }
-    if (saved && Array.isArray(saved.nodes)) {
+
+    if (saved && Array.isArray(saved.spaces) && saved.spaces.length) {
+      spaces = saved.spaces.map(normalizeSpace).filter(Boolean).slice(0, 12);
+      activeSpaceId = spaces.some((space) => space.id === saved.activeSpaceId) ? saved.activeSpaceId : spaces[0].id;
+      const current = activeSpace();
+      nodes = current.nodes.map((node) => ({ ...node }));
+      view = { ...current.view };
+      toast("Your local workspaces were restored.");
+    } else if (saved && Array.isArray(saved.nodes)) {
       nodes = saved.nodes.map(validateNode).filter(Boolean).slice(0, MAX_NODES);
       if (saved.view && Number.isFinite(saved.view.x) && Number.isFinite(saved.view.y) && Number.isFinite(saved.view.scale)) {
         view = { x: saved.view.x, y: saved.view.y, scale: clamp(saved.view.scale, MIN_SCALE, MAX_SCALE) };
       }
-      if (!nodes.length) nodes = defaultNodes();
-      toast("Workspace restored from this device.");
+      spaces = [
+        { id: "personal", name: "My workspace", nodes: nodes.map((node) => ({ ...node })), view: { ...view } },
+        { id: "research", name: "Research lab", nodes: [], view: { x: 25, y: 0, scale: 1 } },
+        { id: "projects", name: "Projects", nodes: [], view: { x: 25, y: 0, scale: 1 } }
+      ];
+      activeSpaceId = "personal";
+      toast("Your previous workspace was upgraded.");
     } else {
-      nodes = defaultNodes();
+      spaces = defaultSpaces();
+      activeSpaceId = "personal";
+      const current = activeSpace();
+      nodes = current.nodes.map((node) => ({ ...node }));
+      view = { ...current.view };
       toast("Your private workspace is ready.");
     }
+
+    if (!spaces.length) spaces = defaultSpaces();
+    if (!activeSpace()) activeSpaceId = spaces[0].id;
     zCounter = Math.max(10, ...nodes.map((node) => Number(node.z) || 0)) + 1;
+    renderSpaces();
     renderNodes();
     applyView();
     updateCounts();
@@ -185,12 +240,18 @@
   }
 
   function workspaceSnapshot() {
+    syncActiveSpace();
     return {
       schema: "nolane-infinite-workspace",
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
-      view: { x: view.x, y: view.y, scale: view.scale },
-      nodes: nodes.map((node) => ({ ...node }))
+      activeSpaceId,
+      spaces: spaces.map((space) => ({
+        id: space.id,
+        name: space.name,
+        view: { ...space.view },
+        nodes: space.nodes.map((node) => ({ ...node }))
+      }))
     };
   }
 
