@@ -62,11 +62,7 @@
 
       <div class="side-divider"></div>
       <div class="side-section-head"><span class="side-label">YOUR SPACES</span><button class="icon-button tiny" id="newSpaceBtn" title="Create a space"><svg class="icon"><use href="#i-plus"/></svg></button></div>
-      <div class="space-list">
-        <button class="space-item selected" type="button"><span class="space-dot violet"></span>My workspace</button>
-        <button class="space-item" type="button" data-toast="This space is ready to be created."><span class="space-dot cyan"></span>Research lab <span class="soon">Soon</span></button>
-        <button class="space-item" type="button" data-toast="This space is ready to be created."><span class="space-dot amber"></span>Projects <span class="soon">Soon</span></button>
-      </div>
+      <div class="space-list" id="spaceList" aria-label="Your workspaces"></div>
 
       <div class="sidebar-spacer"></div>
       <div class="privacy-card">
@@ -101,6 +97,12 @@
       <section class="canvas-area" id="canvasArea" aria-label="Infinite workspace canvas">
         <div class="canvas-grid" id="canvasGrid"></div>
         <div class="world" id="world" aria-live="off"></div>
+        <div class="node-empty" id="emptyState" hidden>
+          <div class="empty-symbol"><svg class="icon"><use href="#i-grid"/></svg></div>
+          <h2 id="emptyTitle">A fresh space.</h2>
+          <p id="emptyDescription">Start with a website, a note, or both. Your workspace grows with you.</p>
+          <div class="empty-actions"><button class="button button-primary" id="emptyAddWebsite" type="button"><svg class="icon"><use href="#i-plus"/></svg> Add a website</button><button class="button button-secondary" id="emptyAddNote" type="button"><svg class="icon"><use href="#i-sticky"/></svg> Write a note</button></div>
+        </div>
         <div class="canvas-top-left">
           <div class="canvas-heading"><span class="eyebrow"><span class="eyebrow-dot"></span> YOUR PERSONAL WEB</span><h1 id="canvasHeading">A space for everything.</h1><p id="canvasSubheading">Bring your web tools together. Arrange them your way.</p></div>
         </div>
