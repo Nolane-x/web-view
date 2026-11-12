@@ -78,6 +78,19 @@ function createHarness() {
       },
       async sendMessage(tabId, message) {
         sentMessages.push({ tabId, message });
+        if (message.type === "NOLANE_LIVE_SURFACE_START") {
+          queueMicrotask(() => {
+            const listener = runtimeMessage.listeners[0];
+            listener({
+              type: "NOLANE_LIVE_SURFACE_ACK",
+              surfaceId: message.surfaceId,
+              browserSessionId: message.browserSessionId
+            }, {
+              tab: { id: tabId },
+              url: "https://nolane-x.github.io/web-view/"
+            }, () => {});
+          });
+        }
         return { ok: true };
       },
       async update(tabId, changes) {
@@ -260,7 +273,7 @@ test("live input is rejected and the debugger is detached when the source change
     { url: "chrome-extension://nolane-test/popup.html" }
   );
 
-  h.tabs.get(10).url = "https://attacker.example/changed";
+  h.tabs.set(10, { ...h.tabs.get(10), url: "https://attacker.example/changed" });
   const result = await h.send({
     type: "NOLANE_LIVE_INPUT",
     surfaceId: started.surfaceId,
@@ -294,7 +307,7 @@ test("capture cannot start from an arbitrary webpage or for an inactive tab", as
   assert.equal(wrongSender.ok, false);
   assert.match(wrongSender.error, /Companion popup/i);
 
-  h.tabs.get(10).active = false;
+  h.tabs.set(10, { ...h.tabs.get(10), active: false });
   const inactive = await h.send(
     { type: "NOLANE_START_LIVE_SURFACE", tabId: 10 },
     { url: "chrome-extension://nolane-test/popup.html" }
