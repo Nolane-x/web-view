@@ -189,7 +189,7 @@ kbd { font-family: var(--sans); font-size: 9px; border: 1px solid rgba(255,255,2
 .note-node.blue { background: linear-gradient(145deg,#26384b,#202d3c); color: #dceeff; }
 .note-kicker { color: rgba(220,215,255,.56); font-size: 7px; font-weight: 700; letter-spacing: 1.2px; margin-bottom: 11px; }
 .note-node h3 { margin: 0 0 10px; font-family: var(--display); font-size: 15px; line-height: 1.3; letter-spacing: -.4px; }
-.note-content { min-height: 0; overflow: hidden; color: rgba(231,228,249,.76); font-size: 10px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.note-content { min-height: 0; overflow: auto; color: rgba(231,228,249,.76); font-size: 10px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 .note-node.mint .note-content { color: rgba(217,246,235,.75); }
 .note-node.peach .note-content { color: rgba(255,233,219,.75); }
 .note-node.blue .note-content { color: rgba(220,238,255,.75); }
@@ -347,3 +347,7 @@ kbd { font-family: var(--sans); font-size: 9px; border: 1px solid rgba(255,255,2
 .empty-actions .button { height: 32px; font-size: 9px; }
 .empty-actions .button-secondary { background: rgba(25,29,40,.9); }
 .canvas-area { touch-action: none; }
+
+.note-content { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.18) transparent; padding-right: 3px; }
+.note-content::-webkit-scrollbar { width: 5px; }
+.note-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); border-radius: 8px; }
