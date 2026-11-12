@@ -72,8 +72,8 @@ if (!html.includes('id="bridgeDialog"') || !html.includes("Companion not detecte
 else pass("Browser Companion status is explicit and does not imply a working extension.");
 
 const extensionManifest = JSON.parse(read("extension/manifest.json"));
-if (extensionManifest.version !== "0.2.3") fail("Browser Companion release metadata must be synchronized at version 0.2.3.");
-else pass("Browser Companion release metadata is synchronized at 0.2.3.");
+if (extensionManifest.version !== "0.2.4") fail("Browser Companion release metadata must be synchronized at version 0.2.4.");
+else pass("Browser Companion release metadata is synchronized at 0.2.4.");
 for (const file of ["extension/background.js", "extension/content.js", "extension/popup.html", "extension/popup.css", "extension/popup.js", "extension/README.md"]) {
   if (!fs.existsSync(path.join(root, file))) fail("Browser Companion asset missing: " + file);
 }
@@ -138,6 +138,12 @@ if (!/audio:\s*\{\s*mandatory:\s*\{\s*chromeMediaSource:\s*"tab"/.test(js) || !/
 else pass("Live surface audio is routed locally with explicit mute control.");
 if (!/NOLANE_START_LIVE_SURFACE/.test(popup) || !/Stream this tab to Nolane/.test(popupHTML)) fail("Popup must expose explicit active-tab capture.");
 else pass("Popup exposes explicit current-tab capture.");
+if (!/keepSourceVisible/.test(popup) || !/chrome\.windows\.create/.test(background) || !/focused:\s*true/.test(background)) fail("Keep-source-visible compatibility mode must move Nolane into a separate Chrome window.");
+else pass("Keep-source-visible mode preserves the source tab in its original window.");
+if (!/chrome\.tabCapture\.getCapturedTabs/.test(background) || !/already reports an active capture/.test(background)) fail("Existing tab capture must be detected before attempting a duplicate stream.");
+else pass("Existing tab captures are detected before stream setup.");
+if (!/NOLANE_GET_DIAGNOSTICS/.test(background) || !/diagnosticsButton/.test(popup)) fail("The companion compatibility diagnostics action is incomplete.");
+else pass("The companion exposes a local compatibility diagnostics report.");
 
 if (!/sanitizeTabUrl/.test(popup) || !/url\.hash = ""/.test(popup)) fail("Tab URL sanitizer is missing.");
 else pass("Tab URL sanitizer removes fragments and credential-like query parameters.");
