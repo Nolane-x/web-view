@@ -202,6 +202,27 @@ test("live capture is tied to the active source tab and the exact Nolane consume
   assert.equal(startMessage.message.streamId, "one-use-tab-stream-token");
 });
 
+test("starting a second live surface for the same Chrome tab is rejected", async () => {
+  const h = createHarness();
+  await h.send(
+    { type: "NOLANE_REGISTER_WORKSPACE" },
+    { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" }
+  );
+  const first = await h.send(
+    { type: "NOLANE_START_LIVE_SURFACE", tabId: 10 },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  assert.equal(first.ok, true);
+
+  const second = await h.send(
+    { type: "NOLANE_START_LIVE_SURFACE", tabId: 10 },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  assert.equal(second.ok, false);
+  assert.match(second.error, /already streaming/i);
+  assert.equal(h.streamRequests.length, 1);
+});
+
 test("mouse and keyboard input are forwarded only from the registered workspace and source origin", async () => {
   const h = createHarness();
   const registered = await h.send(
