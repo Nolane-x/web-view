@@ -21,6 +21,7 @@ The extension uses a tab-scoped capture/control pipeline:
 5. The workspace page consumes the token with getUserMedia using Chrome's chromeMediaSource: tab constraints, then displays the MediaStream in a video element inside the website card.
 6. Pointer, wheel and keyboard events inside that card are sent to the workspace content script and service worker.
 7. The service worker checks the active session ID, browser-profile ID, workspace sender tab ID, source tab ID and source origin, then sends only fixed Input.dispatchMouseEvent, Input.dispatchKeyEvent or Input.insertText commands via CDP.
+8. Page.frameResized events trigger a debounced Page.getLayoutMetrics refresh; the new CSS viewport dimensions are sent back to the canvas so pointer mapping remains correct when Chrome is resized.
 
 The capture stream includes audio and video. The workspace routes audio through a local AudioContext and keeps it muted until the user explicitly enables sound, so tab audio is not captured and the source page's audio is not muted by the extension. There is no signaling server, WebRTC relay, external proxy, server-side browser or upload of frames. The source tab remains the actual page with its real cookies, storage and origin; the canvas is a live video/control mirror, not a DOM clone.
 
