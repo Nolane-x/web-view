@@ -84,7 +84,7 @@ jobs:
         uses: actions/configure-pages@v6
 
       - name: Deploy to GitHub Pages
-        if: __PAGES_ENABLED__
+        if: ${{ steps.pages.outputs.enabled == 'true' }}
         id: deployment
         uses: actions/deploy-pages@v5
 
