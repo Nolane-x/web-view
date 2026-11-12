@@ -351,3 +351,11 @@ kbd { font-family: var(--sans); font-size: 9px; border: 1px solid rgba(255,255,2
 .note-content { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.18) transparent; padding-right: 3px; }
 .note-content::-webkit-scrollbar { width: 5px; }
 .note-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); border-radius: 8px; }
+
+.bridge-install-row { display: flex; justify-content: flex-start; margin-top: 14px; }
+.bridge-install-row .button { height: 32px; font-size: 9px; }
+.bridge-install-row .icon { width: 12px; height: 12px; }
+.bridge-status-large.connected { border-color: rgba(91,214,160,.2); background: rgba(48,100,78,.09); }
+.bridge-status-large.connected .bridge-orbit { background: rgba(91,214,160,.12); color: #70d8a8; }
+.bridge-status-large.connected .status-pill { color: #70d8a8; border-color: rgba(91,214,160,.2); background: rgba(91,214,160,.08); }
+.node-source-badge { color: #74d7a8; font-size: 7px; letter-spacing: .3px; }
