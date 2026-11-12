@@ -753,12 +753,25 @@
         video.removeEventListener("error", onVideoError);
         track.removeEventListener("ended", onTrackEnded);
       }
-      function finish(error) {
+      function finish(error, frameMetadata = null) {
         if (settled) return;
         settled = true;
         cleanup();
-        if (error) reject(error);
-        else resolve({ width: video.videoWidth, height: video.videoHeight });
+        if (error) {
+          reject(error);
+          return;
+        }
+        let settings = {};
+        try { settings = track.getSettings ? track.getSettings() : {}; } catch (_) {}
+        resolve({
+          width: video.videoWidth,
+          height: video.videoHeight,
+          frameRate: Number.isFinite(settings.frameRate) ? settings.frameRate : null,
+          presentedFrames: Number.isFinite(frameMetadata?.presentedFrames) ? frameMetadata.presentedFrames : null,
+          mediaTime: Number.isFinite(frameMetadata?.mediaTime) ? frameMetadata.mediaTime : null,
+          trackReadyState: track.readyState || "unknown",
+          trackMuted: !!track.muted
+        });
       }
       function onVideoError() {
         finish(new Error("Chrome sent a tab stream, but the canvas could not decode its video."));
@@ -771,7 +784,7 @@
         if (typeof video.requestVideoFrameCallback === "function") {
           if (frameCallbackPending) return;
           frameCallbackPending = true;
-          video.requestVideoFrameCallback(() => finish());
+          video.requestVideoFrameCallback((_now, metadata) => finish(null, metadata));
         } else {
           finish();
         }
@@ -878,7 +891,14 @@
       const nodeElement = $('.node[data-id="' + CSS.escape(node.id) + '"]', world);
       const liveVideo = nodeElement && $(".live-surface-video", nodeElement);
       if (!liveVideo) throw new Error("The live video element was not mounted in the canvas.");
-      await waitForLiveVideoFrame(liveVideo, stream);
+      const videoInfo = await waitForLiveVideoFrame(liveVideo, stream);
+      const mountedSurface = liveSurfaces.get(node.id);
+      if (mountedSurface?.surfaceId === message.surfaceId) mountedSurface.videoInfo = videoInfo;
+      const liveHint = $(".live-surface-hint", nodeElement);
+      if (liveHint) {
+        const fps = Number.isFinite(videoInfo.frameRate) ? " · " + videoInfo.frameRate.toFixed(1) + " fps" : "";
+        liveHint.textContent += " · " + videoInfo.width + " × " + videoInfo.height + fps;
+      }
       if (stoppedLiveSurfaceIds.has(message.surfaceId)) {
         stoppedLiveSurfaceIds.delete(message.surfaceId);
         throw new Error("The source tab changed website before its first frame was confirmed.");
@@ -887,7 +907,8 @@
         source: "nolane-workspace",
         type: "LIVE_SURFACE_ACK",
         surfaceId: message.surfaceId,
-        browserSessionId: message.browserSessionId
+        browserSessionId: message.browserSessionId,
+        videoInfo
       }, location.origin);
       const videoTrack = stream.getVideoTracks()[0];
       if (videoTrack) videoTrack.addEventListener("ended", () => stopLiveSurfaceById(message.surfaceId, "Chrome ended the captured tab stream.", false), { once: true });
