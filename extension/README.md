@@ -28,7 +28,7 @@ No capture stream, cookies, passwords, page HTML or screen image are uploaded to
 
 - The actual Chrome-rendered page, including its existing session, origin, cookies and storage (they remain inside the original tab).
 - Mouse movement, clicks, right-click, wheel scrolling and keyboard events forwarded through CDP.
-- The source page remains a real browser page; the canvas displays a video/control mirror.
+- The source page remains a real browser page; the canvas displays a video/control mirror. Up to three tabs can be live at once in a workspace; saved cards are not subject to this concurrent capture limit.
 - Live surfaces are stopped when the source tab closes, capture ends, the debugger detaches, or the top-level origin changes.
 
 ## Known limitations
