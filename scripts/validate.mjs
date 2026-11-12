@@ -81,5 +81,12 @@ else pass("Browser Companion strips URL fragments and sensitive-looking query pa
 if (!/NOLANE_FOCUS_TAB/.test(read("extension/background.js")) || !/NOLANE_IMPORT_TABS/.test(read("extension/content.js"))) fail("Browser Companion tab handoff message handlers are incomplete.");
 else pass("Browser Companion implements selected-tab import and return-to-tab messaging.");
 
+
+if (!extensionManifest.permissions?.includes("storage") || !/crypto\.randomUUID/.test(read("extension/background.js"))) fail("Browser Companion profile identity is not stored locally.");
+else pass("Browser Companion maintains a local per-profile identity.");
+
+if (!/message\.profileId !== profileId/.test(read("extension/background.js")) || !/expectedOrigin/.test(read("extension/background.js")) || !/node\.browserSessionId === bridgeSessionId/.test(js)) fail("Browser Companion tab focus is not bound to the originating profile and website.");
+else pass("Browser Companion verifies profile identity and expected website origin before tab focus.");
+
 if (process.exitCode) process.exit(process.exitCode);
 console.log("All static checks passed.");
