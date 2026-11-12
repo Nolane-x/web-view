@@ -9,7 +9,7 @@ Nolane Infinite is a local-first canvas for arranging websites, ideas and tools 
 ## What works today
 
 - Infinite canvas with pointer-based pan and cursor-anchored zoom.
-- Website cards with direct open-in-browser, a restricted sandbox preview, and an explicit Compatibility Preview for trusted sites that need normal origin/storage access.
+- Website cards with direct open-in-browser and a live Chrome surface mode that streams the actual tab into the canvas and forwards mouse/keyboard input locally.
 - Notes with editable text and four color themes.
 - Multiple named workspaces (up to 12), each with its own canvas, layout and saved items.
 - Create, switch, rename and delete local workspaces.
@@ -33,7 +33,7 @@ Nolane Infinite is a local-first canvas for arranging websites, ideas and tools 
 
 ## Important compatibility boundary
 
-A website can refuse iframe embedding through CSP frame-ancestors or X-Frame-Options. The default **Safe Preview** uses an opaque sandbox origin and may break applications that need origin-bound storage or APIs. **Compatibility Preview** adds allow-same-origin and the Storage Access sandbox token after an explicit confirmation, which can fix some client-side failures but expands the trust boundary; enable it only for sites you trust. It still cannot override anti-framing headers or guarantee third-party cookies. When either mode fails, use **Open tab** to visit the original website in the user's normal browser profile. The workspace cannot read a cross-origin frame's console, so it cannot always diagnose the exact remote JavaScript error.
+An iframe may still be blocked by CSP/X-Frame-Options, and sandboxed frames may break origin-bound storage. For real pages, use **Live Chrome Surface**: the companion captures the actual active Chrome tab, then streams its video directly into the workspace while forwarding pointer/keyboard input to that tab via CDP. This avoids iframe restrictions and preserves the source tab's existing session. It remains a video/control mirror rather than a native browser child; browser-owned dialogs, passkeys, file pickers and some popup/download flows still require focusing the source tab. See extension/README.md for the debugger permission disclosure and setup steps.
 
 The optional Chrome MV3 Browser Companion is now included in extension/. It asks for the Tabs permission only after the user clicks its grant button, lets the user select open tabs, and adds their titles/URLs as workspace cards. Selecting a card focuses the original Chrome tab, so its existing login session stays in Chrome. The extension does not read cookies, passwords, page contents or tokens. It does not turn tabs into embedded DOM surfaces; universal authenticated surfaces still require a local browser runtime (for example a custom Chromium host or a native WebView host). See extension/README.md and docs/ARCHITECTURE.md.
 
