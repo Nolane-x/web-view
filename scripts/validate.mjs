@@ -75,24 +75,44 @@ const extensionManifest = JSON.parse(read("extension/manifest.json"));
 for (const file of ["extension/background.js", "extension/content.js", "extension/popup.html", "extension/popup.css", "extension/popup.js", "extension/README.md"]) {
   if (!fs.existsSync(path.join(root, file))) fail("Browser Companion asset missing: " + file);
 }
-if (extensionManifest.manifest_version !== 3 || !extensionManifest.optional_permissions?.includes("tabs")) fail("Browser Companion must be an MV3 extension with optional Tabs permission.");
-else pass("Browser Companion manifest is MV3 and requests Tabs permission optionally.");
-const allExtensionPermissions = [...(extensionManifest.permissions || []), ...(extensionManifest.optional_permissions || [])];
-if (allExtensionPermissions.some((permission) => ["cookies", "debugger", "history", "webRequest", "scripting", "tabCapture"].includes(permission))) fail("Browser Companion requests a disallowed or unnecessary sensitive permission.");
-else pass("Browser Companion does not request cookie, debugger, history, webRequest, scripting or tab-capture permissions.");
-if (!extensionManifest.content_scripts?.some((entry) => entry.matches?.includes("https://nolane-x.github.io/web-view/*"))) fail("Browser Companion content script is not restricted to the published workspace origin.");
-else pass("Browser Companion content script is restricted to the workspace origin.");
-if (!/sanitizeTabUrl/.test(read("extension/popup.js")) || !/url\.hash = ""/.test(read("extension/popup.js"))) fail("Browser Companion URL sanitizer is missing.");
-else pass("Browser Companion strips URL fragments and sensitive-looking query parameters before import.");
-if (!/NOLANE_FOCUS_TAB/.test(read("extension/background.js")) || !/NOLANE_IMPORT_TABS/.test(read("extension/content.js"))) fail("Browser Companion tab handoff message handlers are incomplete.");
-else pass("Browser Companion implements selected-tab import and return-to-tab messaging.");
+if (extensionManifest.manifest_version !== 3 || !extensionManifest.permissions?.includes("activeTab")) fail("Browser Companion must be MV3 and request activeTab for user-invoked capture.");
+else pass("Browser Companion uses Manifest V3 and user-invoked activeTab access.");
 
+const requiredPermissions = ["storage", "activeTab", "tabCapture", "debugger"];
+if (requiredPermissions.some((permission) => !extensionManifest.permissions?.includes(permission))) fail("Live Chrome Surface permissions are incomplete.");
+else pass("Live capture and CDP input permissions are declared.");
+if (!extensionManifest.optional_permissions?.includes("tabs")) fail("Tab-list scanning must remain optional.");
+else pass("Tab-list scanning remains an optional permission.");
 
-if (!extensionManifest.permissions?.includes("storage") || !/crypto\.randomUUID/.test(read("extension/background.js"))) fail("Browser Companion profile identity is not stored locally.");
+const allPermissions = [...(extensionManifest.permissions || []), ...(extensionManifest.optional_permissions || [])];
+if (allPermissions.some((permission) => ["cookies", "history", "webRequest", "scripting"].includes(permission))) fail("Companion requests a permission outside its documented capture/debug path.");
+else pass("Companion does not request cookies, history, webRequest or generic scripting access.");
+
+if (!extensionManifest.content_scripts?.some((entry) => entry.matches?.includes("https://nolane-x.github.io/web-view/*"))) fail("Content script must be restricted to the published workspace origin.");
+else pass("Content script is restricted to the workspace origin.");
+
+const background = read("extension/background.js");
+const bridge = read("extension/content.js");
+const popup = read("extension/popup.js");
+if (!/chrome\.tabCapture\.getMediaStreamId/.test(background) || !/consumerTabId:\s*workspaceTabId/.test(background)) fail("Capture stream must be bound to the Nolane consumer tab.");
+else pass("Tab capture stream is bound to the designated workspace tab.");
+if (!/chrome\.debugger\.attach/.test(background) || !/Input\.dispatchMouseEvent/.test(background) || !/Input\.dispatchKeyEvent/.test(background)) fail("CDP input forwarding is incomplete.");
+else pass("CDP input uses fixed mouse and keyboard methods.");
+if (!/Page\.frameNavigated/.test(background) || !/expectedOrigin/.test(background)) fail("Live sessions must stop when the source origin changes.");
+else pass("Live sessions are bound to the source origin.");
+if (!/NOLANE_REGISTER_WORKSPACE/.test(bridge) || !/NOLANE_LIVE_INPUT/.test(bridge)) fail("Workspace content-script registration/input bridge is incomplete.");
+else pass("Content script registers the workspace and forwards input.");
+if (!/NOLANE_START_LIVE_SURFACE/.test(popup) || !/Stream this tab to Nolane/.test(popup)) fail("Popup must expose explicit active-tab capture.");
+else pass("Popup exposes explicit current-tab capture.");
+
+if (!/sanitizeTabUrl/.test(popup) || !/url\.hash = ""/.test(popup)) fail("Tab URL sanitizer is missing.");
+else pass("Tab URL sanitizer removes fragments and credential-like query parameters.");
+
+if (!extensionManifest.permissions?.includes("storage") || !/crypto\.randomUUID/.test(background)) fail("Browser Companion profile identity is not stored locally.");
 else pass("Browser Companion maintains a local per-profile identity.");
 
-if (!/message\.profileId !== profileId/.test(read("extension/background.js")) || !/expectedOrigin/.test(read("extension/background.js")) || !/node\.browserSessionId === bridgeSessionId/.test(js)) fail("Browser Companion tab focus is not bound to the originating profile and website.");
-else pass("Browser Companion verifies profile identity and expected website origin before tab focus.");
+if (!/message\.profileId !== profileId/.test(background) || !/browserSessionId/.test(read("app.js"))) fail("Browser Companion profile identity is not verified for original-tab focus.");
+else pass("Original-tab focus remains tied to its browser profile.");
 
 if (process.exitCode) process.exit(process.exitCode);
 console.log("All static checks passed.");
