@@ -37,6 +37,19 @@ A website can refuse iframe embedding through CSP frame-ancestors or X-Frame-Opt
 
 The optional Chrome MV3 Browser Companion is now included in extension/. It asks for the Tabs permission only after the user clicks its grant button, lets the user select open tabs, and adds their titles/URLs as workspace cards. Selecting a card focuses the original Chrome tab, so its existing login session stays in Chrome. The extension does not read cookies, passwords, page contents or tokens. It does not turn tabs into embedded DOM surfaces; universal authenticated surfaces still require a local browser runtime (for example a custom Chromium host or a native WebView host). See extension/README.md and docs/ARCHITECTURE.md.
 
+
+## Install the optional Chrome companion
+
+The companion is source code in the repository; it is not installed automatically by the website.
+
+1. Download the repository ZIP from GitHub and extract it.
+2. Open chrome://extensions, enable Developer mode, and choose **Load unpacked**.
+3. Select the extracted extension/ folder.
+4. Refresh the GitHub Pages workspace, open the extension popup, and grant the optional Tabs permission only if you want to import tabs.
+5. Select the tabs you want to add. Their sessions remain in Chrome; imported cards can switch back to the original tabs.
+
+See extension/README.md for exact steps and permission details.
+
 ## Run locally
 
 Serve the repository over HTTP:
