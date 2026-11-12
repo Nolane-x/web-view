@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0d12">
+  <meta name="description" content="A private, local-first infinite canvas for your web workspace. Arrange websites, notes and tools in one space.">
+  <meta name="color-scheme" content="dark">
+  <title>Nolane Infinite — Your web, in one space</title>
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <svg class="icon-defs" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3.5 12h17M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></symbol>
+    <symbol id="i-sticky" viewBox="0 0 24 24"><path d="M5 3.5h14a1.5 1.5 0 0 1 1.5 1.5v10L14 21H5a1.5 1.5 0 0 1-1.5-1.5V5A1.5 1.5 0 0 1 5 3.5Z"/><path d="M14 21v-5a1.5 1.5 0 0 1 1.5-1.5h5"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-maximize" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M3 16v3a2 2 0 0 0 2 2h3"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4m-5 5 5-5 5 5M4 17v3h16v-3"/></symbol>
+    <symbol id="i-command" viewBox="0 0 24 24"><path d="M9 7V5a2.5 2.5 0 1 0-2.5 2.5H9Zm0 0h6m0 0h2.5A2.5 2.5 0 1 0 15 5v2Zm0 0v10m0 0v2a2.5 2.5 0 1 0 2.5-2.5H15Zm0 0H9m0 0H6.5A2.5 2.5 0 1 0 9 19v-2Zm0 0V7"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-puzzle" viewBox="0 0 24 24"><path d="M19 13h-2a2 2 0 1 0-4 0v2H9v-2a2 2 0 1 0-4 0H3v-5h4V6a2 2 0 1 1 4 0v2h4V4h4a1 1 0 0 1 1 1v4h-2a2 2 0 1 0 0 4Z"/><path d="M19 13v6a1 1 0 0 1-1 1h-5v-2a2 2 0 1 0-4 0v2H4a1 1 0 0 1-1-1v-5"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1 1.4 1.1-1.5 2.6-1.7-.6a8 8 0 0 1-1.7 1l-.3 1.8h-3l-.3-1.8a8 8 0 0 1-1.7-1l-1.7.6-1.5-2.6 1.4-1.1a7 7 0 0 1 0-2l-1.4-1.1 1.5-2.6 1.7.6a8 8 0 0 1 1.7-1l.3-1.8h3l.3 1.8a8 8 0 0 1 1.7 1l1.7-.6 1.5 2.6-1.4 1.1a7 7 0 0 1 0 2Z" transform="translate(-1 -1) scale(1.08)"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.4 2.4 0 1 1 4 1.8c-1.2 1-1.7 1.3-1.7 2.7M12 17h.01"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 9a7 7 0 0 1 11.7-2L20 12M4 12l2.3 5a7 7 0 0 0 11.7-2"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="m18 6-12 12M6 6l12 12"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-mouse" viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 3v6"/></symbol>
+    <symbol id="i-move" viewBox="0 0 24 24"><path d="m5 9-3 3 3 3M9 5l3-3 3 3m-6 14 3 3 3-3m4-10 3 3-3 3M2 12h20M12 2v20"/></symbol>
+    <symbol id="i-layout" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M9 9h12"/></symbol>
+  </svg>
+
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="./" aria-label="Nolane Infinite home">
+        <span class="brand-mark"><span></span><span></span><span></span><span></span></span>
+        <span class="brand-name">nolane<span>infinite</span></span>
+      </a>
+
+      <button class="workspace-switcher" id="workspaceMenu" type="button">
+        <span class="workspace-avatar">N</span>
+        <span class="workspace-meta"><strong>Personal space</strong><small>Private workspace</small></span>
+        <svg class="icon"><use href="#i-chevron-down"/></svg>
+      </button>
+
+      <div class="side-label">WORKSPACE</div>
+      <nav class="side-nav" aria-label="Workspace navigation">
+        <button class="nav-item active" data-view="canvas" type="button"><svg class="icon"><use href="#i-grid"/></svg><span>Infinite canvas</span><kbd>1</kbd></button>
+        <button class="nav-item" data-view="websites" type="button"><svg class="icon"><use href="#i-globe"/></svg><span>Web surfaces</span><span class="nav-count" id="websiteCount">0</span></button>
+        <button class="nav-item" data-view="notes" type="button"><svg class="icon"><use href="#i-sticky"/></svg><span>Notes</span><span class="nav-count" id="noteCount">0</span></button>
+      </nav>
+
+      <div class="side-divider"></div>
+      <div class="side-section-head"><span class="side-label">YOUR SPACES</span><button class="icon-button tiny" id="newSpaceBtn" title="Create a space"><svg class="icon"><use href="#i-plus"/></svg></button></div>
+      <div class="space-list">
+        <button class="space-item selected" type="button"><span class="space-dot violet"></span>My workspace</button>
+        <button class="space-item" type="button" data-toast="This space is ready to be created."><span class="space-dot cyan"></span>Research lab <span class="soon">Soon</span></button>
+        <button class="space-item" type="button" data-toast="This space is ready to be created."><span class="space-dot amber"></span>Projects <span class="soon">Soon</span></button>
+      </div>
+
+      <div class="sidebar-spacer"></div>
+      <div class="privacy-card">
+        <div class="privacy-icon"><svg class="icon"><use href="#i-shield"/></svg></div>
+        <div><strong>Your space stays yours</strong><p>Workspace data is saved in this browser, not on our servers.</p></div>
+        <span class="privacy-dot"></span>
+      </div>
+      <button class="bridge-card" id="bridgeButton" type="button">
+        <span class="bridge-icon"><svg class="icon"><use href="#i-puzzle"/></svg></span>
+        <span class="bridge-copy"><strong>Browser Companion</strong><small><i class="status-dot"></i> Not connected</small></span>
+        <svg class="icon bridge-arrow"><use href="#i-chevron"/></svg>
+      </button>
+      <div class="sidebar-footer"><span>Preview build · 0.1.0</span><button class="icon-button tiny" id="helpButton" title="Help"><svg class="icon"><use href="#i-help"/></svg></button></div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="mobile-menu icon-button" id="mobileMenu" aria-label="Open menu"><svg class="icon"><use href="#i-layout"/></svg></button>
+          <div class="breadcrumb"><span>Personal space</span><svg class="icon"><use href="#i-chevron"/></svg><strong id="viewTitle">My workspace</strong></div>
+          <span class="save-indicator" id="saveIndicator"><i></i> All changes saved</span>
+        </div>
+        <div class="topbar-actions">
+          <label class="search-box" for="searchInput"><svg class="icon"><use href="#i-search"/></svg><input id="searchInput" type="search" placeholder="Find anything..." autocomplete="off"><kbd>/</kbd></label>
+          <button class="icon-button top-action" id="importButton" title="Import workspace"><svg class="icon"><use href="#i-upload"/></svg></button>
+          <button class="icon-button top-action" id="exportButton" title="Export workspace"><svg class="icon"><use href="#i-download"/></svg></button>
+          <span class="top-divider"></span>
+          <button class="button button-primary button-add" id="addButton" type="button"><svg class="icon"><use href="#i-plus"/></svg><span>Add to canvas</span><kbd>A</kbd></button>
+        </div>
+      </header>
+
+      <section class="canvas-area" id="canvasArea" aria-label="Infinite workspace canvas">
+        <div class="canvas-grid" id="canvasGrid"></div>
+        <div class="world" id="world" aria-live="off"></div>
+        <div class="canvas-top-left">
+          <div class="canvas-heading"><span class="eyebrow"><span class="eyebrow-dot"></span> YOUR PERSONAL WEB</span><h1 id="canvasHeading">A space for everything.</h1><p id="canvasSubheading">Bring your web tools together. Arrange them your way.</p></div>
+        </div>
+        <div class="canvas-top-right"><button class="canvas-chip" id="fitButton" type="button"><svg class="icon"><use href="#i-maximize"/></svg> Fit canvas</button><button class="canvas-chip" id="resetButton" type="button"><svg class="icon"><use href="#i-refresh"/></svg> Reset view</button></div>
+        <div class="canvas-bottom-left"><div class="canvas-hint"><svg class="icon"><use href="#i-mouse"/></svg><span><b>Drag</b> to move around <em>·</em> <b>Scroll</b> to zoom <em>·</em> Select a card to edit</span></div></div>
+        <div class="canvas-controls">
+          <button class="icon-button" id="zoomOut" title="Zoom out"><svg class="icon"><use href="#i-minus"/></svg></button>
+          <button class="zoom-value" id="zoomValue" type="button" title="Reset zoom">100%</button>
+          <button class="icon-button" id="zoomIn" title="Zoom in"><svg class="icon"><use href="#i-plus"/></svg></button>
+          <span class="control-divider"></span>
+          <button class="icon-button" id="minimapButton" title="Toggle minimap"><svg class="icon"><use href="#i-layout"/></svg></button>
+        </div>
+        <div class="minimap" id="minimap"><div class="minimap-title">MAP</div><div class="minimap-content" id="minimapContent"><span class="minimap-viewport" id="minimapViewport"></span></div></div>
+      </section>
+      <footer class="statusbar"><span><i class="status-dot green"></i> Local mode</span><span id="storageStatus">Saved on this device</span><span class="statusbar-right">No account · No cloud sync · Your data stays local</span></footer>
+    </main>
+  </div>
+
+  <dialog class="modal add-modal" id="addDialog">
+    <form method="dialog" class="modal-frame" id="addForm">
+      <div class="modal-head"><div><span class="modal-eyebrow">EXPAND YOUR SPACE</span><h2>Add to your canvas</h2><p>Bring a website or a thought into your workspace.</p></div><button class="icon-button" value="cancel" aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button></div>
+      <div class="modal-tabs"><button type="button" class="modal-tab active" data-tab="website"><svg class="icon"><use href="#i-globe"/></svg> Website</button><button type="button" class="modal-tab" data-tab="note"><svg class="icon"><use href="#i-sticky"/></svg> Note</button></div>
+      <section class="modal-panel active" id="websitePanel">
+        <label class="field-label" for="websiteUrl">Website address</label>
+        <div class="url-input"><svg class="icon"><use href="#i-globe"/></svg><input id="websiteUrl" type="text" placeholder="https://example.com" autocomplete="url" spellcheck="false"><span class="input-lock">↗</span></div>
+        <p class="field-help">The website loads directly from its original address. Some services block embedding; you can always open them in a browser tab.</p>
+        <label class="field-label" for="websiteTitle">Display name <span>Optional</span></label>
+        <input class="text-input" id="websiteTitle" type="text" placeholder="e.g. Product research">
+        <div class="suggestion-label">QUICK ADD</div>
+        <div class="quick-add-grid">
+          <button class="quick-add" type="button" data-url="https://github.com"><span class="quick-icon github">GH</span><span>GitHub</span><svg class="icon"><use href="#i-plus"/></svg></button>
+          <button class="quick-add" type="button" data-url="https://chatgpt.com"><span class="quick-icon ai">✳</span><span>ChatGPT</span><svg class="icon"><use href="#i-plus"/></svg></button>
+          <button class="quick-add" type="button" data-url="https://www.notion.so"><span class="quick-icon notion">N</span><span>Notion</span><svg class="icon"><use href="#i-plus"/></svg></button>
+          <button class="quick-add" type="button" data-url="https://www.figma.com"><span class="quick-icon figma">F</span><span>Figma</span><svg class="icon"><use href="#i-plus"/></svg></button>
+        </div>
+      </section>
+      <section class="modal-panel" id="notePanel">
+        <label class="field-label" for="noteTitle">Note title</label><input class="text-input" id="noteTitle" type="text" placeholder="Give this thought a name">
+        <label class="field-label" for="noteBody">Your note</label><textarea class="text-area" id="noteBody" rows="5" placeholder="Capture an idea, a plan, or anything worth remembering..."></textarea>
+        <div class="note-color-row"><span>COLOR</span><button type="button" class="color-choice active" data-color="lavender" aria-label="Lavender"></button><button type="button" class="color-choice" data-color="mint" aria-label="Mint"></button><button type="button" class="color-choice" data-color="peach" aria-label="Peach"></button><button type="button" class="color-choice" data-color="blue" aria-label="Blue"></button></div>
+      </section>
+      <div class="modal-foot"><span class="private-foot"><svg class="icon"><use href="#i-shield"/></svg> Saved only on this device</span><button class="button button-primary" id="createButton" type="button">Add to workspace <svg class="icon"><use href="#i-chevron"/></svg></button></div>
+    </form>
+  </dialog>
+
+  <dialog class="modal info-modal" id="bridgeDialog">
+    <form method="dialog" class="modal-frame">
+      <div class="modal-head"><div><span class="modal-eyebrow">LOCAL BROWSER INTEGRATION</span><h2>Browser Companion</h2><p>Connect your browser to bring existing sessions into your workspace.</p></div><button class="icon-button" value="cancel" aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button></div>
+      <div class="bridge-status-large"><span class="bridge-orbit"><svg class="icon"><use href="#i-puzzle"/></svg></span><div><strong>Companion not detected</strong><small>This workspace is running in standalone web mode.</small></div><span class="status-pill">Not connected</span></div>
+      <div class="info-callout"><svg class="icon"><use href="#i-info"/></svg><p><strong>Honest status:</strong> the browser companion protocol is reserved for a future extension. No extension is bundled or silently installed by this website. For now, websites can be embedded when their security policy allows it, or opened in a regular browser tab.</p></div>
+      <div class="bridge-capabilities"><div><svg class="icon"><use href="#i-check"/></svg><span>Workspace layout stays on this device</span></div><div><svg class="icon"><use href="#i-check"/></svg><span>No passwords or cookies are collected</span></div><div><svg class="icon"><use href="#i-check"/></svg><span>Existing Chrome sessions are not copied</span></div></div>
+      <div class="modal-foot"><span class="private-foot">Companion integration · Planned</span><button class="button button-secondary" value="cancel">Got it</button></div>
+    </form>
+  </dialog>
+
+  <dialog class="modal info-modal" id="helpDialog">
+    <form method="dialog" class="modal-frame">
+      <div class="modal-head"><div><span class="modal-eyebrow">A QUICK TOUR</span><h2>Make this space yours.</h2><p>A few simple gestures go a long way.</p></div><button class="icon-button" value="cancel" aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button></div>
+      <div class="help-list">
+        <div><kbd>Drag</kbd><span>Move around the infinite canvas from any empty area.</span></div>
+        <div><kbd>Scroll</kbd><span>Zoom around your cursor. Use the controls to fine-tune.</span></div>
+        <div><kbd>A</kbd><span>Add a website or create a note.</span></div>
+        <div><kbd>/</kbd><span>Search your workspace.</span></div>
+        <div><kbd>N</kbd><span>Create a note from anywhere on the canvas.</span></div>
+        <div><kbd>⌘ / Ctrl + S</kbd><span>Save your current workspace locally.</span></div>
+      </div>
+      <div class="info-callout"><svg class="icon"><use href="#i-info"/></svg><p>Some websites intentionally prevent iframe embedding. Use the open-in-browser action on that card. A future native browser runtime is needed for universal website surfaces.</p></div>
+      <div class="modal-foot"><span class="private-foot">Nolane Infinite · Preview 0.1.0</span><button class="button button-primary" value="cancel">Let's go</button></div>
+    </form>
+  </dialog>
+
+  <input id="fileInput" type="file" accept="application/json,.json" hidden>
+  <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
+  <script src="./app.js" defer></script>
+</body>
+</html>
