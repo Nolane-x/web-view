@@ -44,7 +44,7 @@ Then open http://localhost:8000. IndexedDB and service workers work in secure co
 
 ## Deploy
 
-The workflow in .github/workflows/pages.yml builds a small static artifact and deploys it to GitHub Pages whenever main changes. It also runs a JavaScript syntax check and validates the web manifest before deployment.
+One-time repository setup is required: open Settings → Pages → Build and deployment, then set Source to GitHub Actions. GitHub does not allow the workflow GITHUB_TOKEN to create the Pages site on its own. After that, the workflow in .github/workflows/pages.yml builds and deploys the static artifact whenever main changes. It runs a JavaScript syntax check and validates the web manifest before deployment.
 
 ## Keyboard shortcuts
 
