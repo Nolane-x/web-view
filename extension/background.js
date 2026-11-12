@@ -5,6 +5,8 @@ const WORKSPACE_URL_PREFIX = WORKSPACE_ORIGIN + "/web-view/";
 const PROFILE_KEY = "nolaneProfileId";
 const WORKSPACE_KEY = "nolaneWorkspaceTab";
 const LIVE_SESSIONS_KEY = "nolaneLiveSessions";
+const LIVE_START_TIMEOUT_MS = 12000;
+const pendingLiveStarts = new Map();
 
 const profileIdPromise = chrome.storage.local.get([PROFILE_KEY]).then(async (stored) => {
   if (typeof stored[PROFILE_KEY] === "string" && stored[PROFILE_KEY].length > 20) return stored[PROFILE_KEY];
@@ -146,6 +148,17 @@ async function startLiveSurface(message, sender) {
     sessions[surfaceId] = session;
     await saveLiveSessions(sessions);
 
+    const acknowledgement = new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        pendingLiveStarts.delete(surfaceId);
+        reject(new Error("Nolane did not confirm that the live video stream was attached. Refresh the workspace and try again."));
+      }, LIVE_START_TIMEOUT_MS);
+      pendingLiveStarts.set(surfaceId, {
+        resolve: () => { clearTimeout(timeoutId); pendingLiveStarts.delete(surfaceId); resolve(); },
+        reject: (reason) => { clearTimeout(timeoutId); pendingLiveStarts.delete(surfaceId); reject(reason); }
+      });
+    });
+
     await chrome.tabs.sendMessage(workspaceTabId, {
       type: "NOLANE_LIVE_SURFACE_START",
       surfaceId,
@@ -156,9 +169,12 @@ async function startLiveSurface(message, sender) {
       viewport,
       streamId
     });
+    await acknowledgement;
 
     return { ok: true, surfaceId, title: session.sourceTitle };
   } catch (error) {
+    const pending = pendingLiveStarts.get(surfaceId);
+    if (pending) pending.reject(error);
     if (debuggerAttached) {
       try { await chrome.debugger.detach(debuggee); } catch (_) {}
     }
@@ -311,6 +327,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       session.acknowledged = true;
       await saveLiveSessions(sessions);
+      const pending = pendingLiveStarts.get(message.surfaceId);
+      if (pending) pending.resolve();
       return { ok: true };
     })());
   }
@@ -320,7 +338,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const sessions = await getLiveSessions();
       const session = sessions[message.surfaceId];
       if (!session || sender.tab?.id !== session.workspaceTabId) return { ok: true };
-      await removeLiveSession(session.surfaceId, "Live stream failed: " + String(message.error || "Unknown capture error").slice(0, 180), false);
+      const failure = "Live stream failed: " + String(message.error || "Unknown capture error").slice(0, 180);
+      const pending = pendingLiveStarts.get(message.surfaceId);
+      if (pending) pending.reject(new Error(failure));
+      await removeLiveSession(session.surfaceId, failure, false);
       return { ok: true };
     })());
   }
