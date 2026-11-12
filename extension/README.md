@@ -12,7 +12,7 @@ This release adds **Live Chrome Surface**. It does not try to load the remote we
 6. Keep https://nolane-x.github.io/web-view/ open in one Chrome tab and refresh it.
 7. Open the website you want to place inside Nolane (for example YouPass) in a separate normal Chrome tab, and sign in there as usual.
 8. While the website tab is active, click the Nolane Companion toolbar icon and choose **Stream this tab to Nolane**.
-9. Return to the Nolane tab. The real page should appear as an interactive live surface. Click inside it to route pointer and keyboard input to the source tab.
+9. Once the live video is successfully consumed, the extension automatically returns Chrome to the Nolane tab. The real page should appear as an interactive live surface. Click inside it to route pointer and keyboard input to the source tab.
 
 The capture action must be started from the active source website tab. This is deliberate: Chrome's activeTab grant and tab capture are user-invoked capabilities. A background tab cannot be captured without an explicit user action.
 
