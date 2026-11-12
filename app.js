@@ -162,6 +162,7 @@
     const space = spaces.find((item) => item.id === id);
     if (!space) return;
     if (!window.confirm('Delete "' + space.name + '" and all of its local items? This cannot be undone.')) return;
+    if (activeSpaceId === id) stopAllLiveSurfaces("Live surfaces stopped because their workspace was deleted.");
     syncActiveSpace();
     spaces = spaces.filter((item) => item.id !== id);
     if (activeSpaceId === id) {
@@ -640,6 +641,13 @@
     stage.addEventListener("contextmenu", (event) => { event.preventDefault(); event.stopPropagation(); });
     stage.addEventListener("keydown", (event) => {
       if (event.isComposing || surface.composing) return;
+      const shortcutKey = event.key.toLowerCase();
+      const browserShortcut =
+        ((event.ctrlKey || event.metaKey) && ["w", "t", "n", "l"].includes(shortcutKey)) ||
+        ((event.ctrlKey || event.metaKey) && event.shiftKey && shortcutKey === "w") ||
+        ((event.ctrlKey || event.metaKey) && ["tab"].includes(shortcutKey)) ||
+        (event.altKey && shortcutKey === "f4") || event.key === "F11";
+      if (browserShortcut) { event.preventDefault(); event.stopPropagation(); return; }
       const printable = event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey;
       const pasteShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v";
       // Let the focused proxy textarea handle printable text, paste and IME composition.
@@ -1452,6 +1460,7 @@
           browserSessionId: surface.browserSessionId
         }, location.origin);
         surface.stream.getTracks().forEach((track) => track.stop());
+        surface.audioContext?.close().catch(() => {});
       }
       liveSurfaces.clear();
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(workspaceSnapshot())); } catch (_) {}
