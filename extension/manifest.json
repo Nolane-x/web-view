@@ -1,11 +1,18 @@
 {
   "manifest_version": 3,
   "name": "Nolane Browser Companion",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "minimum_chrome_version": "116",
   "description": "Bring real Chrome tabs into Nolane as local live video surfaces with pointer and keyboard control.",
-  "permissions": ["storage", "activeTab", "tabCapture", "debugger"],
-  "optional_permissions": ["tabs"],
+  "permissions": [
+    "storage",
+    "activeTab",
+    "tabCapture",
+    "debugger"
+  ],
+  "optional_permissions": [
+    "tabs"
+  ],
   "background": {
     "service_worker": "background.js"
   },
@@ -15,8 +22,12 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://nolane-x.github.io/web-view/*"],
-      "js": ["content.js"],
+      "matches": [
+        "https://nolane-x.github.io/web-view/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_start"
     }
   ]
