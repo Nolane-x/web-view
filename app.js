@@ -403,14 +403,7 @@
   }
 
   function openWebsite(node) {
-    const anchor = document.createElement("a");
-    anchor.href = node.url;
-    anchor.target = "_blank";
-    anchor.rel = "noopener noreferrer";
-    anchor.hidden = true;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
+    window.open(node.url, "_blank", "noopener,noreferrer");
     toast("Opening " + node.title + " in a new browser tab.");
   }
 
