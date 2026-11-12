@@ -15,6 +15,23 @@
     return typeof tab.url === "string" && tab.url.startsWith(WORKSPACE_URL);
   }
 
+  function sanitizeTabUrl(raw) {
+    try {
+      const url = new URL(raw);
+      if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) return null;
+      for (const key of [...url.searchParams.keys()]) {
+        if (/(token|secret|password|passwd|credential|authorization|auth|access.?key|api.?key|signature|^sig$|^jwt$|^code$|id.?token|refresh.?token|session.?id|^nonce$|^state$)/i.test(key)) {
+          url.searchParams.delete(key);
+        }
+      }
+      // URL fragments often contain OAuth implicit-flow tokens; do not export them.
+      url.hash = "";
+      return url.href;
+    } catch (_) {
+      return null;
+    }
+  }
+
   function safeHost(url) {
     try { return new URL(url).hostname.replace(/^www\./, ""); } catch (_) { return "Website"; }
   }
@@ -80,7 +97,8 @@
     try {
       availableTabs = (await chrome.tabs.query({}))
         .filter((tab) => Number.isInteger(tab.id) && typeof tab.url === "string")
-        .filter((tab) => tab.url.startsWith("https://") || tab.url.startsWith("http://"))
+        .map((tab) => ({ ...tab, url: sanitizeTabUrl(tab.url) }))
+        .filter((tab) => !!tab.url)
         .filter((tab) => !isWorkspaceTab(tab))
         .sort((a, b) => Number(!!b.active) - Number(!!a.active));
       renderTabs();
