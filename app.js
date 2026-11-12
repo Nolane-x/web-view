@@ -41,10 +41,6 @@
   const escapeHTML = (value) => String(value == null ? "" : value).replace(/[&<>"']/g, (char) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
   })[char]);
-  const safeDate = (value) => {
-    const date = new Date(value || Date.now());
-    return Number.isNaN(date.getTime()) ? new Date() : date;
-  };
   const hostOf = (value) => {
     try { return new URL(value).hostname.replace(/^www\./, ""); } catch (_) { return value || ""; }
   };
@@ -220,7 +216,7 @@
       throw new Error("Only http and https website addresses are supported.");
     }
     if (parsed.username || parsed.password) throw new Error("Remove username or password information from the address.");
-    if (!parsed.hostname || parsed.hostname.indexOf(".") === -1 && parsed.hostname !== "localhost") {
+    if (!parsed.hostname || (parsed.hostname.indexOf(".") === -1 && parsed.hostname !== "localhost" && !/^\\[[0-9a-f:]+\\]$/i.test(parsed.hostname))) {
       throw new Error("Enter a full website address, such as example.com.");
     }
     return parsed.href;
@@ -273,6 +269,9 @@
     try {
       await openDatabase();
       saved = await idbRead();
+      if (navigator.storage && typeof navigator.storage.persist === "function") {
+        navigator.storage.persist().catch(() => false);
+      }
     } catch (_) {
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
@@ -565,7 +564,7 @@
     frame.loading = "eager";
     frame.referrerPolicy = "no-referrer";
     frame.allow = "clipboard-read; clipboard-write; fullscreen; picture-in-picture";
-    frame.sandbox = "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals";
+    frame.setAttribute("sandbox", "allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals");
     frame.src = node.url;
     const fallback = document.createElement("div");
     fallback.className = "frame-fallback";
@@ -807,26 +806,42 @@
 
   async function importWorkspace(file) {
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) return toast("Workspace file is too large (maximum 2 MB).", "error");
+    if (file.size > 24 * 1024 * 1024) return toast("Workspace file is too large (maximum 24 MB).", "error");
     try {
       const data = JSON.parse(await file.text());
-      if (data.schema !== "nolane-infinite-workspace") throw new Error("This file is not a Nolane workspace export.");
+      if (!data || data.schema !== "nolane-infinite-workspace") throw new Error("This file is not a Nolane workspace export.");
+
+      let importedSpaces = [];
+      let importedActiveId = "personal";
       if (Array.isArray(data.spaces) && data.spaces.length) {
-        spaces = data.spaces.map(normalizeSpace).filter(Boolean).slice(0, 12);
-        if (!spaces.length) throw new Error("No valid workspaces were found in this file.");
-        activeSpaceId = spaces.some((space) => space.id === data.activeSpaceId) ? data.activeSpaceId : spaces[0].id;
-        const current = activeSpace();
-        nodes = current.nodes.map((node) => ({ ...node }));
-        view = { ...current.view };
+        importedSpaces = data.spaces.map(normalizeSpace).filter(Boolean).slice(0, 12);
+        if (!importedSpaces.length) throw new Error("No valid workspaces were found in this file.");
+        importedActiveId = importedSpaces.some((space) => space.id === data.activeSpaceId) ? data.activeSpaceId : importedSpaces[0].id;
       } else if (Array.isArray(data.nodes)) {
-        nodes = data.nodes.map(validateNode).filter(Boolean).slice(0, MAX_NODES);
-        spaces = [{ id: "personal", name: "My workspace", nodes: nodes.map((node) => ({ ...node })), view: { x: Number(data.view?.x) || 25, y: Number(data.view?.y) || 0, scale: clamp(Number(data.view?.scale) || 1, MIN_SCALE, MAX_SCALE) } }];
-        activeSpaceId = "personal";
-        view = { ...spaces[0].view };
+        const importedNodes = data.nodes.map(validateNode).filter(Boolean).slice(0, MAX_NODES);
+        importedSpaces = [{
+          id: "personal",
+          name: "My workspace",
+          nodes: importedNodes,
+          view: {
+            x: Number(data.view?.x) || 25,
+            y: Number(data.view?.y) || 0,
+            scale: clamp(Number(data.view?.scale) || 1, MIN_SCALE, MAX_SCALE)
+          }
+        }];
+        importedActiveId = "personal";
       } else {
         throw new Error("The workspace file does not contain any spaces or canvas items.");
       }
+
+      // Commit the import only after the complete file has been parsed and validated.
+      spaces = importedSpaces;
+      activeSpaceId = importedActiveId;
+      const current = activeSpace();
+      nodes = current.nodes.map((node) => ({ ...node }));
+      view = { ...current.view };
       selectedId = null;
+      editingId = null;
       activeView = "canvas";
       $("#searchInput").value = "";
       renderSpaces();
