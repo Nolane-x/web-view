@@ -120,8 +120,12 @@ if (!/interactionReason/.test(background) || !/debuggerAttached/.test(background
 else pass("CDP is optional; tab video capture can continue in explicit view-only mode.");
 if (!/LIVE VIDEO · VIEW ONLY/.test(js) || !/live-surface-readonly/.test(js)) fail("Workspace must clearly render video-only surfaces as read-only.");
 else pass("View-only surfaces are visibly distinguished from interactive surfaces.");
-if (!/stoppedLiveSurfaceIds/.test(js) || !/pendingStart\.reject/.test(background)) fail("Cross-origin stops must cancel pending startup and prevent a late stream from mounting.");
+if (!/stoppedLiveSurfaceIds/.test(js) || !/stoppedLiveSurfaceIds/.test(background) || !/pendingStart\.reject/.test(background)) fail("Cross-origin stops must cancel pending startup and prevent a late stream from mounting.");
 else pass("Cross-origin navigation also cancels in-flight surface startup.");
+const captureIndex = background.indexOf("chrome.tabCapture.getMediaStreamId");
+const ackIndex = background.indexOf("acknowledgement = new Promise");
+if (captureIndex < 0 || ackIndex < 0 || captureIndex > ackIndex) fail("The acknowledgement timer must start only after tabCapture returns a stream token.");
+else pass("The acknowledgement timer starts only after stream-token creation.");
 if (!/MAX_LIVE_INPUT_QUEUE/.test(background) || !/enqueueLiveInput/.test(background) || !/mouseMoved/.test(background)) fail("Live input must use a bounded, ordered queue with pointer-move coalescing.");
 else pass("Live input uses a bounded queue and preserves discrete input order.");
 if (!/chrome\.tabs\.onUpdated/.test(background) || !/removeSessionsForWorkspaceTab/.test(background) || !/movedToAnotherOrigin/.test(background)) fail("Workspace lifecycle and source-origin changes must release live sessions without depending on CDP.");
