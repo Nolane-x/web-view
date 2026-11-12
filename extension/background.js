@@ -179,6 +179,10 @@ async function startLiveSurface(message, sender) {
     });
     await acknowledgement;
 
+    // Once the workspace has consumed the stream, bring the canvas back into view.
+    const workspaceTab = await chrome.tabs.get(workspaceTabId);
+    await chrome.tabs.update(workspaceTabId, { active: true });
+    await chrome.windows.update(workspaceTab.windowId, { focused: true });
     return { ok: true, surfaceId, title: session.sourceTitle };
   } catch (error) {
     const pending = pendingLiveStarts.get(surfaceId);
