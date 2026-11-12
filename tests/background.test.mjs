@@ -113,12 +113,16 @@ function createHarness(options = {}) {
     debugger: {
       onEvent: debuggerEvent,
       onDetach: debuggerDetached,
-      async attach(target, version) { debugCalls.push({ method: "attach", target, version }); },
+      async attach(target, version) {
+        debugCalls.push({ method: "attach", target, version });
+        if (options.attachError) throw new Error(options.attachError);
+      },
       async sendCommand(target, method, params) {
         debugCalls.push({ method, target, params });
         if (typeof options.beforeDebugCommand === "function") {
           await options.beforeDebugCommand(target, method, params);
         }
+        if (options.commandErrors?.includes(method)) throw new Error("Simulated " + method + " failure");
         if (method === "Page.getLayoutMetrics") {
           return {
             cssVisualViewport: { clientWidth: 1365, clientHeight: 768 },
@@ -197,6 +201,7 @@ test("live capture is tied to the active source tab and the exact Nolane consume
   );
 
   assert.equal(started.ok, true);
+  assert.equal(started.interactive, true);
   assert.equal(started.title, "YouPass dashboard");
   assert.ok(h.tabUpdates.some((update) => update.tabId === 20 && update.changes.active === true));
   assert.ok(h.windowUpdates.some((update) => update.windowId === 1 && update.changes.focused === true));
@@ -500,4 +505,42 @@ test("closing the Nolane workspace releases its source debugger sessions", async
   await new Promise((resolve) => setTimeout(resolve, 5));
   assert.equal(Object.keys(h.sessionStore.nolaneLiveSessions || {}).length, 0);
   assert.ok(h.detachedTabs.includes(10));
+});
+
+
+test("foreign extension debugger restriction falls back to an available video-only surface", async () => {
+  const h = createHarness({ attachError: "Cannot access a chrome-extension:// URL of different extension" });
+  await h.send({ type: "NOLANE_REGISTER_WORKSPACE" }, { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" });
+  const started = await h.send({ type: "NOLANE_START_LIVE_SURFACE", tabId: 10 }, { url: "chrome-extension://nolane-test/popup.html" });
+  assert.equal(started.ok, true);
+  assert.equal(started.interactive, false);
+  assert.match(started.interactionReason, /frame or content injected by another extension/i);
+  assert.equal(h.streamRequests.length, 1);
+  assert.equal(h.sentMessages.some((item) => item.message.type === "NOLANE_LIVE_SURFACE_START"), true);
+  const session = Object.values(h.sessionStore.nolaneLiveSessions)[0];
+  assert.equal(session.debuggerAttached, false);
+  assert.equal(session.interactive, false);
+  const input = await h.send({
+    type: "NOLANE_LIVE_INPUT",
+    surfaceId: started.surfaceId,
+    browserSessionId: session.profileId,
+    kind: "mousePressed",
+    x: 25,
+    y: 25,
+    button: "left"
+  }, { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" });
+  assert.equal(input.ok, false);
+  assert.match(input.error, /frame or content injected by another extension/i);
+  assert.equal(h.debugCalls.some((call) => call.method === "Input.dispatchMouseEvent"), false);
+});
+
+test("CDP viewport error releases partial debugger and still captures source tab video", async () => {
+  const h = createHarness({ commandErrors: ["Page.getLayoutMetrics"] });
+  await h.send({ type: "NOLANE_REGISTER_WORKSPACE" }, { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" });
+  const started = await h.send({ type: "NOLANE_START_LIVE_SURFACE", tabId: 10 }, { url: "chrome-extension://nolane-test/popup.html" });
+  assert.equal(started.ok, true);
+  assert.equal(started.interactive, false);
+  assert.equal(h.streamRequests.length, 1);
+  assert.ok(h.detachedTabs.includes(10), "partial debugger attachment must be released");
+  assert.equal(Object.values(h.sessionStore.nolaneLiveSessions)[0].debuggerAttached, false);
 });
