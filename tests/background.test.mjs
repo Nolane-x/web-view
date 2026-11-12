@@ -23,6 +23,7 @@ function createHarness() {
   const detachedTabs = [];
   const tabUpdates = [];
   const windowUpdates = [];
+  let uuidCounter = 0;
   const runtimeMessage = makeEvent();
   const debuggerEvent = makeEvent();
   const debuggerDetached = makeEvent();
@@ -137,7 +138,7 @@ function createHarness() {
     URL,
     setTimeout,
     clearTimeout,
-    crypto: { randomUUID: () => "12345678-1234-1234-1234-123456789012" },
+    crypto: { randomUUID: () => "12345678-1234-1234-1234-" + String(++uuidCounter).padStart(12, "0") },
     console
   }, { filename: "extension/background.js" });
 
