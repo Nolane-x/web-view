@@ -82,7 +82,9 @@ async function removeLiveSession(surfaceId, reason, notifyWorkspace = true, deta
   const viewportTimer = pendingViewportRefreshes.get(session.sourceTabId);
   if (viewportTimer) clearTimeout(viewportTimer);
   pendingViewportRefreshes.delete(session.sourceTabId);
-  if (detachDebugger && session.debuggerAttached) {
+  // Legacy sessions predate debuggerAttached; default them to true so an
+  // extension update cannot strand an old CDP attachment.
+  if (detachDebugger && session.debuggerAttached !== false) {
     try { await chrome.debugger.detach({ tabId: session.sourceTabId }); } catch (_) {}
   }
   if (notifyWorkspace) {
@@ -180,12 +182,6 @@ async function startLiveSurface(message, sender) {
       interactive = false;
     }
 
-    stage = "creating the tab-capture stream";
-    const streamId = await chrome.tabCapture.getMediaStreamId({
-      targetTabId: tab.id,
-      consumerTabId: workspaceTabId
-    });
-
     const session = {
       surfaceId,
       sourceTabId: tab.id,
@@ -220,6 +216,14 @@ async function startLiveSurface(message, sender) {
     const workspaceTab = await chrome.tabs.get(workspaceTabId);
     await chrome.tabs.update(workspaceTabId, { active: true });
     await chrome.windows.update(workspaceTab.windowId, { focused: true });
+
+    // Mint the one-use stream ID only after the consumer tab is visible. It
+    // expires quickly, so do not await storage/focus work after creating it.
+    stage = "creating the tab-capture stream";
+    const streamId = await chrome.tabCapture.getMediaStreamId({
+      targetTabId: tab.id,
+      consumerTabId: workspaceTabId
+    });
 
     stage = "delivering the stream to the Nolane canvas";
     await chrome.tabs.sendMessage(workspaceTabId, {
@@ -469,6 +473,20 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.status === "loading") {
     void removeSessionsForWorkspaceTab(tabId, "The Nolane workspace reloaded; reconnect the live surface.");
+  }
+
+  // Do not rely on CDP Page.frameNavigated here: debugger may be unavailable
+  // in view-only mode. Chrome's tab event still tells us when the top-level URL
+  // changes, so stop the stream before showing another origin in the canvas.
+  if (typeof changeInfo.url === "string") {
+    void (async () => {
+      const sessions = await getLiveSessions();
+      const movedToAnotherOrigin = Object.values(sessions)
+        .filter((session) => session.sourceTabId === tabId && pageOrigin(changeInfo.url) !== session.expectedOrigin);
+      for (const session of movedToAnotherOrigin) {
+        await removeLiveSession(session.surfaceId, "The source tab navigated to a different website.", true);
+      }
+    })();
   }
 });
 
