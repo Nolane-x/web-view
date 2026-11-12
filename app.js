@@ -879,7 +879,7 @@
     $("#searchInput").addEventListener("input", updateViewFilter);
     $$(".nav-item").forEach((button) => button.addEventListener("click", () => changeView(button.dataset.view)));
     $("#newSpaceBtn").addEventListener("click", createSpace);
-    $("#workspaceMenu").addEventListener("click", () => { const current = activeSpace(); if (current) renameSpace(current.id); });
+    $("#workspaceMenu").addEventListener("click", () => toast("Choose a space from the sidebar. Use the menu beside a space to rename it."));
     $("#emptyAddWebsite").addEventListener("click", () => openAddDialog("website"));
     $("#emptyAddNote").addEventListener("click", () => openAddDialog("note"));
     $("#mobileMenu").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
@@ -896,8 +896,9 @@
     window.addEventListener("keydown", (event) => {
       const tag = document.activeElement && document.activeElement.tagName;
       const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(tag) || document.activeElement?.isContentEditable;
-      if (event.code === "Space" && !typing) { spacePressed = true; canvas.classList.add("space-pan"); event.preventDefault(); }
-      if (typing || event.metaKey || event.ctrlKey || event.altKey) {
+      const dialogOpen = !!$("dialog[open]");
+      if (event.code === "Space" && !typing && !dialogOpen) { spacePressed = true; canvas.classList.add("space-pan"); event.preventDefault(); }
+      if (typing || dialogOpen || event.metaKey || event.ctrlKey || event.altKey) {
         if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") { event.preventDefault(); saveWorkspace().then(() => toast("Workspace saved on this device.")); }
         return;
       }
