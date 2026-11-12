@@ -902,7 +902,7 @@
     const panel = $(".bridge-status-large");
     const sidebar = $("#bridgeSidebarState");
     if (title) title.textContent = bridgeConnected ? "Browser Companion connected" : "Companion not detected";
-    if (detail) detail.textContent = bridgeConnected ? "Your browser can share selected tab links with this workspace." : "Install the local extension, then refresh this page.";
+    if (detail) detail.textContent = bridgeConnected ? "Import selected tab links or stream a real Chrome tab directly into this canvas." : "Install Browser Companion 0.2.0, then refresh this page.";
     if (pill) pill.textContent = bridgeConnected ? "Connected" : "Not connected";
     if (panel) panel.classList.toggle("connected", bridgeConnected);
     if (sidebar) sidebar.innerHTML = '<i class="status-dot' + (bridgeConnected ? ' green' : '') + '"></i> ' + (bridgeConnected ? "Connected" : "Not connected");
@@ -937,7 +937,7 @@
         existing.title = tab.title || hostOf(tab.url);
         existing.browserWindowId = tab.windowId;
         existing.browserSessionId = sessionId;
-        existing.description = "Imported from Chrome. Switch to the original tab to keep using its current login session.";
+        existing.description = "Linked to its original Chrome tab. Start a Live Chrome Surface from the Companion to display and control it here.";
         updated += 1;
         return;
       }
@@ -949,7 +949,7 @@
         type: "website",
         title: tab.title || hostOf(tab.url),
         url: tab.url,
-        description: "Imported from Chrome. Switch to the original tab to keep using its current login session.",
+        description: "Linked to its original Chrome tab. Start a Live Chrome Surface from the Companion to display and control it here.",
         browserTabId: tab.id,
         browserWindowId: tab.windowId,
         browserSessionId: sessionId,
@@ -1088,7 +1088,7 @@
     const host = hostOf(url);
     const node = {
       id: uid(), type: "website", title: (title || host).trim().slice(0, 120) || host, url,
-      description: "A website surface. Try a restricted preview, enable compatibility for trusted sites, or open it in a browser tab.",
+      description: "Open this site in Chrome, then use Browser Companion to stream its real tab into this workspace.",
       embedMode: "safe",
       x: Math.round(point.x - 190), y: Math.round(point.y - 145), w: 390, h: 300,
       z: ++zCounter, createdAt: new Date().toISOString()
