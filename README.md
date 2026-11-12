@@ -18,6 +18,7 @@ Nolane Infinite is a local-first canvas for arranging websites, ideas and tools 
 - Local persistence through IndexedDB, with a localStorage fallback.
 - JSON export and import for the complete set of workspaces.
 - PWA manifest and an offline-cached static app shell.
+- Optional Chrome MV3 companion for user-selected tab import and return-to-original-tab.
 - Responsive layout for desktop and smaller screens.
 - GitHub Actions deployment to GitHub Pages.
 
@@ -34,7 +35,7 @@ Nolane Infinite is a local-first canvas for arranging websites, ideas and tools 
 
 A website can refuse iframe embedding through CSP frame-ancestors or X-Frame-Options. Third-party cookie restrictions can also affect embedded sessions. When that happens, use **Open tab** to visit the original website in the user's normal browser profile.
 
-The Browser Companion panel is currently an honest placeholder for a future extension. It is not bundled, installed or connected in this release. A standard MV3 extension cannot convert arbitrary Chrome tabs into native WebContents surfaces. Universal authenticated surfaces require a local browser runtime (for example a custom Chromium host or a native WebView host); see the architecture note in docs/ARCHITECTURE.md.
+The optional Chrome MV3 Browser Companion is now included in extension/. It asks for the Tabs permission only after the user clicks its grant button, lets the user select open tabs, and adds their titles/URLs as workspace cards. Selecting a card focuses the original Chrome tab, so its existing login session stays in Chrome. The extension does not read cookies, passwords, page contents or tokens. It does not turn tabs into embedded DOM surfaces; universal authenticated surfaces still require a local browser runtime (for example a custom Chromium host or a native WebView host). See extension/README.md and docs/ARCHITECTURE.md.
 
 ## Run locally
 
