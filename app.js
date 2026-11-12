@@ -875,6 +875,7 @@
           source: "nolane-workspace",
           type: "LIVE_SURFACE_ERROR",
           surfaceId: message.surfaceId,
+          browserSessionId: message.browserSessionId || "",
           error: String(error?.message || error).slice(0, 220)
         }, location.origin);
       }
@@ -1064,12 +1065,12 @@
     const panel = $(".bridge-status-large");
     const sidebar = $("#bridgeSidebarState");
     if (title) title.textContent = bridgeConnected ? "Browser Companion connected" : "Companion not detected";
-    if (detail) detail.textContent = bridgeConnected ? "Import selected tab links or stream a real Chrome tab directly into this canvas." : "Install Browser Companion 0.2.0, then refresh this page.";
+    if (detail) detail.textContent = bridgeConnected ? "Import selected tab links or stream a real Chrome tab directly into this canvas." : "Install Browser Companion 0.2.1, then refresh this page.";
     if (pill) pill.textContent = bridgeConnected ? "Connected" : "Not connected";
     if (panel) panel.classList.toggle("connected", bridgeConnected);
     if (sidebar) sidebar.innerHTML = '<i class="status-dot' + (bridgeConnected ? ' green' : '') + '"></i> ' + (bridgeConnected ? "Connected" : "Not connected");
     const footer = $("#bridgeFooterState");
-    if (footer) footer.textContent = bridgeConnected ? "Local companion · Connected · Live Surface 0.2.0" : "Optional local companion · Live Surface 0.2.0";
+    if (footer) footer.textContent = bridgeConnected ? "Local companion · Connected · Live Surface 0.2.1" : "Optional local companion · Live Surface 0.2.1";
   }
 
   function addBrowserTabsToWorkspace(tabs, sessionId) {
