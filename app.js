@@ -670,6 +670,7 @@
       added += 1;
     });
     activeView = "canvas";
+    $("#searchInput").value = "";
     renderNodes();
     scheduleSave();
     toast("Added " + added + " Chrome tab(s)" + (updated ? " and updated " + updated + " existing card(s)." : " to this workspace."));
