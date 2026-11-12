@@ -91,6 +91,9 @@ else pass("Companion does not request cookies, history, webRequest or generic sc
 if (!extensionManifest.content_scripts?.some((entry) => entry.matches?.includes("https://nolane-x.github.io/web-view/*"))) fail("Content script must be restricted to the published workspace origin.");
 else pass("Content script is restricted to the workspace origin.");
 
+if (!fs.existsSync(path.join(root, "tests/background.test.mjs"))) fail("Live Chrome Surface controller tests are missing.");
+else pass("Live Chrome Surface controller tests are present.");
+
 const background = read("extension/background.js");
 const bridge = read("extension/content.js");
 const popup = read("extension/popup.js");
