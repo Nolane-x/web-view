@@ -333,3 +333,17 @@ kbd { font-family: var(--sans); font-size: 9px; border: 1px solid rgba(255,255,2
 
 .canvas-area.is-panning { cursor: grabbing; }
 .canvas-area.space-pan { cursor: grab; }
+
+.space-row { display: flex; align-items: center; gap: 3px; min-width: 0; }
+.space-row .space-item { flex: 1; min-width: 0; }
+.space-item .space-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.space-item .space-mini-count { margin-left: auto; color: #667184; font-size: 8px; font-variant-numeric: tabular-nums; }
+.space-edit { width: 24px; height: 25px; display: grid; place-items: center; flex: 0 0 auto; border: 0; border-radius: 5px; color: #687285; background: transparent; cursor: pointer; opacity: 0; transition: .15s; }
+.space-row:hover .space-edit, .space-row:focus-within .space-edit { opacity: 1; }
+.space-edit:hover { color: #e1dcff; background: rgba(167,139,250,.12); }
+.space-edit .icon { width: 12px; height: 12px; }
+.node-empty[hidden] { display: none; }
+.empty-actions { display: flex; gap: 7px; justify-content: center; }
+.empty-actions .button { height: 32px; font-size: 9px; }
+.empty-actions .button-secondary { background: rgba(25,29,40,.9); }
+.canvas-area { touch-action: none; }
