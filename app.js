@@ -525,7 +525,7 @@
     const toolbar = document.createElement("div");
     toolbar.className = "live-surface-toolbar";
     toolbar.innerHTML =
-      '<span class="live-indicator"><i></i> LIVE CHROME TAB</span>' +
+      '<span class="live-indicator"><i></i> ' + (surface.interactive ? "LIVE CHROME TAB" : "LIVE VIDEO · VIEW ONLY") + '</span>' +
       '<span class="live-surface-actions">' +
       '<button class="live-tool" data-action="toggle-live-audio" title="Enable sound from this Chrome tab">Enable sound</button>' +
       '<button class="live-tool" data-action="focus-live" title="Focus the original Chrome tab">Focus source</button>' +
@@ -552,8 +552,19 @@
     video.srcObject = surface.stream;
     const hint = document.createElement("div");
     hint.className = "live-surface-hint";
-    hint.textContent = "Click inside to interact · Input is sent to the original Chrome tab";
+    hint.textContent = surface.interactive
+      ? "Click inside to interact · Input is sent to the original Chrome tab"
+      : (surface.interactionReason || "Video-only mode · Use Focus source to interact with the original Chrome tab");
     stage.append(video, hint, inputProxy);
+
+    if (!surface.interactive) {
+      stage.classList.add("live-surface-readonly");
+      stage.tabIndex = -1;
+      stage.setAttribute("aria-label", "Read-only live video from the original Chrome tab. Use Focus source to interact.");
+      root.append(toolbar, stage);
+      video.play().catch(() => {});
+      return root;
+    }
 
     function coordinates(event, clampEdges = false) {
       const rect = stage.getBoundingClientRect();
@@ -843,7 +854,9 @@
         stream,
         audioContext,
         audioGainNode,
-        audioEnabled: false
+        audioEnabled: false,
+        interactive: !!message.interactive,
+        interactionReason: String(message.interactionReason || "").slice(0, 360)
       });
       activeView = "canvas";
       $("#searchInput").value = "";
@@ -1065,12 +1078,12 @@
     const panel = $(".bridge-status-large");
     const sidebar = $("#bridgeSidebarState");
     if (title) title.textContent = bridgeConnected ? "Browser Companion connected" : "Companion not detected";
-    if (detail) detail.textContent = bridgeConnected ? "Import selected tab links or stream a real Chrome tab directly into this canvas." : "Install Browser Companion 0.2.1, then refresh this page.";
+    if (detail) detail.textContent = bridgeConnected ? "Import selected tab links or stream a real Chrome tab directly into this canvas." : "Install Browser Companion 0.2.2, then refresh this page.";
     if (pill) pill.textContent = bridgeConnected ? "Connected" : "Not connected";
     if (panel) panel.classList.toggle("connected", bridgeConnected);
     if (sidebar) sidebar.innerHTML = '<i class="status-dot' + (bridgeConnected ? ' green' : '') + '"></i> ' + (bridgeConnected ? "Connected" : "Not connected");
     const footer = $("#bridgeFooterState");
-    if (footer) footer.textContent = bridgeConnected ? "Local companion · Connected · Live Surface 0.2.1" : "Optional local companion · Live Surface 0.2.1";
+    if (footer) footer.textContent = bridgeConnected ? "Local companion · Connected · Live Surface 0.2.2" : "Optional local companion · Live Surface 0.2.2";
   }
 
   function addBrowserTabsToWorkspace(tabs, sessionId) {
