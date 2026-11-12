@@ -40,6 +40,7 @@
   let bridgeConnected = false;
   let bridgeSessionId = "";
   const liveSurfaces = new Map();
+  const stoppedLiveSurfaceIds = new Set();
 
   const uid = () => "node-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -789,6 +790,10 @@
     let audioContext = null;
     let nodeId = "";
     try {
+      if (message && typeof message.surfaceId === "string" && stoppedLiveSurfaceIds.has(message.surfaceId)) {
+        stoppedLiveSurfaceIds.delete(message.surfaceId);
+        throw new Error("The source tab changed website before the live surface could connect. Start it again from the current tab.");
+      }
       if (!message || typeof message.surfaceId !== "string" || !Number.isInteger(message.sourceTabId) ||
           typeof message.streamId !== "string" || message.browserSessionId !== bridgeSessionId) {
         throw new Error("The live-stream request did not match this Chrome profile.");
@@ -810,6 +815,10 @@
           }
         }
       });
+      if (stoppedLiveSurfaceIds.has(message.surfaceId)) {
+        stoppedLiveSurfaceIds.delete(message.surfaceId);
+        throw new Error("The source tab changed website while its video stream was starting.");
+      }
 
       const safeUrl = normalizeUrl(message.url);
       addBrowserTabsToWorkspace([{
@@ -866,6 +875,10 @@
       const liveVideo = nodeElement && $(".live-surface-video", nodeElement);
       if (!liveVideo) throw new Error("The live video element was not mounted in the canvas.");
       await waitForLiveVideoFrame(liveVideo, stream);
+      if (stoppedLiveSurfaceIds.has(message.surfaceId)) {
+        stoppedLiveSurfaceIds.delete(message.surfaceId);
+        throw new Error("The source tab changed website before its first frame was confirmed.");
+      }
       window.postMessage({
         source: "nolane-workspace",
         type: "LIVE_SURFACE_ACK",
@@ -1160,6 +1173,10 @@
     } else if (message.type === "LIVE_SURFACE_START") {
       startLiveSurface(message).catch((error) => toast(error.message || "Could not start the live surface.", "error"));
     } else if (message.type === "LIVE_SURFACE_STOPPED") {
+      if (typeof message.surfaceId === "string") {
+        stoppedLiveSurfaceIds.add(message.surfaceId);
+        if (stoppedLiveSurfaceIds.size > 128) stoppedLiveSurfaceIds.delete(stoppedLiveSurfaceIds.values().next().value);
+      }
       stopLiveSurfaceById(message.surfaceId, message.reason || "Live Chrome surface disconnected.", false);
     } else if (message.type === "LIVE_VIEWPORT_UPDATE") {
       const surface = [...liveSurfaces.values()].find((item) => item.surfaceId === message.surfaceId);
