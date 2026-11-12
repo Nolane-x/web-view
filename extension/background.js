@@ -3,6 +3,7 @@
 const WORKSPACE_ORIGIN = "https://nolane-x.github.io";
 const WORKSPACE_URL_PREFIX = WORKSPACE_ORIGIN + "/web-view/";
 const PROFILE_KEY = "nolaneProfileId";
+const LAST_DIAGNOSTIC_KEY = "nolaneLastLiveDiagnostic";
 const WORKSPACE_KEY = "nolaneWorkspaceTab";
 const LIVE_SESSIONS_KEY = "nolaneLiveSessions";
 const LIVE_START_TIMEOUT_MS = 12000;
@@ -140,6 +141,14 @@ async function startLiveSurface(message, sender) {
 
   const tab = await chrome.tabs.get(message.tabId);
   if (!tab.active) throw new Error("The source page is no longer the active tab. Reopen the Companion on that page.");
+  const keepSourceVisible = message.keepSourceVisible !== false;
+  if (typeof chrome.tabCapture.getCapturedTabs === "function") {
+    const capturedTabs = await chrome.tabCapture.getCapturedTabs();
+    const alreadyCaptured = (capturedTabs || []).find((item) => item.tabId === tab.id && ["pending", "active"].includes(item.status));
+    if (alreadyCaptured) {
+      throw new Error("Chrome already reports an active capture for this tab. Stop the previous capture in Nolane or another recorder before starting a new one.");
+    }
+  }
   const safeUrl = cleanShareUrl(tab.url || "");
   const expectedOrigin = pageOrigin(tab.url || "");
   if (!safeUrl || !expectedOrigin) {
@@ -152,6 +161,8 @@ async function startLiveSurface(message, sender) {
   let interactive = false;
   let interactionReason = "";
   let acknowledgement = null;
+  let sourceKeptVisible = false;
+  let workspaceWindowId = null;
   let stage = "checking the browser tab";
   let viewport = {
     width: Math.max(1, Math.round(tab.width || 1280)),
@@ -201,16 +212,57 @@ async function startLiveSurface(message, sender) {
       acknowledged: false,
       debuggerAttached,
       interactive,
-      interactionReason
+      interactionReason,
+      keepSourceVisible: false,
+      workspaceWindowId: null
     };
     const sessions = await getLiveSessions();
     sessions[surfaceId] = session;
     await saveLiveSessions(sessions);
 
-    stage = "bringing the Nolane canvas into view";
-    const workspaceTab = await chrome.tabs.get(workspaceTabId);
-    await chrome.tabs.update(workspaceTabId, { active: true });
-    await chrome.windows.update(workspaceTab.windowId, { focused: true });
+    stage = "preparing the Nolane canvas window";
+    let workspaceTab = await chrome.tabs.get(workspaceTabId);
+    if (keepSourceVisible) {
+      if (workspaceTab.windowId !== tab.windowId) {
+        // The two tabs already live in separate windows; foreground Nolane
+        // without changing which website tab is selected in the source window.
+        await chrome.windows.update(workspaceTab.windowId, { focused: true });
+        sourceKeptVisible = true;
+        workspaceWindowId = workspaceTab.windowId;
+      } else {
+        // Move the existing Nolane tab, preserving its document/content script,
+        // into a separate window. The source tab remains selected in its own
+        // non-minimized window, so visibility-aware websites can keep rendering.
+        try {
+          const separateWindow = await chrome.windows.create({
+            tabId: workspaceTabId,
+            type: "normal",
+            focused: true
+          });
+          if (Number.isInteger(separateWindow?.id)) {
+            sourceKeptVisible = true;
+            workspaceWindowId = separateWindow.id;
+          }
+        } catch (_) {
+          sourceKeptVisible = false;
+        }
+      }
+    }
+    if (!sourceKeptVisible) {
+      workspaceTab = await chrome.tabs.get(workspaceTabId);
+      await chrome.tabs.update(workspaceTabId, { active: true });
+      await chrome.windows.update(workspaceTab.windowId, { focused: true });
+      workspaceWindowId = workspaceTab.windowId;
+    }
+    workspaceTab = await chrome.tabs.get(workspaceTabId);
+    session.keepSourceVisible = sourceKeptVisible;
+    session.workspaceWindowId = workspaceWindowId;
+    const updatedSessions = await getLiveSessions();
+    if (updatedSessions[surfaceId]) {
+      updatedSessions[surfaceId].keepSourceVisible = sourceKeptVisible;
+      updatedSessions[surfaceId].workspaceWindowId = workspaceWindowId;
+      await saveLiveSessions(updatedSessions);
+    }
 
     // Mint the one-use stream ID only after the consumer tab is visible. It
     // expires quickly, so do not await storage/focus work after creating it.
@@ -257,7 +309,27 @@ async function startLiveSurface(message, sender) {
     stage = "waiting for the first decoded video frame";
     await acknowledgement;
 
-    return { ok: true, surfaceId, title: session.sourceTitle, interactive, interactionReason };
+    const diagnostic = {
+      at: new Date().toISOString(),
+      sourceOrigin: expectedOrigin,
+      stage: "connected",
+      errorName: "",
+      errorMessage: "",
+      interactive,
+      keepSourceVisible: sourceKeptVisible,
+      sourceTabId: tab.id,
+      workspaceTabId
+    };
+    await chrome.storage.session.set({ [LAST_DIAGNOSTIC_KEY]: diagnostic });
+    return {
+      ok: true,
+      surfaceId,
+      title: session.sourceTitle,
+      interactive,
+      interactionReason,
+      keepSourceVisible: sourceKeptVisible,
+      workspaceWindowId
+    };
   } catch (error) {
     const pending = pendingLiveStarts.get(surfaceId);
     if (pending) pending.reject(error);
@@ -271,6 +343,20 @@ async function startLiveSurface(message, sender) {
       try { await chrome.debugger.detach(debuggee); } catch (_) {}
     }
     const detail = String(error?.message || error);
+    const diagnostic = {
+      at: new Date().toISOString(),
+      sourceOrigin: expectedOrigin,
+      stage,
+      errorName: String(error?.name || "Error"),
+      errorMessage: detail.replace(/https?:\/\/[^\s"'<>]+/g, (raw) => {
+        try { return new URL(raw).origin; } catch (_) { return "[redacted URL]"; }
+      }).slice(0, 500),
+      interactive,
+      keepSourceVisible: sourceKeptVisible,
+      sourceTabId: tab.id,
+      workspaceTabId
+    };
+    try { await chrome.storage.session.set({ [LAST_DIAGNOSTIC_KEY]: diagnostic }); } catch (_) {}
     throw new Error("Live startup failed while " + stage + ": " + detail);
   }
 }
@@ -524,6 +610,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === "NOLANE_GET_PROFILE_ID") {
     return respond(profileIdPromise.then((profileId) => ({ ok: true, profileId })));
+  }
+
+  if (message.type === "NOLANE_GET_DIAGNOSTICS") {
+    return respond((async () => {
+      const popupUrl = chrome.runtime.getURL("popup.html");
+      if (!sender.url || !sender.url.startsWith(popupUrl)) throw new Error("Diagnostics are available only from the Companion popup.");
+      const [captureInfo, sessions, stored] = await Promise.all([
+        chrome.tabCapture.getCapturedTabs().catch(() => []),
+        getLiveSessions(),
+        chrome.storage.session.get(LAST_DIAGNOSTIC_KEY)
+      ]);
+      return {
+        ok: true,
+        extensionVersion: chrome.runtime.getManifest().version,
+        capturedTabs: (captureInfo || []).map((item) => ({
+          tabId: item.tabId,
+          status: item.status,
+          fullscreen: !!item.fullscreen
+        })),
+        liveSessions: Object.values(sessions).map((item) => ({
+          sourceTabId: item.sourceTabId,
+          sourceOrigin: item.expectedOrigin,
+          interactive: !!item.interactive,
+          keepSourceVisible: !!item.keepSourceVisible,
+          acknowledged: !!item.acknowledged,
+          debuggerAttached: !!item.debuggerAttached
+        })),
+        lastLiveDiagnostic: stored[LAST_DIAGNOSTIC_KEY] || null
+      };
+    })());
   }
 
   if (message.type === "NOLANE_REGISTER_WORKSPACE") {
