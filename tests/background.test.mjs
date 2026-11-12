@@ -85,6 +85,7 @@ function createHarness(options = {}) {
         eventOrder.push("sendMessage:" + message.type);
         sentMessages.push({ tabId, message });
         if (message.type === "NOLANE_LIVE_SURFACE_START") {
+          if (typeof options.beforeAck === "function") await options.beforeAck(tabId, message);
           queueMicrotask(() => {
             const listener = runtimeMessage.listeners[0];
             listener({
@@ -582,5 +583,22 @@ test("legacy live sessions without debuggerAttached still release their previous
   delete h.sessionStore.nolaneLiveSessions[started.surfaceId].debuggerAttached;
   h.tabUpdated.fire(20, { status: "loading" }, { id: 20 });
   await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.ok(h.detachedTabs.includes(10));
+});
+
+
+test("cross-origin navigation during startup rejects the pending ACK and releases the source debugger", async () => {
+  let h;
+  h = createHarness({
+    beforeAck: async () => {
+      h.tabUpdated.fire(10, { url: "https://attacker.example/changed" }, { id: 10, url: "https://attacker.example/changed" });
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  });
+  await h.send({ type: "NOLANE_REGISTER_WORKSPACE" }, { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" });
+  const result = await h.send({ type: "NOLANE_START_LIVE_SURFACE", tabId: 10 }, { url: "chrome-extension://nolane-test/popup.html" });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /different website|source tab navigated/i);
+  assert.equal(Object.keys(h.sessionStore.nolaneLiveSessions || {}).length, 0);
   assert.ok(h.detachedTabs.includes(10));
 });
