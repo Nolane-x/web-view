@@ -9,7 +9,7 @@
 <body>
   <header class="header">
     <div class="mark">N</div>
-    <div><strong>Nolane Companion <span class="version">0.2.3</span></strong><small>Turn a real Chrome tab into a live canvas surface</small></div>
+    <div><strong>Nolane Companion <span class="version">0.2.4</span></strong><small>Turn a real Chrome tab into a live canvas surface</small></div>
   </header>
   <main>
     <div class="privacy">
@@ -23,7 +23,13 @@
       <p id="activeTabDescription">Open the website you want to place inside Nolane, then use this button.</p>
       <button id="liveButton" class="primary wide" disabled>Stream this tab to Nolane</button>
       <button id="stopLiveButton" class="quiet wide" hidden>Stop live stream</button>
-      <p class="fineprint">Nolane must already be open in another tab. Video capture works independently of the optional input controller; if Chrome blocks debugging, the card stays available in view-only mode.</p>
+      <label class="compat-option">
+        <input id="keepSourceVisible" type="checkbox" checked>
+        <span><strong>Keep source page visible</strong><small>Move Nolane into a separate Chrome window while keeping the website selected. Helpful for sites that pause when their tab is hidden.</small></span>
+      </label>
+      <p class="fineprint">Keep both windows unminimized. For best results, arrange them side by side so the source page is not fully covered.</p>
+      <button id="diagnosticsButton" class="quiet wide">Copy compatibility report</button>
+      <p class="fineprint">The report contains browser/runtime status and error stages, not cookies, page HTML or full website URLs.</p>
     </section>
 
     <section class="permission-panel">
