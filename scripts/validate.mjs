@@ -120,7 +120,7 @@ if (!/interactionReason/.test(background) || !/debuggerAttached/.test(background
 else pass("CDP is optional; tab video capture can continue in explicit view-only mode.");
 if (!/LIVE VIDEO · VIEW ONLY/.test(js) || !/live-surface-readonly/.test(js)) fail("Workspace must clearly render video-only surfaces as read-only.");
 else pass("View-only surfaces are visibly distinguished from interactive surfaces.");
-if (!MAX_LIVE_INPUT_QUEUE || !/enqueueLiveInput/.test(background) || !/mouseMoved/.test(background)) fail("Live input must use a bounded, ordered queue with pointer-move coalescing.");
+if (!/MAX_LIVE_INPUT_QUEUE/.test(background) || !/enqueueLiveInput/.test(background) || !/mouseMoved/.test(background)) fail("Live input must use a bounded, ordered queue with pointer-move coalescing.");
 else pass("Live input uses a bounded queue and preserves discrete input order.");
 if (!/chrome\.tabs\.onUpdated/.test(background) || !/removeSessionsForWorkspaceTab/.test(background)) fail("Workspace reload/close must release active source debugger sessions.");
 else pass("Workspace reload/close releases source debugger sessions.");
