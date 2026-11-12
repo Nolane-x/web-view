@@ -56,7 +56,8 @@ function createHarness(options = {}) {
   const chrome = {
     runtime: {
       onMessage: runtimeMessage,
-      getURL(path) { return "chrome-extension://nolane-test/" + path; }
+      getURL(path) { return "chrome-extension://nolane-test/" + path; },
+      getManifest() { return { version: "0.2.4" }; }
     },
     storage: {
       local: {
@@ -228,8 +229,11 @@ test("live capture is tied to the active source tab and the exact Nolane consume
   assert.equal(started.ok, true);
   assert.equal(started.interactive, true);
   assert.equal(started.title, "YouPass dashboard");
-  assert.ok(h.tabUpdates.some((update) => update.tabId === 20 && update.changes.active === true));
-  assert.ok(h.windowUpdates.some((update) => update.windowId === 1 && update.changes.focused === true));
+  assert.equal(started.keepSourceVisible, true);
+  assert.equal(h.tabs.get(10).active, true, "source tab remains the selected tab in its original window");
+  assert.notEqual(h.tabs.get(20).windowId, h.tabs.get(10).windowId, "workspace is moved into a separate Chrome window");
+  assert.equal(h.windowCreates.length, 1);
+  assert.equal(h.windowCreates[0].tabId, 20);
   assert.equal(h.streamRequests.length, 1);
   assert.ok(h.eventOrder.indexOf("windows.create:20") < h.eventOrder.indexOf("getMediaStreamId"), "move Nolane to another window without deactivating the source website");
   assert.ok(h.eventOrder.indexOf("getMediaStreamId") < h.eventOrder.indexOf("sendMessage:NOLANE_LIVE_SURFACE_START"), "deliver the token immediately after it is created");
@@ -699,4 +703,23 @@ test("an already active capture is reported before CDP or stream setup", async (
   assert.match(started.error, /already reports an active capture/i);
   assert.equal(h.debugCalls.length, 0);
   assert.equal(h.streamRequests.length, 0);
+});
+
+
+test("popup diagnostics are scoped to the companion and omit raw page URLs", async () => {
+  const h = createHarness({ capturedTabs: [{ tabId: 10, status: "active", fullscreen: false }] });
+  const diagnostic = await h.send(
+    { type: "NOLANE_GET_DIAGNOSTICS" },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  assert.equal(diagnostic.ok, true);
+  assert.equal(diagnostic.extensionVersion, "0.2.4");
+  assert.deepEqual(diagnostic.capturedTabs, [{ tabId: 10, status: "active", fullscreen: false }]);
+  assert.ok(Array.isArray(diagnostic.liveSessions));
+  const denied = await h.send(
+    { type: "NOLANE_GET_DIAGNOSTICS" },
+    { url: "https://attacker.example/" }
+  );
+  assert.equal(denied.ok, false);
+  assert.match(denied.error, /Companion popup/i);
 });
