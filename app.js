@@ -216,7 +216,7 @@
       throw new Error("Only http and https website addresses are supported.");
     }
     if (parsed.username || parsed.password) throw new Error("Remove username or password information from the address.");
-    if (!parsed.hostname || (parsed.hostname.indexOf(".") === -1 && parsed.hostname !== "localhost" && !/^\\[[0-9a-f:]+\\]$/i.test(parsed.hostname))) {
+    if (!parsed.hostname || (parsed.hostname.indexOf(".") === -1 && parsed.hostname !== "localhost" && !parsed.hostname.startsWith("["))) {
       throw new Error("Enter a full website address, such as example.com.");
     }
     return parsed.href;
