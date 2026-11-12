@@ -35,7 +35,7 @@ The code deliberately does not expose a generic CDP command bridge and does not 
 - Chrome debugger attachment can conflict with DevTools already open for that target. Close DevTools before streaming.
 - The source page may detect remote debugging or behave differently while attached.
 - Browser-owned UI (address bar, permission prompts, file chooser, passkeys, some popup/download flows), DRM-protected video and OS-level dialogs cannot be mirrored as normal page content; focus the source tab for those flows.
-- Capturing and decoding video consumes CPU/GPU resources. Benchmark 1, 2, 4 and 8 simultaneous surfaces before scaling.
+- Capturing and decoding video consumes CPU/GPU resources. The extension limits a workspace to three concurrent live surfaces; saved cards can be unlimited within the workspace's normal node cap.
 - Chrome-only; minimum supported version is 116.
 - Each source tab must be explicitly streamed while it is active. It is not a silent background-tab capture tool.
 
