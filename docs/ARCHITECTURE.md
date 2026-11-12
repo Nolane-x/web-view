@@ -8,22 +8,24 @@ The published website is a static HTML/CSS/JavaScript application. It stores wor
 
 A conventional iframe can be blocked by CSP frame-ancestors or X-Frame-Options. A restrictive opaque-origin sandbox can also break applications that require origin-bound storage, service workers, IndexedDB or authentication APIs. Compatibility sandboxing expands the trust boundary and still cannot override a host's anti-framing policy.
 
-The reliable immediate path is **Live Chrome Surface** in Browser Companion v0.2.3. It operates on the user's real Chrome tab rather than creating a second embedded browsing context.
+The reliable immediate path is **Live Chrome Surface** in Browser Companion v0.2.4. It operates on the user's real Chrome tab rather than creating a second embedded browsing context.
 
-## Live Chrome Surface (MV3 companion v0.2.3)
+## Live Chrome Surface (MV3 companion v0.2.4)
 
 The extension uses a tab-scoped capture/control pipeline:
 
 1. The user opens a website in a normal Chrome tab, opens the Companion action from that active tab, and explicitly starts the stream.
 2. The service worker verifies that the workspace is already open and records its tab ID.
 3. The service worker attempts chrome.debugger.attach as an optional input-control capability. When available, Page.getLayoutMetrics obtains the CSS viewport dimensions used for pointer coordinate mapping. A debugger failure (including Chromium's foreign-extension-frame restriction) does not abort capture; the surface continues in clearly labelled view-only mode.
-4. The service worker brings the exact Nolane consumer tab to the foreground, then immediately calls chrome.tabCapture.getMediaStreamId with targetTabId set to the active website tab and consumerTabId bound to the workspace tab. The token is delivered immediately because it is one-use and short-lived.
+4. Before creating a stream, the service worker checks chrome.tabCapture.getCapturedTabs() and reports an already-pending/active capture instead of attempting a duplicate. By default it moves the existing Nolane tab into a separate Chrome window with chrome.windows.create({tabId, focused: true}), leaving the source tab selected in its original window. The user can disable this behavior in the popup. It then calls chrome.tabCapture.getMediaStreamId with targetTabId set to the active website tab and consumerTabId bound to the workspace tab. The token is delivered immediately because it is one-use and short-lived.
 5. The workspace page consumes the token with getUserMedia using Chrome's chromeMediaSource: tab constraints, then acknowledges only after its video element has decoded a real frame.
 6. Pointer, wheel and keyboard events inside that card are sent to the workspace content script and service worker.
 7. When CDP is available, the service worker checks the active session ID, browser-profile ID, exact workspace sender origin and tab ID, source tab ID and source origin, then sends only fixed Input.dispatchMouseEvent, Input.dispatchKeyEvent or Input.insertText commands via CDP. In view-only mode the input route is disabled and the card tells the user to focus the original tab.
 8. Page.frameResized events trigger a debounced Page.getLayoutMetrics refresh; the new CSS viewport dimensions are sent back to the canvas so pointer mapping remains correct when Chrome is resized.
 
 The capture stream includes audio and video. The workspace routes audio through a local AudioContext and keeps it muted until the user explicitly enables sound, so tab audio is not captured and the source page's audio is not muted by the extension. There is no signaling server, WebRTC relay, external proxy, server-side browser or upload of frames. The source tab remains the actual page with its real cookies, storage and origin; the canvas is a live video/control mirror, not a DOM clone.
+
+The popup also exposes a local compatibility report (Chrome/extension version, tab-capture states, active surface metadata and the last startup stage/error). It never includes cookies, page HTML or full source URLs.
 
 The service worker also watches chrome.tabs.onUpdated for the source tab. A top-level origin change ends the stream even in view-only mode, where there is no CDP Page.frameNavigated event to rely on. Same-origin navigation can continue under the user's original capture approval.
 
