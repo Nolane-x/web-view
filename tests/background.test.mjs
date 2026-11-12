@@ -607,21 +607,35 @@ test("cross-origin navigation during startup rejects the pending ACK and release
 });
 
 
-test("tabCapture failure releases an already attached debugger and removes the pending session", async () => {
-  const h = createHarness({ beforeAck: undefined });
-  const originalGetStreamId = h.send;
-  assert.equal(typeof originalGetStreamId, "function");
-  // Inject the failure at the Chrome API boundary rather than faking a network error.
-  const tabCaptureListener = h.tabUpdated;
-  assert.ok(tabCaptureListener);
-  const registered = await h.send(
+test("tabCapture failure releases CDP and removes the pending session without leaking an ACK rejection", async () => {
+  const h = createHarness({ captureError: "Tab capture permission was denied." });
+  await h.send(
     { type: "NOLANE_REGISTER_WORKSPACE" },
     { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" }
   );
-  assert.equal(registered.ok, true);
   const started = await h.send(
     { type: "NOLANE_START_LIVE_SURFACE", tabId: 10 },
     { url: "chrome-extension://nolane-test/popup.html" }
   );
-  assert.equal(started.ok, true);
+  assert.equal(started.ok, false);
+  assert.match(started.error, /creating the tab-capture stream.*permission was denied/i);
+  assert.equal(h.streamRequests.length, 1);
+  assert.equal(Object.keys(h.sessionStore.nolaneLiveSessions || {}).length, 0);
+  assert.ok(h.detachedTabs.includes(10));
+});
+
+test("workspace delivery failure releases the session and consumes the acknowledgement rejection", async () => {
+  const h = createHarness({ workspaceSendError: "Receiving tab was closed." });
+  await h.send(
+    { type: "NOLANE_REGISTER_WORKSPACE" },
+    { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" }
+  );
+  const started = await h.send(
+    { type: "NOLANE_START_LIVE_SURFACE", tabId: 10 },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  assert.equal(started.ok, false);
+  assert.match(started.error, /delivering the stream.*Receiving tab was closed/i);
+  assert.equal(Object.keys(h.sessionStore.nolaneLiveSessions || {}).length, 0);
+  assert.ok(h.detachedTabs.includes(10));
 });
