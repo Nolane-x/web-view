@@ -525,6 +525,7 @@
     toolbar.innerHTML =
       '<span class="live-indicator"><i></i> LIVE CHROME TAB</span>' +
       '<span class="live-surface-actions">' +
+      '<button class="live-tool" data-action="toggle-live-audio" title="Enable sound from this Chrome tab">Enable sound</button>' +
       '<button class="live-tool" data-action="focus-live" title="Focus the original Chrome tab">Focus source</button>' +
       '<button class="live-tool danger" data-action="stop-live" title="Stop live capture">Stop</button>' +
       '</span>';
@@ -575,6 +576,7 @@
 
     let lastMoveAt = 0;
     stage.addEventListener("pointerdown", (event) => {
+      if (surface.audioEnabled && surface.audioContext?.state === "suspended") surface.audioContext.resume().catch(() => {});
       const point = coordinates(event);
       if (!point) return;
       stage.focus({ preventScroll: true });
@@ -659,6 +661,25 @@
     return root;
   }
 
+  function toggleLiveAudio(nodeId, button) {
+    const surface = liveSurfaces.get(nodeId);
+    if (!surface || !surface.audioGainNode || !surface.audioContext) {
+      if (button) { button.textContent = "No audio"; button.disabled = true; }
+      return;
+    }
+    surface.audioEnabled = !surface.audioEnabled;
+    const now = surface.audioContext.currentTime;
+    surface.audioGainNode.gain.cancelScheduledValues(now);
+    surface.audioGainNode.gain.setTargetAtTime(surface.audioEnabled ? 1 : 0, now, 0.025);
+    if (surface.audioEnabled) surface.audioContext.resume().catch((error) => toast("Audio could not start: " + error.message, "error"));
+    if (button) {
+      button.textContent = surface.audioEnabled ? "Mute sound" : "Enable sound";
+      button.title = surface.audioEnabled ? "Mute the source tab audio" : "Enable sound from this Chrome tab";
+      button.setAttribute("aria-pressed", String(surface.audioEnabled));
+    }
+    toast(surface.audioEnabled ? "Source tab audio enabled." : "Source tab audio muted.");
+  }
+
   async function startLiveSurface(message) {
     let stream = null;
     try {
@@ -670,7 +691,7 @@
         throw new Error("This browser page cannot consume a tab stream. Open Nolane over its HTTPS GitHub Pages address.");
       }
       stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
+        audio: true,
         video: {
           mandatory: {
             chromeMediaSource: "tab",
@@ -690,7 +711,27 @@
       if (!node) throw new Error("The source tab could not be added to the active workspace.");
 
       const previous = liveSurfaces.get(node.id);
-      if (previous) previous.stream.getTracks().forEach((track) => track.stop());
+      if (previous) {
+        previous.stream.getTracks().forEach((track) => track.stop());
+        previous.audioContext?.close().catch(() => {});
+      }
+      let audioContext = null;
+      let audioGainNode = null;
+      try {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (AudioContextClass && stream.getAudioTracks().length) {
+          audioContext = new AudioContextClass();
+          const audioSource = audioContext.createMediaStreamSource(stream);
+          audioGainNode = audioContext.createGain();
+          audioGainNode.gain.value = 0;
+          audioSource.connect(audioGainNode).connect(audioContext.destination);
+        }
+      } catch (audioError) {
+        console.warn("Live tab audio could not be routed:", audioError);
+        audioContext?.close().catch(() => {});
+        audioContext = null;
+        audioGainNode = null;
+      }
       const viewport = message.viewport && Number.isFinite(message.viewport.width) && Number.isFinite(message.viewport.height)
         ? { width: Math.max(1, message.viewport.width), height: Math.max(1, message.viewport.height) }
         : { width: 1280, height: 720 };
@@ -699,7 +740,10 @@
         sourceTabId: message.sourceTabId,
         browserSessionId: message.browserSessionId,
         viewport,
-        stream
+        stream,
+        audioContext,
+        audioGainNode,
+        audioEnabled: false
       });
       activeView = "canvas";
       $("#searchInput").value = "";
@@ -737,6 +781,7 @@
     if (!surface) return;
     liveSurfaces.delete(nodeId);
     surface.stream.getTracks().forEach((track) => track.stop());
+    surface.audioContext?.close().catch(() => {});
     if (notifyExtension) {
       window.postMessage({
         source: "nolane-workspace",
@@ -805,6 +850,7 @@
     if (action === "compatibility" && node.type === "website") setEmbedMode(node, article, "compat");
     if (action === "safe-mode" && node.type === "website") setEmbedMode(node, article, "safe");
     if (action === "stop-live" && node.type === "website") stopLiveSurface(node.id);
+    if (action === "toggle-live-audio" && node.type === "website") toggleLiveAudio(node.id, button);
     if (action === "focus-live" && node.type === "website") openWebsite(node);
     if (action === "live-help" && node.type === "website") toast("Open this website in a Chrome tab, click the Nolane Companion icon there, then choose Stream this tab to Nolane.");
     if (action === "reload") {
