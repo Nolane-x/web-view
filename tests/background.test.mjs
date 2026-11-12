@@ -132,6 +132,8 @@ function createHarness() {
   vm.runInNewContext(backgroundSource, {
     chrome,
     URL,
+    setTimeout,
+    clearTimeout,
     crypto: { randomUUID: () => "12345678-1234-1234-1234-123456789012" },
     console
   }, { filename: "extension/background.js" });
