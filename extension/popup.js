@@ -75,7 +75,11 @@
         tabId: activeTab.id
       });
       if (!result || !result.ok) throw new Error(result?.error || "The workspace did not accept the stream.");
-      status("Live surface started for " + (result.title || safeHost(activeTab.url)) + ".", "success");
+      if (result.interactive) {
+        status("Interactive live surface started for " + (result.title || safeHost(activeTab.url)) + ".", "success");
+      } else {
+        status("Live video connected in view-only mode. " + (result.interactionReason || "Use Focus source to interact with the tab."), "success");
+      }
       $("#stopLiveButton").hidden = false;
     } catch (error) {
       status("Could not start live surface: " + (error.message || error), "error");
