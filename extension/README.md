@@ -18,7 +18,9 @@ The extension bridges selected Chrome tabs into Nolane Infinite. It deliberately
 
 The optional tabs permission is requested only after the user clicks the grant button in the extension popup. It allows the popup to enumerate open browser tabs and read their URLs/titles so the user can choose what to import.
 
-The extension sends only the selected tab ID, window ID, URL and title to the Nolane page. The browser keeps each website session in its original Chrome tab. Clicking **Switch to Chrome tab** focuses that tab; the workspace does not copy its login session into an iframe.
+Before import, the extension removes URL fragments and query parameters whose names resemble credentials, tokens, signatures, passwords, authorization codes or session IDs. This is a best-effort filter, not a guarantee that every secret-looking value can be identified; review the tabs you select.
+
+The extension sends only the selected tab ID, window ID, sanitized URL and title to the Nolane page. The browser keeps each website session in its original Chrome tab. Clicking **Switch to Chrome tab** focuses that tab; the workspace does not copy its login session into an iframe.
 
 ## Limitations
 
