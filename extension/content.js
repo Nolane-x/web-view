@@ -124,6 +124,12 @@
       return;
     }
 
+    if (message.type === "NOLANE_LIVE_VIEWPORT_UPDATE") {
+      sendToPage("LIVE_VIEWPORT_UPDATE", { surfaceId: message.surfaceId, viewport: message.viewport });
+      sendResponse({ ok: true });
+      return;
+    }
+
     if (message.type === "NOLANE_LIVE_SURFACE_STOPPED") {
       sendToPage("LIVE_SURFACE_STOPPED", {
         surfaceId: message.surfaceId,
