@@ -24,6 +24,8 @@ function createHarness(options = {}) {
   const tabUpdates = [];
   const windowUpdates = [];
   const eventOrder = [];
+  const windowCreates = [];
+  let nextWindowId = 2;
   let uuidCounter = 0;
   const runtimeMessage = makeEvent();
   const debuggerEvent = makeEvent();
@@ -113,7 +115,19 @@ function createHarness(options = {}) {
       onUpdated: tabUpdated
     },
     windows: {
-      async update(windowId, changes) { eventOrder.push("windows.update:" + windowId); windowUpdates.push({ windowId, changes }); return {}; }
+      async update(windowId, changes) { eventOrder.push("windows.update:" + windowId); windowUpdates.push({ windowId, changes }); return {}; },
+      async create(createData) {
+        eventOrder.push("windows.create:" + createData.tabId);
+        windowCreates.push({ ...createData });
+        const id = nextWindowId++;
+        if (Number.isInteger(createData.tabId)) {
+          const tab = tabs.get(createData.tabId);
+          if (!tab) throw new Error("No tab with id: " + createData.tabId);
+          tab.windowId = id;
+          tab.active = true;
+        }
+        return { id, type: createData.type || "normal", focused: createData.focused !== false };
+      }
     },
     debugger: {
       onEvent: debuggerEvent,
@@ -146,7 +160,8 @@ function createHarness(options = {}) {
         if (typeof options.beforeCapture === "function") await options.beforeCapture();
         if (options.captureError) throw new Error(options.captureError);
         return "one-use-tab-stream-token";
-      }
+      },
+      async getCapturedTabs() { return options.capturedTabs || []; }
     }
   };
 
@@ -191,7 +206,8 @@ function createHarness(options = {}) {
     localStore,
     tabRemoved,
     tabUpdated,
-    eventOrder
+    eventOrder,
+    windowCreates
   };
 }
 
@@ -215,7 +231,7 @@ test("live capture is tied to the active source tab and the exact Nolane consume
   assert.ok(h.tabUpdates.some((update) => update.tabId === 20 && update.changes.active === true));
   assert.ok(h.windowUpdates.some((update) => update.windowId === 1 && update.changes.focused === true));
   assert.equal(h.streamRequests.length, 1);
-  assert.ok(h.eventOrder.indexOf("windows.update:1") < h.eventOrder.indexOf("getMediaStreamId"), "focus the consumer tab before minting the short-lived stream ID");
+  assert.ok(h.eventOrder.indexOf("windows.create:20") < h.eventOrder.indexOf("getMediaStreamId"), "move Nolane to another window without deactivating the source website");
   assert.ok(h.eventOrder.indexOf("getMediaStreamId") < h.eventOrder.indexOf("sendMessage:NOLANE_LIVE_SURFACE_START"), "deliver the token immediately after it is created");
   assert.equal(
     JSON.stringify(h.streamRequests[0]),
@@ -638,4 +654,49 @@ test("workspace delivery failure releases the session and consumes the acknowled
   assert.match(started.error, /delivering the stream.*Receiving tab was closed/i);
   assert.equal(Object.keys(h.sessionStore.nolaneLiveSessions || {}).length, 0);
   assert.ok(h.detachedTabs.includes(10));
+});
+
+
+test("keep-source-visible mode moves the existing workspace tab to a second window without backgrounding the source tab", async () => {
+  const h = createHarness();
+  await h.send({ type: "NOLANE_REGISTER_WORKSPACE" }, { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" });
+  const started = await h.send(
+    { type: "NOLANE_START_LIVE_SURFACE", tabId: 10, keepSourceVisible: true },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  assert.equal(started.ok, true);
+  assert.equal(started.keepSourceVisible, true);
+  assert.equal(h.tabs.get(10).active, true);
+  assert.equal(h.tabs.get(10).windowId, 1);
+  assert.notEqual(h.tabs.get(20).windowId, 1);
+  assert.equal(h.tabs.get(20).windowId, started.workspaceWindowId);
+  assert.deepEqual(h.windowCreates[0], { tabId: 20, type: "normal", focused: true });
+});
+
+test("legacy single-window mode remains available when the user disables source visibility", async () => {
+  const h = createHarness();
+  await h.send({ type: "NOLANE_REGISTER_WORKSPACE" }, { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" });
+  const started = await h.send(
+    { type: "NOLANE_START_LIVE_SURFACE", tabId: 10, keepSourceVisible: false },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  assert.equal(started.ok, true);
+  assert.equal(started.keepSourceVisible, false);
+  assert.equal(h.windowCreates.length, 0);
+  assert.equal(h.tabs.get(20).active, true);
+  assert.equal(h.tabs.get(10).active, true);
+  assert.ok(h.eventOrder.includes("windows.update:1"));
+});
+
+test("an already active capture is reported before CDP or stream setup", async () => {
+  const h = createHarness({ capturedTabs: [{ tabId: 10, status: "active" }] });
+  await h.send({ type: "NOLANE_REGISTER_WORKSPACE" }, { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" });
+  const started = await h.send(
+    { type: "NOLANE_START_LIVE_SURFACE", tabId: 10 },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  assert.equal(started.ok, false);
+  assert.match(started.error, /already reports an active capture/i);
+  assert.equal(h.debugCalls.length, 0);
+  assert.equal(h.streamRequests.length, 0);
 });
