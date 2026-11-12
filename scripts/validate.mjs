@@ -46,11 +46,18 @@ else pass("Static app shell assets are present.");
 if (/@import\s+url\(/i.test(css)) fail("CSS imports a remote stylesheet. Keep the shell dependency-free.");
 else pass("No remote CSS imports.");
 
-if (!/frame\.sandbox\s*=/.test(js) || !/allow-scripts/.test(js)) fail("Embedded website iframe is missing the explicit sandbox configuration.");
-else pass("Embedded website surface uses an explicit iframe sandbox.");
+if (!/frame\.setAttribute\(["']sandbox["']/.test(js) || !/allow-scripts/.test(js) || /allow-same-origin/.test(js)) fail("Embedded website iframe must use a restricted, non-same-origin sandbox.");
+else pass("Embedded website surface uses a restricted iframe sandbox.");
 
 if (!/indexedDB\.open/.test(js) || !/localStorage\.setItem/.test(js)) fail("Local persistence or fallback is missing.");
 else pass("Local persistence and fallback are present.");
+
+
+if (!/function defaultSpaces\(/.test(js) || !/function syncActiveSpace\(/.test(js) || !/spaces: spaces\.map/.test(js)) fail("Multi-workspace persistence is incomplete.");
+else pass("Multi-workspace model and export are present.");
+
+if (!/let importedSpaces = \[\]/.test(js) || !/Commit the import only after/.test(js)) fail("Workspace import is not staged before applying.");
+else pass("Workspace import is staged and applied atomically.");
 
 if (/chrome\.cookies|chrome\.debugger|chrome\.tabs\.capture/i.test(js)) fail("Static workspace unexpectedly accesses privileged extension APIs.");
 else pass("Static workspace does not access privileged browser APIs.");
