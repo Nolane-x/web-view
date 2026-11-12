@@ -556,6 +556,9 @@
     hint.textContent = surface.interactive
       ? "Click inside to interact · Input is sent to the original Chrome tab"
       : (surface.interactionReason || "Video-only mode · Use Focus source to interact with the original Chrome tab");
+    if (surface.keepSourceVisible) {
+      hint.textContent += " · Source page stays selected in a separate Chrome window; keep both windows unminimized.";
+    }
     stage.append(video, hint, inputProxy);
 
     if (!surface.interactive) {
@@ -865,7 +868,8 @@
         audioGainNode,
         audioEnabled: false,
         interactive: !!message.interactive,
-        interactionReason: String(message.interactionReason || "").slice(0, 360)
+        interactionReason: String(message.interactionReason || "").slice(0, 360),
+        keepSourceVisible: !!message.keepSourceVisible
       });
       activeView = "canvas";
       $("#searchInput").value = "";
@@ -1091,12 +1095,12 @@
     const panel = $(".bridge-status-large");
     const sidebar = $("#bridgeSidebarState");
     if (title) title.textContent = bridgeConnected ? "Browser Companion connected" : "Companion not detected";
-    if (detail) detail.textContent = bridgeConnected ? "Import selected tab links or stream a real Chrome tab directly into this canvas." : "Install Browser Companion 0.2.3, then refresh this page.";
+    if (detail) detail.textContent = bridgeConnected ? "Import selected tab links or stream a real Chrome tab directly into this canvas." : "Install Browser Companion 0.2.4, then refresh this page.";
     if (pill) pill.textContent = bridgeConnected ? "Connected" : "Not connected";
     if (panel) panel.classList.toggle("connected", bridgeConnected);
     if (sidebar) sidebar.innerHTML = '<i class="status-dot' + (bridgeConnected ? ' green' : '') + '"></i> ' + (bridgeConnected ? "Connected" : "Not connected");
     const footer = $("#bridgeFooterState");
-    if (footer) footer.textContent = bridgeConnected ? "Local companion · Connected · Live Surface 0.2.3" : "Optional local companion · Live Surface 0.2.3";
+    if (footer) footer.textContent = bridgeConnected ? "Local companion · Connected · Live Surface 0.2.4" : "Optional local companion · Live Surface 0.2.4";
   }
 
   function addBrowserTabsToWorkspace(tabs, sessionId) {
