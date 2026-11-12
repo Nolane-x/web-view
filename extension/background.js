@@ -77,6 +77,8 @@ async function removeLiveSession(surfaceId, reason, notifyWorkspace = true, deta
   const session = sessions[surfaceId];
   if (!session) return false;
   delete sessions[surfaceId];
+  const pendingStart = pendingLiveStarts.get(surfaceId);
+  if (pendingStart) pendingStart.reject(new Error(reason || "The live surface stopped before it connected."));
   clearLiveInputQueue(surfaceId, reason || "The live surface stopped.");
   await saveLiveSessions(sessions);
   const viewportTimer = pendingViewportRefreshes.get(session.sourceTabId);
