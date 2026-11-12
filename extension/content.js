@@ -68,7 +68,16 @@
       sendRuntime({
         type: "NOLANE_LIVE_SURFACE_ACK",
         surfaceId: message.surfaceId,
-        browserSessionId: String(message.browserSessionId || "")
+        browserSessionId: String(message.browserSessionId || ""),
+        videoInfo: message.videoInfo && typeof message.videoInfo === "object" ? {
+          width: Number.isFinite(message.videoInfo.width) ? message.videoInfo.width : null,
+          height: Number.isFinite(message.videoInfo.height) ? message.videoInfo.height : null,
+          frameRate: Number.isFinite(message.videoInfo.frameRate) ? message.videoInfo.frameRate : null,
+          presentedFrames: Number.isFinite(message.videoInfo.presentedFrames) ? message.videoInfo.presentedFrames : null,
+          mediaTime: Number.isFinite(message.videoInfo.mediaTime) ? message.videoInfo.mediaTime : null,
+          trackReadyState: message.videoInfo.trackReadyState === "live" || message.videoInfo.trackReadyState === "ended" ? message.videoInfo.trackReadyState : "unknown",
+          trackMuted: !!message.videoInfo.trackMuted
+        } : null
       });
       return;
     }
