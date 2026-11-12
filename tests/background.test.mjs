@@ -21,6 +21,8 @@ function createHarness() {
   const sentMessages = [];
   const streamRequests = [];
   const detachedTabs = [];
+  const tabUpdates = [];
+  const windowUpdates = [];
   const runtimeMessage = makeEvent();
   const debuggerEvent = makeEvent();
   const debuggerDetached = makeEvent();
@@ -94,6 +96,7 @@ function createHarness() {
         return { ok: true };
       },
       async update(tabId, changes) {
+        tabUpdates.push({ tabId, changes });
         const tab = tabs.get(tabId);
         if (!tab) throw new Error("No tab with id: " + tabId);
         Object.assign(tab, changes);
@@ -102,7 +105,7 @@ function createHarness() {
       onRemoved: tabRemoved
     },
     windows: {
-      async update() { return {}; }
+      async update(windowId, changes) { windowUpdates.push({ windowId, changes }); return {}; }
     },
     debugger: {
       onEvent: debuggerEvent,
@@ -164,6 +167,8 @@ function createHarness() {
     sentMessages,
     streamRequests,
     detachedTabs,
+    tabUpdates,
+    windowUpdates,
     sessionStore,
     localStore
   };
@@ -185,6 +190,8 @@ test("live capture is tied to the active source tab and the exact Nolane consume
 
   assert.equal(started.ok, true);
   assert.equal(started.title, "YouPass dashboard");
+  assert.ok(h.tabUpdates.some((update) => update.tabId === 20 && update.changes.active === true));
+  assert.ok(h.windowUpdates.some((update) => update.windowId === 1 && update.changes.focused === true));
   assert.equal(h.streamRequests.length, 1);
   assert.equal(
     JSON.stringify(h.streamRequests[0]),
