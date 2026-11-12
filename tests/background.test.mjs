@@ -714,7 +714,7 @@ test("popup diagnostics are scoped to the companion and omit raw page URLs", asy
   );
   assert.equal(diagnostic.ok, true);
   assert.equal(diagnostic.extensionVersion, "0.2.4");
-  assert.deepEqual(diagnostic.capturedTabs, [{ tabId: 10, status: "active", fullscreen: false }]);
+  assert.equal(JSON.stringify(diagnostic.capturedTabs), JSON.stringify([{ tabId: 10, status: "active", fullscreen: false }]));
   assert.ok(Array.isArray(diagnostic.liveSessions));
   const denied = await h.send(
     { type: "NOLANE_GET_DIAGNOSTICS" },
