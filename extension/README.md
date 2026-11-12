@@ -1,6 +1,6 @@
-# Nolane Browser Companion 0.2.2 — Live Chrome Surface
+# Nolane Browser Companion 0.2.3 — Live Chrome Surface
 
-This release adds **Live Chrome Surface**. It does not try to load the remote website inside an iframe. Instead, it captures the actual active Chrome tab as a video-and-audio stream and renders that stream on the Nolane canvas. Pointer and keyboard events on the canvas are sent back to that same source tab through Chrome DevTools Protocol (CDP).
+This release adds **Live Chrome Surface**. It does not try to load the remote website inside an iframe. Instead, it captures the actual active Chrome tab as a video-and-audio stream and renders that stream on the Nolane canvas. Pointer and keyboard events are sent back through Chrome DevTools Protocol (CDP) when Chrome permits debugger attachment; otherwise the canvas explicitly enters view-only mode.
 
 ## Install / replace the previous version
 
@@ -12,15 +12,15 @@ This release adds **Live Chrome Surface**. It does not try to load the remote we
 6. Keep https://nolane-x.github.io/web-view/ open in one Chrome tab and refresh it.
 7. Open the website you want to place inside Nolane (for example YouPass) in a separate normal Chrome tab, and sign in there as usual.
 8. While the website tab is active, click the Nolane Companion toolbar icon and choose **Stream this tab to Nolane**.
-9. Once the live video is successfully consumed, the extension automatically returns Chrome to the Nolane tab. The real page should appear as an interactive live surface. Click inside it to route pointer and keyboard input to the source tab.
+9. Once the live video is successfully consumed, the extension automatically returns Chrome to the Nolane tab. The page appears as an interactive surface when CDP is available, or a clearly labelled view-only surface when Chrome blocks debugger access. Use Focus source for interactions in view-only mode.
 
 The capture action must be started from the active source website tab. This is deliberate: Chrome's activeTab grant and tab capture are user-invoked capabilities. A background tab cannot be captured without an explicit user action.
 
 ## Powerful permission warning — read this before installing
 
-Version 0.2.2 requires activeTab, tabCapture and **debugger**. Chrome will display strong permission warnings. In particular, its debugger permission can technically access the page debugger backend and read/change data on websites. tabCapture is also classified as broad access by Chrome's warning UI. The debugger is now an optional capability at runtime: when Chrome refuses CDP access, Nolane still attempts local video capture and falls back to a view-only card.
+Version 0.2.3 requires activeTab, tabCapture and **debugger**. Chrome will display strong permission warnings. In particular, its debugger permission can technically access the page debugger backend and read/change data on websites. tabCapture is also classified as broad access by Chrome's warning UI. The debugger is now an optional capability at runtime: when Chrome refuses CDP access, Nolane still attempts local video capture and falls back to a view-only card.
 
-The implementation's intended path is narrower than the permission itself: the user starts capture from the currently active tab; the service worker records that source tab ID, the designated Nolane consumer-tab ID, the user's local browser-profile ID and the source origin; its CDP handler exposes only fixed viewport, mouse, keyboard and text-input operations. The code does not call the Cookies API, Network domain, DOM snapshot, response-body or page-storage APIs. The optional tabs permission remains separate and is only for listing/importing selected tab titles and URLs.
+The implementation's intended path is narrower than the permission itself: the user starts capture from the currently active tab; the service worker records that source tab ID, the designated Nolane consumer-tab ID, the user's local browser-profile ID and the source origin; its CDP handler exposes only fixed viewport, mouse, keyboard and text-input operations. CDP is optional and a failed attachment cannot block the independent tabCapture video path. The source tab's top-level URL is monitored with chrome.tabs.onUpdated, so a cross-origin navigation stops the stream even in view-only mode. The code does not call the Cookies API, Network domain, DOM snapshot, response-body or page-storage APIs. The optional tabs permission remains separate and is only for listing/importing selected tab titles and URLs.
 
 No capture stream, cookies, passwords, page HTML or screen image are uploaded to a server. The video-and-audio stream is consumed directly by the designated Nolane workspace tab. There is no WebRTC relay, STUN/TURN service, remote proxy, external database or server-side browser. Only install this unpacked extension if you trust this repository's source code.
 
@@ -29,6 +29,7 @@ No capture stream, cookies, passwords, page HTML or screen image are uploaded to
 - The actual Chrome-rendered page, including its existing session, origin, cookies and storage (they remain inside the original tab).
 - Mouse movement, clicks, right-click, wheel scrolling and keyboard events forwarded through CDP when the debugger can attach.
 - Video-only mode when another extension iframe, an existing DevTools session or a Chromium restriction prevents debugger attachment. The canvas reports this mode explicitly, keeps the live video running and offers Focus source instead of claiming pointer/keyboard control.
+- The source tab's top-level URL is monitored separately from CDP. Same-origin navigation is allowed; cross-origin navigation ends the stream in both interactive and view-only modes.
 - The source page remains a real browser page; the canvas displays a video/control mirror. Up to three tabs can be live at once in a workspace; saved cards are not subject to this concurrent capture limit.
 - Live surfaces are stopped when the source tab closes, capture ends, the debugger detaches, the top-level origin changes, the workspace is switched/deleted, or its canvas card is removed.
 - The source viewport size is refreshed when Chrome reports a frame resize, so pointer coordinates stay aligned after resizing the browser window.
