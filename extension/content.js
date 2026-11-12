@@ -1,7 +1,7 @@
 (() => {
   "use strict";
   const WORKSPACE_ORIGIN = "https://nolane-x.github.io";
-  const PROFILE_VERSION = "0.2.1";
+  const PROFILE_VERSION = "0.2.2";
 
   function sendToPage(type, payload) {
     window.postMessage({ source: "nolane-companion", type, ...(payload || {}) }, WORKSPACE_ORIGIN);
@@ -119,7 +119,9 @@
         title: message.title,
         url: message.url,
         viewport: message.viewport,
-        streamId: message.streamId
+        streamId: message.streamId,
+        interactive: !!message.interactive,
+        interactionReason: String(message.interactionReason || "").slice(0, 360)
       });
       sendResponse({ ok: true });
       return;
