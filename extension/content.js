@@ -1,7 +1,7 @@
 (() => {
   "use strict";
   const WORKSPACE_ORIGIN = "https://nolane-x.github.io";
-  const PROFILE_VERSION = "0.2.0";
+  const PROFILE_VERSION = "0.2.1";
 
   function sendToPage(type, payload) {
     window.postMessage({ source: "nolane-companion", type, ...(payload || {}) }, WORKSPACE_ORIGIN);
@@ -77,6 +77,7 @@
       sendRuntime({
         type: "NOLANE_LIVE_SURFACE_ERROR",
         surfaceId: message.surfaceId,
+        browserSessionId: String(message.browserSessionId || ""),
         error: String(message.error || "Could not create the live stream").slice(0, 220)
       });
       return;
