@@ -36,6 +36,7 @@
   let spaces = [];
   let activeSpaceId = "personal";
   let bridgeConnected = false;
+  let bridgeSessionId = "";
 
   const uid = () => "node-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -338,6 +339,7 @@
       clean.description = String(node.description || "A website in your workspace.").slice(0, 240);
       if (Number.isInteger(node.browserTabId) && node.browserTabId >= 0) clean.browserTabId = node.browserTabId;
       if (Number.isInteger(node.browserWindowId) && node.browserWindowId >= 0) clean.browserWindowId = node.browserWindowId;
+      if (typeof node.browserSessionId === "string" && node.browserSessionId.length >= 20 && node.browserSessionId.length <= 80) clean.browserSessionId = node.browserSessionId;
     } else {
       clean.content = String(node.content || "").slice(0, 12000);
       clean.color = ["lavender", "mint", "peach", "blue"].includes(node.color) ? node.color : "lavender";
@@ -587,19 +589,20 @@
   }
 
   function openWebsite(node) {
-    if (node.browserTabId !== undefined && bridgeConnected) {
-      window.postMessage({ source: "nolane-workspace", type: "FOCUS_BROWSER_TAB", tabId: node.browserTabId }, location.origin);
+    if (node.browserTabId !== undefined && bridgeConnected && node.browserSessionId && node.browserSessionId === bridgeSessionId) {
+      window.postMessage({ source: "nolane-workspace", type: "FOCUS_BROWSER_TAB", tabId: node.browserTabId, browserSessionId: node.browserSessionId, expectedOrigin: new URL(node.url).origin }, location.origin);
       toast("Switching to the original Chrome tab for " + node.title + ".");
       return;
     }
-    if (node.browserTabId !== undefined && !bridgeConnected) {
-      toast("Browser Companion is disconnected. Opening the website URL instead.");
+    if (node.browserTabId !== undefined && (!bridgeConnected || !node.browserSessionId || node.browserSessionId !== bridgeSessionId)) {
+      toast("This tab card belongs to another or disconnected Chrome profile. Opening the website URL instead.");
     }
     openWebsiteUrl(node);
   }
 
-  function setBridgeConnected(connected) {
+  function setBridgeConnected(connected, sessionId) {
     bridgeConnected = !!connected;
+    bridgeSessionId = bridgeConnected && typeof sessionId === "string" ? sessionId : "";
     const title = $("#bridgeStatusTitle");
     const detail = $("#bridgeStatusText");
     const pill = $("#bridgeStatusPill");
@@ -614,8 +617,9 @@
     if (footer) footer.textContent = bridgeConnected ? "Local companion · Connected" : "Optional local companion · MV3";
   }
 
-  function addBrowserTabsToWorkspace(tabs) {
+  function addBrowserTabsToWorkspace(tabs, sessionId) {
     if (!Array.isArray(tabs) || !tabs.length) return;
+    if (typeof sessionId !== "string" || sessionId.length < 20 || sessionId.length > 80) return toast("The companion did not provide a valid browser profile identity.", "error");
     const valid = tabs.map((tab) => {
       if (!tab || !Number.isInteger(tab.id)) return null;
       try {
@@ -634,11 +638,12 @@
     let added = 0;
     let updated = 0;
     valid.forEach((tab, index) => {
-      const existing = nodes.find((node) => node.type === "website" && node.browserTabId === tab.id);
+      const existing = nodes.find((node) => node.type === "website" && node.browserTabId === tab.id && node.browserSessionId === sessionId);
       if (existing) {
         existing.url = tab.url;
         existing.title = tab.title || hostOf(tab.url);
         existing.browserWindowId = tab.windowId;
+        existing.browserSessionId = sessionId;
         existing.description = "Imported from Chrome. Switch to the original tab to keep using its current login session.";
         updated += 1;
         return;
@@ -654,6 +659,7 @@
         description: "Imported from Chrome. Switch to the original tab to keep using its current login session.",
         browserTabId: tab.id,
         browserWindowId: tab.windowId,
+        browserSessionId: sessionId,
         x: Math.round(center.x - 600 + column * 420),
         y: Math.round(center.y - 170 + row * 330),
         w: 390,
@@ -674,17 +680,18 @@
     const message = event.data;
     if (!message || message.source !== "nolane-companion") return;
     if (message.type === "COMPANION_READY") {
-      setBridgeConnected(true);
+      setBridgeConnected(!!message.browserSessionId, message.browserSessionId || "");
     } else if (message.type === "TABS_IMPORTED") {
-      setBridgeConnected(true);
-      addBrowserTabsToWorkspace(message.tabs);
+      setBridgeConnected(!!message.browserSessionId, message.browserSessionId || "");
+      addBrowserTabsToWorkspace(message.tabs, message.browserSessionId);
     } else if (message.type === "TAB_FOCUSED") {
       if (message.ok) toast("Chrome tab focused.");
       else {
-        const node = nodes.find((item) => item.type === "website" && item.browserTabId === message.tabId);
+        const node = nodes.find((item) => item.type === "website" && item.browserTabId === message.tabId && item.browserSessionId === message.browserSessionId);
         if (node) {
           node.browserTabId = undefined;
           node.browserWindowId = undefined;
+          node.browserSessionId = undefined;
           scheduleSave();
           renderNodes();
           openWebsiteUrl(node);
