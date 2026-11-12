@@ -54,7 +54,7 @@
   function defaultNodes() {
     return [
       {
-        id: "welcome-note", type: "note", title: "Start with a blank canvas", content: "Your web, arranged your way.\\n\\nAdd the websites you use, make notes, and move everything into a workspace that makes sense to you.\\n\\nThis space is private to this browser.", color: "lavender",
+        id: "welcome-note", type: "note", title: "Start with a blank canvas", content: "Your web, arranged your way.\n\nAdd the websites you use, make notes, and move everything into a workspace that makes sense to you.\n\nThis space is private to this browser.", color: "lavender",
         x: 60, y: 165, w: 295, h: 276, z: 3, createdAt: new Date().toISOString()
       },
       {
@@ -66,7 +66,7 @@
         x: 825, y: 160, w: 390, h: 315, z: 5, createdAt: new Date().toISOString()
       },
       {
-        id: "idea-note", type: "note", title: "A workspace that feels like yours", content: "Think beyond tabs.\\n\\nGroup tools by project. Keep research beside the source. Put notes next to the websites they belong to.\\n\\nThe canvas can grow in every direction.", color: "mint",
+        id: "idea-note", type: "note", title: "A workspace that feels like yours", content: "Think beyond tabs.\n\nGroup tools by project. Keep research beside the source. Put notes next to the websites they belong to.\n\nThe canvas can grow in every direction.", color: "mint",
         x: 395, y: 510, w: 820, h: 205, z: 2, createdAt: new Date().toISOString()
       }
     ];
@@ -244,12 +244,13 @@
     scheduleSave();
   }
 
-  function fitCanvas() {
-    if (!nodes.length) { view = { x: 30, y: 30, scale: 1 }; applyView(); return; }
-    const minX = Math.min(...nodes.map((node) => node.x));
-    const minY = Math.min(...nodes.map((node) => node.y));
-    const maxX = Math.max(...nodes.map((node) => node.x + node.w));
-    const maxY = Math.max(...nodes.map((node) => node.y + node.h));
+  function fitCanvas(sourceNodes) {
+    const group = Array.isArray(sourceNodes) ? sourceNodes : nodes;
+    if (!group.length) { view = { x: 30, y: 30, scale: 1 }; applyView(); return; }
+    const minX = Math.min(...group.map((node) => node.x));
+    const minY = Math.min(...group.map((node) => node.y));
+    const maxX = Math.max(...group.map((node) => node.x + node.w));
+    const maxY = Math.max(...group.map((node) => node.y + node.h));
     const rect = canvas.getBoundingClientRect();
     const pad = 100;
     const scale = clamp(Math.min((rect.width - pad * 2) / Math.max(1, maxX - minX), (rect.height - pad * 2) / Math.max(1, maxY - minY)), MIN_SCALE, 1.25);
@@ -472,7 +473,8 @@
 
   function beginPan(event) {
     if (event.button !== 0 && event.button !== 1) return;
-    if (event.target.closest(".node,.canvas-chip,.canvas-controls,.minimap,button,a,input")) return;
+    if (!spacePressed && event.target.closest(".node,.canvas-chip,.canvas-controls,.minimap,button,a,input")) return;
+    if (spacePressed && event.target.closest(".canvas-controls,.minimap,button,a,input")) return;
     panState = { pointerX: event.clientX, pointerY: event.clientY, x: view.x, y: view.y };
     canvas.classList.add("is-panning");
     canvas.setPointerCapture?.(event.pointerId);
@@ -480,7 +482,7 @@
   }
 
   function createWebsite(rawUrl, title) {
-    if (nodes.length >= MAX_NODES) return toast("This workspace has reached its current limit of " + MAX_NODES + " items.", "error");
+    if (nodes.length >= MAX_NODES) { toast("This workspace has reached its current limit of " + MAX_NODES + " items.", "error"); return false; }
     let url;
     try { url = normalizeUrl(rawUrl); } catch (error) { return toast(error.message, "error"); }
     const point = worldPoint(canvas.clientWidth / 2, canvas.clientHeight / 2);
@@ -496,10 +498,11 @@
     selectNode(node.id);
     scheduleSave();
     toast("Added " + node.title + " to your canvas.");
+    return true;
   }
 
   function createNote(title, content, color) {
-    if (nodes.length >= MAX_NODES) return toast("This workspace has reached its current limit of " + MAX_NODES + " items.", "error");
+    if (nodes.length >= MAX_NODES) { toast("This workspace has reached its current limit of " + MAX_NODES + " items.", "error"); return false; }
     const point = worldPoint(canvas.clientWidth / 2, canvas.clientHeight / 2);
     const node = {
       id: editingId || uid(), type: "note", title: (title || "Untitled note").trim().slice(0, 120) || "Untitled note",
@@ -520,6 +523,7 @@
     selectNode(node.id);
     scheduleSave();
     toast("Note saved to your workspace.");
+    return true;
   }
 
   function editNote(node) {
@@ -563,18 +567,13 @@
     updateViewFilter();
     if (nextView !== "canvas") {
       const visible = nodes.filter((node) => (nextView === "websites" ? node.type === "website" : node.type === "note"));
-      if (visible.length) {
-        const old = nodes;
-        nodes = visible;
-        fitCanvas();
-        nodes = old;
-      }
+      if (visible.length) fitCanvas(visible);
     }
   }
 
   function updateMinimap() {
     const content = $("#minimapContent");
-    if (!content || !$("#minimap").classList.contains("hidden") === false) return;
+    if (!content || $("#minimap").classList.contains("hidden")) return;
     const valid = nodes.filter((node) => node && Number.isFinite(node.x));
     content.querySelectorAll(".minimap-node").forEach((el) => el.remove());
     if (!valid.length) return;
@@ -660,12 +659,11 @@
     fileInput.addEventListener("change", (event) => importWorkspace(event.target.files[0]));
     $("#createButton").addEventListener("click", () => {
       if (activeTab === "website") {
-        createWebsite($("#websiteUrl").value, $("#websiteTitle").value);
-        if (nodes.length && !nodes.some((node) => node.url === normalizeUrlSafe($("#websiteUrl").value))) {}
-        if (addDialog.open) addDialog.close();
+        const created = createWebsite($("#websiteUrl").value, $("#websiteTitle").value);
+        if (created && addDialog.open) addDialog.close();
       } else {
-        createNote($("#noteTitle").value, $("#noteBody").value, noteColor);
-        if (addDialog.open) addDialog.close();
+        const created = createNote($("#noteTitle").value, $("#noteBody").value, noteColor);
+        if (created && addDialog.open) addDialog.close();
       }
     });
     $$(".modal-tab").forEach((button) => button.addEventListener("click", () => switchTab(button.dataset.tab)));
@@ -730,11 +728,7 @@
     });
   }
 
-  function normalizeUrlSafe(value) {
-    try { return normalizeUrl(value); } catch (_) { return ""; }
-  }
-
-  function registerServiceWorker() {
+    function registerServiceWorker() {
     if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
       navigator.serviceWorker.register("./sw.js", { scope: "./" }).catch((error) => console.warn("Service worker registration failed:", error));
     }
