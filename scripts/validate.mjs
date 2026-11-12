@@ -46,8 +46,14 @@ else pass("Static app shell assets are present.");
 if (/@import\s+url\(/i.test(css)) fail("CSS imports a remote stylesheet. Keep the shell dependency-free.");
 else pass("No remote CSS imports.");
 
-if (!/frame\.setAttribute\(["']sandbox["']/.test(js) || !/allow-scripts/.test(js) || /allow-same-origin/.test(js)) fail("Embedded website iframe must use a restricted, non-same-origin sandbox.");
-else pass("Embedded website surface uses a restricted iframe sandbox.");
+if (!/const SAFE_FRAME_SANDBOX =/.test(js) || !/allow-scripts/.test(js) || /SAFE_FRAME_SANDBOX[^;]*allow-same-origin/.test(js)) fail("Safe Preview must keep scripts enabled but omit allow-same-origin.");
+else pass("Safe Preview retains its restricted opaque-origin sandbox.");
+if (!/const COMPATIBILITY_FRAME_SANDBOX = SAFE_FRAME_SANDBOX \+ " allow-same-origin allow-storage-access-by-user-activation"/.test(js)) fail("Compatibility Preview sandbox is missing its explicit origin/storage tokens.");
+else pass("Compatibility Preview uses a separate, explicit opt-in sandbox policy.");
+if (!/window\.confirm\([\s\S]*Only enable this for a website you trust/.test(js) || !/mode === "compat"/.test(js)) fail("Compatibility Preview must require an explicit trust confirmation.");
+else pass("Compatibility Preview requires an explicit user confirmation.");
+if (!/node\.embedMode = node\.embedMode === "compat" \? "compat" : "safe"/.test(js)) fail("Website preview mode is not normalized when loading or importing workspaces.");
+else pass("Website preview mode persists safely through workspace normalization.");
 
 if (!/indexedDB\.open/.test(js) || !/localStorage\.setItem/.test(js)) fail("Local persistence or fallback is missing.");
 else pass("Local persistence and fallback are present.");
