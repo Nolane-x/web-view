@@ -435,6 +435,7 @@
     nodes.forEach((node) => world.appendChild(createNodeElement(node)));
     updateViewFilter();
     updateCounts();
+    renderSpaces();
     updateMinimap();
   }
 
@@ -492,17 +493,24 @@
   }
 
   function updateViewFilter() {
+    const query = $("#searchInput").value.trim().toLowerCase();
+    let visibleCount = 0;
     $$(".node", world).forEach((element) => {
       const node = nodes.find((item) => item.id === element.dataset.id);
-      const query = $("#searchInput").value.trim().toLowerCase();
       const viewMatch = activeView === "canvas" || (activeView === "websites" && node && node.type === "website") || (activeView === "notes" && node && node.type === "note");
       const searchText = node ? [node.title, node.url || "", node.content || "", node.description || ""].join(" ").toLowerCase() : "";
-      element.classList.toggle("hidden-by-search", !viewMatch || (query && !searchText.includes(query)));
+      const matches = !!(viewMatch && (!query || searchText.includes(query)));
+      element.classList.toggle("hidden-by-search", !matches);
+      if (matches) visibleCount += 1;
     });
     const titles = { canvas: "My workspace", websites: "Web surfaces", notes: "Notes" };
-    $("#viewTitle").textContent = titles[activeView] || titles.canvas;
-    $("#canvasHeading").textContent = activeView === "websites" ? "Your web, gathered." : activeView === "notes" ? "Thoughts, in context." : "A space for everything.";
+    $("#viewTitle").textContent = activeView === "canvas" ? (activeSpace()?.name || titles.canvas) : titles[activeView];
+    $("#canvasHeading").textContent = activeView === "websites" ? "Your web, gathered." : activeView === "notes" ? "Thoughts, in context." : (activeSpace()?.name || "A space for everything.");
     $("#canvasSubheading").textContent = activeView === "websites" ? "Open, arrange and revisit the websites you use." : activeView === "notes" ? "Keep ideas close to the things they belong to." : "Bring your web tools together. Arrange them your way.";
+    const empty = $("#emptyState");
+    empty.hidden = visibleCount > 0;
+    $("#emptyTitle").textContent = query ? "No matches yet." : activeView === "websites" ? "No websites here yet." : activeView === "notes" ? "No notes here yet." : "A fresh space.";
+    $("#emptyDescription").textContent = query ? "Try a different search, or clear the search field." : "Start with a website, a note, or both. Your workspace grows with you.";
     $$(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === activeView));
   }
 
