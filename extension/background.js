@@ -8,6 +8,7 @@ const LIVE_SESSIONS_KEY = "nolaneLiveSessions";
 const LIVE_START_TIMEOUT_MS = 12000;
 const MAX_LIVE_SURFACES_PER_WORKSPACE = 3;
 const pendingLiveStarts = new Map();
+const pendingViewportRefreshes = new Map();
 
 const profileIdPromise = chrome.storage.local.get([PROFILE_KEY]).then(async (stored) => {
   if (typeof stored[PROFILE_KEY] === "string" && stored[PROFILE_KEY].length > 20) return stored[PROFILE_KEY];
@@ -69,6 +70,9 @@ async function removeLiveSession(surfaceId, reason, notifyWorkspace = true, deta
   if (!session) return false;
   delete sessions[surfaceId];
   await saveLiveSessions(sessions);
+  const viewportTimer = pendingViewportRefreshes.get(session.sourceTabId);
+  if (viewportTimer) clearTimeout(viewportTimer);
+  pendingViewportRefreshes.delete(session.sourceTabId);
   if (detachDebugger) {
     try { await chrome.debugger.detach({ tabId: session.sourceTabId }); } catch (_) {}
   }
@@ -276,14 +280,49 @@ async function dispatchLiveInput(message, sender) {
 }
 
 chrome.debugger.onEvent.addListener((source, method, params) => {
-  if (method !== "Page.frameNavigated" || !Number.isInteger(source.tabId) || !params?.frame || params.frame.parentId) return;
-  void (async () => {
-    const sessions = await getLiveSessions();
-    const session = Object.values(sessions).find((item) => item.sourceTabId === source.tabId);
-    if (session && pageOrigin(params.frame.url || "") !== session.expectedOrigin) {
-      await removeLiveSession(session.surfaceId, "The source tab navigated to a different website.", true);
-    }
-  })();
+  if (!Number.isInteger(source.tabId)) return;
+
+  if (method === "Page.frameNavigated" && params?.frame && !params.frame.parentId) {
+    void (async () => {
+      const sessions = await getLiveSessions();
+      const session = Object.values(sessions).find((item) => item.sourceTabId === source.tabId);
+      if (session && pageOrigin(params.frame.url || "") !== session.expectedOrigin) {
+        await removeLiveSession(session.surfaceId, "The source tab navigated to a different website.", true);
+      }
+    })();
+    return;
+  }
+
+  if (method === "Page.frameResized") {
+    const previous = pendingViewportRefreshes.get(source.tabId);
+    if (previous) clearTimeout(previous);
+    const timer = setTimeout(() => {
+      pendingViewportRefreshes.delete(source.tabId);
+      void (async () => {
+        const sessions = await getLiveSessions();
+        const session = Object.values(sessions).find((item) => item.sourceTabId === source.tabId);
+        if (!session) return;
+        try {
+          const metrics = await chrome.debugger.sendCommand({ tabId: source.tabId }, "Page.getLayoutMetrics");
+          const visual = metrics.cssVisualViewport || {};
+          const layout = metrics.cssLayoutViewport || {};
+          const viewport = {
+            width: Math.max(1, Math.round(visual.clientWidth || layout.clientWidth || session.viewport.width)),
+            height: Math.max(1, Math.round(visual.clientHeight || layout.clientHeight || session.viewport.height))
+          };
+          if (viewport.width === session.viewport.width && viewport.height === session.viewport.height) return;
+          session.viewport = viewport;
+          await saveLiveSessions(sessions);
+          await sendToWorkspace(session, {
+            type: "NOLANE_LIVE_VIEWPORT_UPDATE",
+            surfaceId: session.surfaceId,
+            viewport
+          });
+        } catch (_) {}
+      })();
+    }, 120);
+    pendingViewportRefreshes.set(source.tabId, timer);
+  }
 });
 
 chrome.debugger.onDetach.addListener((source, reason) => {
