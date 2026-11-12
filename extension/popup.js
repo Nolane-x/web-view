@@ -72,19 +72,63 @@
     try {
       const result = await chrome.runtime.sendMessage({
         type: "NOLANE_START_LIVE_SURFACE",
-        tabId: activeTab.id
+        tabId: activeTab.id,
+        keepSourceVisible: $("#keepSourceVisible").checked
       });
       if (!result || !result.ok) throw new Error(result?.error || "The workspace did not accept the stream.");
+      const visibilityNote = result.keepSourceVisible
+        ? " Source tab stays selected in its own Chrome window."
+        : " Source tab may enter the background and some sites may pause.";
       if (result.interactive) {
-        status("Interactive live surface started for " + (result.title || safeHost(activeTab.url)) + ".", "success");
+        status("Interactive live surface started for " + (result.title || safeHost(activeTab.url)) + "." + visibilityNote, "success");
       } else {
-        status("Live video connected in view-only mode. " + (result.interactionReason || "Use Focus source to interact with the tab."), "success");
+        status("Live video connected in view-only mode. " + (result.interactionReason || "Use Focus source to interact with the tab.") + visibilityNote, "success");
       }
       $("#stopLiveButton").hidden = false;
     } catch (error) {
       status("Could not start live surface: " + (error.message || error), "error");
     } finally {
       await refreshActiveTab();
+    }
+  }
+
+
+  async function copyDiagnostics() {
+    const button = $("#diagnosticsButton");
+    button.disabled = true;
+    try {
+      const result = await chrome.runtime.sendMessage({ type: "NOLANE_GET_DIAGNOSTICS" });
+      if (!result?.ok) throw new Error(result?.error || "Could not collect compatibility diagnostics.");
+      const report = {
+        product: "Nolane Browser Companion",
+        generatedAt: new Date().toISOString(),
+        chromeVersion: (navigator.userAgent.match(/Chrome\/([0-9.]+)/) || [])[1] || "unknown",
+        extensionVersion: result.extensionVersion || "unknown",
+        sourceSite: safeHost(activeTab?.url || ""),
+        activeTab: !!activeTab?.active,
+        capturedTabs: result.capturedTabs || [],
+        liveSessions: result.liveSessions || [],
+        lastLiveDiagnostic: result.lastLiveDiagnostic || null
+      };
+      const output = JSON.stringify(report, null, 2);
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(output);
+      } else {
+        const helper = document.createElement("textarea");
+        helper.value = output;
+        helper.style.position = "fixed";
+        helper.style.opacity = "0";
+        document.body.appendChild(helper);
+        helper.select();
+        const copied = document.execCommand("copy");
+        helper.remove();
+        if (!copied) throw new Error("Clipboard access is unavailable in this popup.");
+      }
+      status("Compatibility report copied. It excludes cookies and full page URLs.", "success");
+    } catch (error) {
+      status("Could not copy diagnostics: " + (error.message || error), "error");
+    } finally {
+      button.disabled = false;
     }
   }
 
@@ -210,6 +254,7 @@
 
   $("#liveButton").addEventListener("click", startLiveSurface);
   $("#stopLiveButton").addEventListener("click", stopLiveSurface);
+  $("#diagnosticsButton").addEventListener("click", copyDiagnostics);
   $("#grantButton").addEventListener("click", grantPermission);
   $("#refreshButton").addEventListener("click", refreshTabs);
   $("#selectAllButton").addEventListener("click", () => {
