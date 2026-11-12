@@ -72,8 +72,8 @@ if (!html.includes('id="bridgeDialog"') || !html.includes("Companion not detecte
 else pass("Browser Companion status is explicit and does not imply a working extension.");
 
 const extensionManifest = JSON.parse(read("extension/manifest.json"));
-if (extensionManifest.version !== "0.2.2") fail("Browser Companion release metadata must be synchronized at version 0.2.2.");
-else pass("Browser Companion release metadata is synchronized at 0.2.2.");
+if (extensionManifest.version !== "0.2.3") fail("Browser Companion release metadata must be synchronized at version 0.2.3.");
+else pass("Browser Companion release metadata is synchronized at 0.2.3.");
 for (const file of ["extension/background.js", "extension/content.js", "extension/popup.html", "extension/popup.css", "extension/popup.js", "extension/README.md"]) {
   if (!fs.existsSync(path.join(root, file))) fail("Browser Companion asset missing: " + file);
 }
@@ -124,6 +124,10 @@ if (!/MAX_LIVE_INPUT_QUEUE/.test(background) || !/enqueueLiveInput/.test(backgro
 else pass("Live input uses a bounded queue and preserves discrete input order.");
 if (!/chrome\.tabs\.onUpdated/.test(background) || !/removeSessionsForWorkspaceTab/.test(background) || !/movedToAnotherOrigin/.test(background)) fail("Workspace lifecycle and source-origin changes must release live sessions without depending on CDP.");
 else pass("Workspace lifecycle and source-origin changes release live sessions without depending on CDP.");
+const focusIndex = background.indexOf("chrome.windows.update(workspaceTab.windowId, { focused: true })");
+const streamIndex = background.indexOf("chrome.tabCapture.getMediaStreamId");
+if (focusIndex < 0 || streamIndex < 0 || focusIndex > streamIndex) fail("The short-lived stream token must be minted only after the consumer tab is focused.");
+else pass("The stream token is minted immediately after consumer focus to reduce expiry risk.");
 if (!/audio:\s*\{\s*mandatory:\s*\{\s*chromeMediaSource:\s*"tab"/.test(js) || !/video:\s*\{\s*mandatory:\s*\{\s*chromeMediaSource:\s*"tab"/.test(js) || !/createMediaStreamSource/.test(js) || !/toggleLiveAudio/.test(js)) fail("Live surface audio/video tab-capture constraints or local mute controls are incomplete.");
 else pass("Live surface audio is routed locally with explicit mute control.");
 if (!/NOLANE_START_LIVE_SURFACE/.test(popup) || !/Stream this tab to Nolane/.test(popupHTML)) fail("Popup must expose explicit active-tab capture.");
