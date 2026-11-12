@@ -8,6 +8,8 @@
   const MAX_NODES = 150;
   const MIN_SCALE = 0.25;
   const MAX_SCALE = 2.2;
+  const SAFE_FRAME_SANDBOX = "allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals";
+  const COMPATIBILITY_FRAME_SANDBOX = SAFE_FRAME_SANDBOX + " allow-same-origin allow-storage-access-by-user-activation";
 
   const $ = (selector, root) => (root || document).querySelector(selector);
   const $$ = (selector, root) => Array.from((root || document).querySelectorAll(selector));
@@ -337,6 +339,7 @@
     if (node.type === "website") {
       try { clean.url = normalizeUrl(node.url); } catch (_) { return null; }
       clean.description = String(node.description || "A website in your workspace.").slice(0, 240);
+      clean.embedMode = node.embedMode === "compat" ? "compat" : "safe";
       if (Number.isInteger(node.browserTabId) && node.browserTabId >= 0) clean.browserTabId = node.browserTabId;
       if (Number.isInteger(node.browserWindowId) && node.browserWindowId >= 0) clean.browserWindowId = node.browserWindowId;
       if (typeof node.browserSessionId === "string" && node.browserSessionId.length >= 20 && node.browserSessionId.length <= 80) clean.browserSessionId = node.browserSessionId;
@@ -546,7 +549,9 @@
     if (action === "open-url" && node.type === "website") openWebsiteUrl(node);
     if (action === "delete") deleteNode(node.id);
     if (action === "edit") editNote(node);
-    if (action === "embed" && node.type === "website") activateEmbed(node, article);
+    if (action === "embed" && node.type === "website") activateEmbed(node, article, node.embedMode || "safe");
+    if (action === "compatibility" && node.type === "website") setEmbedMode(node, article, "compat");
+    if (action === "safe-mode" && node.type === "website") setEmbedMode(node, article, "safe");
     if (action === "reload") {
       const frame = $("iframe", article);
       if (frame) { frame.src = node.url; toast("Refreshing " + node.title + "."); }
@@ -558,29 +563,62 @@
     }
   }
 
-  function activateEmbed(node, article) {
+  function setEmbedMode(node, article, mode) {
+    if (mode === "compat") {
+      const accepted = window.confirm(
+        "Enable Compatibility Preview for " + hostOf(node.url) + "?\n\n" +
+        "This allows the site to use its normal origin and browser storage inside the frame. " +
+        "Only enable this for a website you trust. A site that redirects to this workspace's own origin could weaken the sandbox boundary. " +
+        "The website may still refuse iframe embedding. Continue?"
+      );
+      if (!accepted) return;
+    }
+    node.embedMode = mode === "compat" ? "compat" : "safe";
+    activateEmbed(node, article, node.embedMode);
+    scheduleSave();
+  }
+
+  function activateEmbed(node, article, mode) {
     if (new URL(node.url).origin === location.origin) return toast("For security, same-origin pages open in a separate tab instead of an embedded surface.", "error");
+    const selectedMode = mode === "compat" ? "compat" : "safe";
+    node.embedMode = selectedMode;
     const body = $(".node-body", article);
     if (!body) return;
     const wrap = document.createElement("div");
     wrap.className = "iframe-wrap";
     const toolbar = document.createElement("div");
     toolbar.className = "iframe-toolbar";
-    toolbar.innerHTML = '<strong>' + escapeHTML(hostOf(node.url)) + '</strong><span class="iframe-tools"><button class="iframe-tool" data-action="reload" title="Reload"><svg class="icon"><use href="#i-refresh"/></svg></button><button class="iframe-tool" data-action="open" title="Open in browser"><svg class="icon"><use href="#i-external"/></svg></button></span>';
+    const modeAction = selectedMode === "compat" ? "safe-mode" : "compatibility";
+    const modeLabel = selectedMode === "compat" ? "Safe mode" : "Compatibility";
+    const modeTitle = selectedMode === "compat"
+      ? "Return to the restricted sandbox"
+      : "Enable site origin and storage compatibility (trusted sites only)";
+    toolbar.innerHTML =
+      '<strong>' + escapeHTML(hostOf(node.url)) + '</strong>' +
+      '<span class="iframe-tools">' +
+      '<button class="iframe-mode" data-action="' + modeAction + '" title="' + modeTitle + '">' + modeLabel + '</button>' +
+      '<button class="iframe-tool" data-action="reload" title="Reload"><svg class="icon"><use href="#i-refresh"/></svg></button>' +
+      '<button class="iframe-tool" data-action="open" title="Open in browser"><svg class="icon"><use href="#i-external"/></svg></button>' +
+      '</span>';
     const frame = document.createElement("iframe");
     frame.className = "website-frame";
     frame.title = node.title;
     frame.loading = "eager";
     frame.referrerPolicy = "no-referrer";
     frame.allow = "clipboard-read; clipboard-write; fullscreen; picture-in-picture";
-    frame.setAttribute("sandbox", "allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals");
+    frame.setAttribute("sandbox", selectedMode === "compat" ? COMPATIBILITY_FRAME_SANDBOX : SAFE_FRAME_SANDBOX);
+    frame.dataset.embedMode = selectedMode;
     frame.src = node.url;
     const fallback = document.createElement("div");
     fallback.className = "frame-fallback";
-    fallback.textContent = "If this page is blank, the website may block embedding. Open it in a browser tab.";
+    fallback.textContent = selectedMode === "compat"
+      ? "Compatibility is enabled. If this still fails, the site may block framing or restrict third-party cookies. Open it in a browser tab."
+      : "Restricted sandbox is active. If the app needs origin/storage access, try Compatibility. Sites may still block framing.";
     wrap.append(toolbar, frame, fallback);
     body.replaceChildren(wrap);
-    toast("Trying to load " + node.title + ". Host policy may prevent embedding.");
+    toast(selectedMode === "compat"
+      ? "Compatibility Preview enabled for " + node.title + "."
+      : "Trying restricted preview for " + node.title + ".");
   }
 
   function openWebsiteUrl(node) {
@@ -791,7 +829,8 @@
     const host = hostOf(url);
     const node = {
       id: uid(), type: "website", title: (title || host).trim().slice(0, 120) || host, url,
-      description: "A website surface. Try embedding it, or open it in a browser tab.",
+      description: "A website surface. Try a restricted preview, enable compatibility for trusted sites, or open it in a browser tab.",
+      embedMode: "safe",
       x: Math.round(point.x - 190), y: Math.round(point.y - 145), w: 390, h: 300,
       z: ++zCounter, createdAt: new Date().toISOString()
     };
