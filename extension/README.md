@@ -20,7 +20,7 @@ The optional tabs permission is requested only after the user clicks the grant b
 
 Before import, the extension removes URL fragments and query parameters whose names resemble credentials, tokens, signatures, passwords, authorization codes or session IDs. This is a best-effort filter, not a guarantee that every secret-looking value can be identified; review the tabs you select.
 
-The extension sends only the selected tab ID, window ID, sanitized URL and title to the Nolane page. The browser keeps each website session in its original Chrome tab. Clicking **Switch to Chrome tab** focuses that tab; the workspace does not copy its login session into an iframe.
+The extension sends only the selected tab ID, window ID, sanitized URL and title to the Nolane page. The browser keeps each website session in its original Chrome tab. Each extension installation has a random profile identifier stored locally; imported cards are bound to that profile and the expected website origin. Clicking **Switch to Chrome tab** focuses the matching tab only when both checks pass. The workspace does not copy its login session into an iframe.
 
 ## Limitations
 
