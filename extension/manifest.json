@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Nolane Browser Companion",
+  "version": "0.1.0",
+  "description": "Import selected Chrome tabs into your private Nolane Infinite workspace.",
+  "permissions": [],
+  "optional_permissions": ["tabs"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Nolane Browser Companion",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://nolane-x.github.io/web-view/*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ]
+}
