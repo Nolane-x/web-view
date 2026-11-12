@@ -545,6 +545,7 @@
     inputProxy.setAttribute("aria-label", "Text input for the live Chrome page");
     inputProxy.setAttribute("autocorrect", "off");
     const video = document.createElement("video");
+    video.className = "live-surface-video";
     video.autoplay = true;
     video.muted = true;
     video.playsInline = true;
@@ -717,8 +718,65 @@
     toast(surface.audioEnabled ? "Source tab audio enabled." : "Source tab audio muted.");
   }
 
+  function waitForLiveVideoFrame(video, stream, timeoutMs = 10000) {
+    return new Promise((resolve, reject) => {
+      const track = stream.getVideoTracks()[0];
+      if (!track) {
+        reject(new Error("Chrome did not provide a video track for this tab."));
+        return;
+      }
+      let settled = false;
+      let frameCallbackPending = false;
+      const timer = setTimeout(() => finish(new Error(
+        "The tab stream opened, but Chrome did not deliver a decoded video frame within 10 seconds. Keep Nolane visible and reconnect."
+      )), timeoutMs);
+
+      function cleanup() {
+        clearTimeout(timer);
+        video.removeEventListener("loadeddata", checkFrame);
+        video.removeEventListener("playing", checkFrame);
+        video.removeEventListener("error", onVideoError);
+        track.removeEventListener("ended", onTrackEnded);
+      }
+      function finish(error) {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (error) reject(error);
+        else resolve({ width: video.videoWidth, height: video.videoHeight });
+      }
+      function onVideoError() {
+        finish(new Error("Chrome sent a tab stream, but the canvas could not decode its video."));
+      }
+      function onTrackEnded() {
+        finish(new Error("Chrome ended the source tab's video stream before the first frame arrived."));
+      }
+      function checkFrame() {
+        if (settled || video.readyState < 2 || video.videoWidth < 1 || video.videoHeight < 1) return;
+        if (typeof video.requestVideoFrameCallback === "function") {
+          if (frameCallbackPending) return;
+          frameCallbackPending = true;
+          video.requestVideoFrameCallback(() => finish());
+        } else {
+          finish();
+        }
+      }
+
+      video.addEventListener("loadeddata", checkFrame);
+      video.addEventListener("playing", checkFrame);
+      video.addEventListener("error", onVideoError);
+      track.addEventListener("ended", onTrackEnded, { once: true });
+      video.play().then(checkFrame).catch((error) => {
+        finish(new Error("Chrome refused to play the live video: " + String(error?.message || error)));
+      });
+      checkFrame();
+    });
+  }
+
   async function startLiveSurface(message) {
     let stream = null;
+    let audioContext = null;
+    let nodeId = "";
     try {
       if (!message || typeof message.surfaceId !== "string" || !Number.isInteger(message.sourceTabId) ||
           typeof message.streamId !== "string" || message.browserSessionId !== bridgeSessionId) {
@@ -757,7 +815,6 @@
         previous.stream.getTracks().forEach((track) => track.stop());
         previous.audioContext?.close().catch(() => {});
       }
-      let audioContext = null;
       let audioGainNode = null;
       try {
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -777,6 +834,7 @@
       const viewport = message.viewport && Number.isFinite(message.viewport.width) && Number.isFinite(message.viewport.height)
         ? { width: Math.max(1, message.viewport.width), height: Math.max(1, message.viewport.height) }
         : { width: 1280, height: 720 };
+      nodeId = node.id;
       liveSurfaces.set(node.id, {
         surfaceId: message.surfaceId,
         sourceTabId: message.sourceTabId,
@@ -791,6 +849,10 @@
       $("#searchInput").value = "";
       renderNodes();
       scheduleSave();
+      const nodeElement = $('.node[data-id="' + CSS.escape(node.id) + '"]', world);
+      const liveVideo = nodeElement && $(".live-surface-video", nodeElement);
+      if (!liveVideo) throw new Error("The live video element was not mounted in the canvas.");
+      await waitForLiveVideoFrame(liveVideo, stream);
       window.postMessage({
         source: "nolane-workspace",
         type: "LIVE_SURFACE_ACK",
@@ -801,7 +863,13 @@
       if (videoTrack) videoTrack.addEventListener("ended", () => stopLiveSurfaceById(message.surfaceId, "Chrome ended the captured tab stream.", false), { once: true });
       toast("Live Chrome surface connected: " + node.title + ".");
     } catch (error) {
+      const mounted = nodeId ? liveSurfaces.get(nodeId) : null;
+      if (mounted?.surfaceId === message?.surfaceId) liveSurfaces.delete(nodeId);
       if (stream) stream.getTracks().forEach((track) => track.stop());
+      if (audioContext && audioContext.state !== "closed") audioContext.close().catch(() => {});
+      if (nodeId) {
+        try { renderNodes(); } catch (_) {}
+      }
       if (message && typeof message.surfaceId === "string") {
         window.postMessage({
           source: "nolane-workspace",
