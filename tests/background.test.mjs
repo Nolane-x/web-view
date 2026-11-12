@@ -223,6 +223,49 @@ test("starting a second live surface for the same Chrome tab is rejected", async
   assert.equal(h.streamRequests.length, 1);
 });
 
+test("workspace enforces the concurrent live-surface limit", async () => {
+  const h = createHarness();
+  await h.send(
+    { type: "NOLANE_REGISTER_WORKSPACE" },
+    { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" }
+  );
+
+  for (const id of [10, 11, 12]) {
+    const current = h.tabs.get(id) || {
+      id,
+      windowId: 1,
+      active: true,
+      url: "https://site-" + id + ".example/",
+      title: "Site " + id,
+      width: 1280,
+      height: 720
+    };
+    h.tabs.set(id, { ...current, active: true });
+    const result = await h.send(
+      { type: "NOLANE_START_LIVE_SURFACE", tabId: id },
+      { url: "chrome-extension://nolane-test/popup.html" }
+    );
+    assert.equal(result.ok, true);
+  }
+
+  h.tabs.set(13, {
+    id: 13,
+    windowId: 1,
+    active: true,
+    url: "https://site-13.example/",
+    title: "Site 13",
+    width: 1280,
+    height: 720
+  });
+  const fourth = await h.send(
+    { type: "NOLANE_START_LIVE_SURFACE", tabId: 13 },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  assert.equal(fourth.ok, false);
+  assert.match(fourth.error, /3 live Chrome surfaces/i);
+  assert.equal(h.streamRequests.length, 3);
+});
+
 test("mouse and keyboard input are forwarded only from the registered workspace and source origin", async () => {
   const h = createHarness();
   const registered = await h.send(
