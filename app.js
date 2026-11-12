@@ -378,6 +378,7 @@
   }
 
   function activateEmbed(node, article) {
+    if (new URL(node.url).origin === location.origin) return toast("For security, same-origin pages open in a separate tab instead of an embedded surface.", "error");
     const body = $(".node-body", article);
     if (!body) return;
     const wrap = document.createElement("div");
@@ -391,6 +392,7 @@
     frame.loading = "eager";
     frame.referrerPolicy = "no-referrer";
     frame.allow = "clipboard-read; clipboard-write; fullscreen; picture-in-picture";
+    frame.sandbox = "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals";
     frame.src = node.url;
     const fallback = document.createElement("div");
     fallback.className = "frame-fallback";
@@ -511,7 +513,8 @@
 
   function createNote(title, content, color) {
     if (!editingId && nodes.length >= MAX_NODES) { toast("This workspace has reached its current limit of " + MAX_NODES + " items.", "error"); return false; }
-    const point = worldPoint(canvas.clientWidth / 2, canvas.clientHeight / 2);
+    const rect = canvas.getBoundingClientRect();
+    const point = worldPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
     const node = {
       id: editingId || uid(), type: "note", title: (title || "Untitled note").trim().slice(0, 120) || "Untitled note",
       content: String(content || "").slice(0, 12000), color: color || "lavender",
@@ -658,6 +661,7 @@
   }
 
   function initEvents() {
+    addForm.addEventListener("submit", (event) => event.preventDefault());
     $("#addButton").addEventListener("click", () => openAddDialog("website"));
     $("#bridgeButton").addEventListener("click", () => $("#bridgeDialog").showModal());
     $("#helpButton").addEventListener("click", () => $("#helpDialog").showModal());
