@@ -24,6 +24,7 @@ jobs:
       - name: Validate static app
         run: |
           node --check app.js
+          node scripts/validate.mjs
           test -s index.html
           test -s styles.css
           test -s manifest.webmanifest
