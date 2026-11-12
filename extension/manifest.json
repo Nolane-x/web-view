@@ -1,9 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Nolane Browser Companion",
-  "version": "0.1.0",
-  "description": "Import selected Chrome tabs into your private Nolane Infinite workspace.",
-  "permissions": ["storage"],
+  "version": "0.2.0",
+  "minimum_chrome_version": "116",
+  "description": "Bring real Chrome tabs into Nolane as local live video surfaces with pointer and keyboard control.",
+  "permissions": ["storage", "activeTab", "tabCapture", "debugger"],
   "optional_permissions": ["tabs"],
   "background": {
     "service_worker": "background.js"
