@@ -3,6 +3,7 @@
   "name": "Nolane Browser Companion",
   "version": "0.1.0",
   "description": "Import selected Chrome tabs into your private Nolane Infinite workspace.",
+  "permissions": ["storage"],
   "optional_permissions": ["tabs"],
   "background": {
     "service_worker": "background.js"
