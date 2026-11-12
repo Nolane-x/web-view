@@ -16,14 +16,31 @@
     if (!message || message.source !== "nolane-workspace") return;
 
     if (message.type === "PING_COMPANION") {
-      sendToPage("COMPANION_READY", { version: "0.1.0" });
+      chrome.runtime.sendMessage({ type: "NOLANE_GET_PROFILE_ID" })
+        .then((result) => sendToPage("COMPANION_READY", { version: "0.1.0", browserSessionId: result?.profileId || "" }))
+        .catch(() => sendToPage("COMPANION_READY", { version: "0.1.0", browserSessionId: "" }));
       return;
     }
 
     if (message.type === "FOCUS_BROWSER_TAB" && Number.isInteger(message.tabId)) {
-      chrome.runtime.sendMessage({ type: "NOLANE_FOCUS_TAB", tabId: message.tabId })
-        .then((result) => sendToPage("TAB_FOCUSED", { tabId: message.tabId, ok: !!result?.ok, error: result?.error || "" }))
-        .catch((error) => sendToPage("TAB_FOCUSED", { tabId: message.tabId, ok: false, error: String(error?.message || error) }));
+      chrome.runtime.sendMessage({
+        type: "NOLANE_FOCUS_TAB",
+        tabId: message.tabId,
+        profileId: message.browserSessionId,
+        expectedOrigin: message.expectedOrigin
+      })
+        .then((result) => sendToPage("TAB_FOCUSED", {
+          tabId: message.tabId,
+          browserSessionId: message.browserSessionId,
+          ok: !!result?.ok,
+          error: result?.error || ""
+        }))
+        .catch((error) => sendToPage("TAB_FOCUSED", {
+          tabId: message.tabId,
+          browserSessionId: message.browserSessionId,
+          ok: false,
+          error: String(error?.message || error)
+        }));
     }
   }
 
@@ -39,11 +56,13 @@
       url: tab.url,
       title: String(tab.title || tab.url).slice(0, 120)
     }));
-    sendToPage("TABS_IMPORTED", { tabs: selected });
+    sendToPage("TABS_IMPORTED", { tabs: selected, browserSessionId: String(message.browserSessionId || "") });
     sendResponse({ ok: true, count: selected.length });
     return true;
   });
 
   window.addEventListener("message", onPageMessage);
-  sendToPage("COMPANION_READY", { version: "0.1.0" });
+  chrome.runtime.sendMessage({ type: "NOLANE_GET_PROFILE_ID" })
+    .then((result) => sendToPage("COMPANION_READY", { version: "0.1.0", browserSessionId: result?.profileId || "" }))
+    .catch(() => {});
 })();
