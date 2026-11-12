@@ -472,7 +472,7 @@
     if (node.type === "website") {
       const previewActions = node.browserTabId !== undefined
         ? '<div class="preview-actions"><button class="mini-button" data-action="open"><svg class="icon"><use href="#i-external"/></svg> Switch to Chrome tab</button><button class="mini-button secondary" data-action="open-url">Open URL</button></div>'
-        : '<div class="preview-actions"><button class="mini-button" data-action="embed"><svg class="icon"><use href="#i-layout"/></svg> Try embedded view</button><button class="mini-button secondary" data-action="open"><svg class="icon"><use href="#i-external"/></svg> Open tab</button></div>';
+        : '<div class="preview-actions"><button class="mini-button" data-action="embed"><svg class="icon"><use href="#i-layout"/></svg> Try safe preview</button><button class="mini-button secondary" data-action="open"><svg class="icon"><use href="#i-external"/></svg> Open tab</button></div>';
       body.innerHTML =
         '<div class="web-preview">' +
           '<div class="preview-mark">' + escapeHTML(initials(hostOf(node.url))) + '</div>' +
