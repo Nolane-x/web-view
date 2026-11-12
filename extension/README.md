@@ -1,6 +1,6 @@
 # Nolane Browser Companion 0.2.0 — Live Chrome Surface
 
-This release adds **Live Chrome Surface**. It does not try to load the remote website inside an iframe. Instead, it captures the actual active Chrome tab as a video-only stream and renders that stream on the Nolane canvas. Pointer and keyboard events on the canvas are sent back to that same source tab through Chrome DevTools Protocol (CDP).
+This release adds **Live Chrome Surface**. It does not try to load the remote website inside an iframe. Instead, it captures the actual active Chrome tab as a video-and-audio stream and renders that stream on the Nolane canvas. Pointer and keyboard events on the canvas are sent back to that same source tab through Chrome DevTools Protocol (CDP).
 
 ## Install / replace the previous version
 
@@ -22,7 +22,7 @@ Version 0.2.0 requires activeTab, tabCapture and **debugger**. Chrome will displ
 
 The implementation's intended path is narrower than the permission itself: the user starts capture from the currently active tab; the service worker records that source tab ID, the designated Nolane consumer-tab ID, the user's local browser-profile ID and the source origin; its CDP handler exposes only fixed viewport, mouse, keyboard and text-input operations. The code does not call the Cookies API, Network domain, DOM snapshot, response-body or page-storage APIs. The optional tabs permission remains separate and is only for listing/importing selected tab titles and URLs.
 
-No capture stream, cookies, passwords, page HTML or screen image are uploaded to a server. The video-only stream is consumed directly by the designated Nolane workspace tab. There is no WebRTC relay, STUN/TURN service, remote proxy, external database or server-side browser. Only install this unpacked extension if you trust this repository's source code.
+No capture stream, cookies, passwords, page HTML or screen image are uploaded to a server. The video-and-audio stream is consumed directly by the designated Nolane workspace tab. There is no WebRTC relay, STUN/TURN service, remote proxy, external database or server-side browser. Only install this unpacked extension if you trust this repository's source code.
 
 ## What the live surface supports
 
