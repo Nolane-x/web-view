@@ -14,7 +14,7 @@ function makeEvent() {
   };
 }
 
-function createHarness() {
+function createHarness(options = {}) {
   const localStore = {};
   const sessionStore = {};
   const debugCalls = [];
@@ -28,6 +28,7 @@ function createHarness() {
   const debuggerEvent = makeEvent();
   const debuggerDetached = makeEvent();
   const tabRemoved = makeEvent();
+  const tabUpdated = makeEvent();
   const captureStatus = makeEvent();
 
   const tabs = new Map([
@@ -103,7 +104,8 @@ function createHarness() {
         Object.assign(tab, changes);
         return { ...tab };
       },
-      onRemoved: tabRemoved
+      onRemoved: tabRemoved,
+      onUpdated: tabUpdated
     },
     windows: {
       async update(windowId, changes) { windowUpdates.push({ windowId, changes }); return {}; }
@@ -114,6 +116,9 @@ function createHarness() {
       async attach(target, version) { debugCalls.push({ method: "attach", target, version }); },
       async sendCommand(target, method, params) {
         debugCalls.push({ method, target, params });
+        if (typeof options.beforeDebugCommand === "function") {
+          await options.beforeDebugCommand(target, method, params);
+        }
         if (method === "Page.getLayoutMetrics") {
           return {
             cssVisualViewport: { clientWidth: 1365, clientHeight: 768 },
@@ -171,7 +176,9 @@ function createHarness() {
     tabUpdates,
     windowUpdates,
     sessionStore,
-    localStore
+    localStore,
+    tabRemoved,
+    tabUpdated
   };
 }
 
@@ -336,6 +343,18 @@ test("mouse and keyboard input are forwarded only from the registered workspace 
   }, { tab: { id: 99 }, url: "https://attacker.example/" });
   assert.equal(wrongSender.ok, false);
   assert.match(wrongSender.error, /no longer connected to this browser profile/i);
+
+  const sameTabWrongOrigin = await h.send({
+    type: "NOLANE_LIVE_INPUT",
+    surfaceId: started.surfaceId,
+    browserSessionId: registered.profileId,
+    kind: "mousePressed",
+    x: 10,
+    y: 10,
+    button: "left"
+  }, { tab: { id: 20 }, url: "https://attacker.example/" });
+  assert.equal(sameTabWrongOrigin.ok, false);
+  assert.match(sameTabWrongOrigin.error, /no longer connected to this browser profile/i);
 });
 
 test("live input is rejected and the debugger is detached when the source changes origin", async () => {
@@ -391,4 +410,94 @@ test("capture cannot start from an arbitrary webpage or for an inactive tab", as
   assert.equal(inactive.ok, false);
   assert.match(inactive.error, /no longer the active tab/i);
   assert.equal(h.streamRequests.length, 0);
+});
+
+
+test("live input queue serializes events and coalesces pointer movement without crossing clicks", async () => {
+  let releaseFirstMove;
+  let signalFirstMove;
+  let blocked = false;
+  const firstMoveStarted = new Promise((resolve) => { signalFirstMove = resolve; });
+  const h = createHarness({
+    beforeDebugCommand: async (_target, method, params) => {
+      if (!blocked && method === "Input.dispatchMouseEvent" && params.type === "mouseMoved") {
+        blocked = true;
+        signalFirstMove();
+        await new Promise((resolve) => { releaseFirstMove = resolve; });
+      }
+    }
+  });
+  const registered = await h.send(
+    { type: "NOLANE_REGISTER_WORKSPACE" },
+    { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" }
+  );
+  const started = await h.send(
+    { type: "NOLANE_START_LIVE_SURFACE", tabId: 10 },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  const sender = { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" };
+  const sendMouse = (kind, x) => h.send({
+    type: "NOLANE_LIVE_INPUT",
+    surfaceId: started.surfaceId,
+    browserSessionId: registered.profileId,
+    kind,
+    x,
+    y: 40,
+    button: "left",
+    buttons: kind === "mousePressed" ? 1 : 0
+  }, sender);
+
+  const first = sendMouse("mouseMoved", 10);
+  await firstMoveStarted;
+  const second = sendMouse("mouseMoved", 20);
+  const third = sendMouse("mouseMoved", 30);
+  const click = sendMouse("mousePressed", 40);
+  const fourth = sendMouse("mouseMoved", 50);
+  releaseFirstMove();
+  const results = await Promise.all([first, second, third, click, fourth]);
+  assert.ok(results.every((result) => result.ok));
+
+  const dispatched = h.debugCalls
+    .filter((call) => call.method === "Input.dispatchMouseEvent")
+    .map((call) => [call.params.type, call.params.x]);
+  assert.deepEqual(dispatched, [
+    ["mouseMoved", 10],
+    ["mouseMoved", 30],
+    ["mousePressed", 40],
+    ["mouseMoved", 50]
+  ]);
+});
+
+test("reloading the Nolane workspace releases source debugger sessions", async () => {
+  const h = createHarness();
+  await h.send(
+    { type: "NOLANE_REGISTER_WORKSPACE" },
+    { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" }
+  );
+  const started = await h.send(
+    { type: "NOLANE_START_LIVE_SURFACE", tabId: 10 },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  assert.equal(started.ok, true);
+  h.tabUpdated.fire(20, { status: "loading" }, { id: 20 });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(Object.keys(h.sessionStore.nolaneLiveSessions || {}).length, 0);
+  assert.ok(h.detachedTabs.includes(10));
+});
+
+test("closing the Nolane workspace releases its source debugger sessions", async () => {
+  const h = createHarness();
+  await h.send(
+    { type: "NOLANE_REGISTER_WORKSPACE" },
+    { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" }
+  );
+  const started = await h.send(
+    { type: "NOLANE_START_LIVE_SURFACE", tabId: 10 },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  assert.equal(started.ok, true);
+  h.tabRemoved.fire(20, { windowId: 1, isWindowClosing: false });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(Object.keys(h.sessionStore.nolaneLiveSessions || {}).length, 0);
+  assert.ok(h.detachedTabs.includes(10));
 });
