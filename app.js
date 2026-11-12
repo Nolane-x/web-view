@@ -110,6 +110,7 @@
 
   function switchSpace(id) {
     if (id === activeSpaceId) return;
+    stopAllLiveSurfaces("Live surfaces stopped because you switched workspaces.");
     syncActiveSpace();
     const next = spaces.find((space) => space.id === id);
     if (!next) return;
@@ -534,6 +535,14 @@
     stage.tabIndex = 0;
     stage.setAttribute("role", "application");
     stage.setAttribute("aria-label", "Live Chrome page. Click to send mouse and keyboard input to the original tab.");
+    const inputProxy = document.createElement("textarea");
+    inputProxy.className = "live-input-proxy";
+    inputProxy.rows = 1;
+    inputProxy.autocomplete = "off";
+    inputProxy.autocapitalize = "off";
+    inputProxy.spellcheck = false;
+    inputProxy.setAttribute("aria-label", "Text input for the live Chrome page");
+    inputProxy.setAttribute("autocorrect", "off");
     const video = document.createElement("video");
     video.autoplay = true;
     video.muted = true;
@@ -542,9 +551,9 @@
     const hint = document.createElement("div");
     hint.className = "live-surface-hint";
     hint.textContent = "Click inside to interact · Input is sent to the original Chrome tab";
-    stage.append(video, hint);
+    stage.append(video, hint, inputProxy);
 
-    function coordinates(event) {
+    function coordinates(event, clampEdges = false) {
       const rect = stage.getBoundingClientRect();
       const videoWidth = video.videoWidth || surface.viewport.width;
       const videoHeight = video.videoHeight || surface.viewport.height;
@@ -558,10 +567,13 @@
       const offsetY = (rect.height - contentHeight) / 2;
       const localX = event.clientX - rect.left - offsetX;
       const localY = event.clientY - rect.top - offsetY;
-      if (localX < 0 || localY < 0 || localX > contentWidth || localY > contentHeight) return null;
+      const outside = localX < 0 || localY < 0 || localX > contentWidth || localY > contentHeight;
+      if (outside && !clampEdges) return null;
+      const mappedX = Math.max(0, Math.min(contentWidth, localX));
+      const mappedY = Math.max(0, Math.min(contentHeight, localY));
       return {
-        x: Math.max(0, Math.min(surface.viewport.width, localX / contentWidth * surface.viewport.width)),
-        y: Math.max(0, Math.min(surface.viewport.height, localY / contentHeight * surface.viewport.height))
+        x: Math.max(0, Math.min(surface.viewport.width, mappedX / contentWidth * surface.viewport.width)),
+        y: Math.max(0, Math.min(surface.viewport.height, mappedY / contentHeight * surface.viewport.height))
       };
     }
 
@@ -579,7 +591,7 @@
       if (surface.audioEnabled && surface.audioContext?.state === "suspended") surface.audioContext.resume().catch(() => {});
       const point = coordinates(event);
       if (!point) return;
-      stage.focus({ preventScroll: true });
+      inputProxy.focus({ preventScroll: true });
       try { stage.setPointerCapture(event.pointerId); } catch (_) {}
       postLiveInput(surface, {
         kind: "mousePressed", ...point,
@@ -602,7 +614,7 @@
       event.stopPropagation();
     });
     const endPointer = (event) => {
-      const point = coordinates(event);
+      const point = coordinates(event, true);
       if (point) {
         postLiveInput(surface, {
           kind: "mouseReleased", ...point,
@@ -627,6 +639,11 @@
     }, { passive: false });
     stage.addEventListener("contextmenu", (event) => { event.preventDefault(); event.stopPropagation(); });
     stage.addEventListener("keydown", (event) => {
+      if (event.isComposing || surface.composing) return;
+      const printable = event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey;
+      const pasteShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v";
+      // Let the focused proxy textarea handle printable text, paste and IME composition.
+      if (printable || pasteShortcut) return;
       postLiveInput(surface, {
         kind: "keyDown",
         key: event.key,
@@ -634,14 +651,16 @@
         keyCode: event.keyCode,
         location: event.location,
         repeat: event.repeat,
-        text: event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey ? event.key : "",
-        unmodifiedText: event.key.length === 1 ? event.key : "",
         ...modifiers(event)
       });
       event.preventDefault();
       event.stopPropagation();
     });
     stage.addEventListener("keyup", (event) => {
+      if (event.isComposing || surface.composing) return;
+      const printable = event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey;
+      const pasteShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v";
+      if (printable || pasteShortcut) return;
       postLiveInput(surface, {
         kind: "keyUp",
         key: event.key,
@@ -653,8 +672,18 @@
       event.preventDefault();
       event.stopPropagation();
     });
-    stage.addEventListener("compositionend", (event) => {
-      if (event.data) postLiveInput(surface, { kind: "insertText", text: event.data });
+    inputProxy.addEventListener("compositionstart", () => { surface.composing = true; });
+    inputProxy.addEventListener("compositionend", (event) => {
+      surface.composing = false;
+      const text = String(event.data || inputProxy.value || "").slice(0, 2000);
+      inputProxy.value = "";
+      if (text) postLiveInput(surface, { kind: "insertText", text });
+    });
+    inputProxy.addEventListener("input", (event) => {
+      if (event.isComposing || surface.composing) return;
+      const text = inputProxy.value.slice(0, 2000);
+      inputProxy.value = "";
+      if (text) postLiveInput(surface, { kind: "insertText", text });
     });
     root.append(toolbar, stage);
     video.play().catch(() => {});
@@ -691,7 +720,12 @@
         throw new Error("This browser page cannot consume a tab stream. Open Nolane over its HTTPS GitHub Pages address.");
       }
       stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
+        audio: {
+          mandatory: {
+            chromeMediaSource: "tab",
+            chromeMediaSourceId: message.streamId
+          }
+        },
         video: {
           mandatory: {
             chromeMediaSource: "tab",
@@ -772,7 +806,7 @@
     }
   }
 
-  function stopLiveSurfaceById(surfaceId, reason, notifyExtension = false) {
+  function stopLiveSurfaceById(surfaceId, reason, notifyExtension = false, render = true) {
     let nodeId = "";
     let surface = null;
     for (const [id, item] of liveSurfaces) {
@@ -790,8 +824,14 @@
         browserSessionId: surface.browserSessionId
       }, location.origin);
     }
-    renderNodes();
+    if (render) renderNodes();
     if (reason) toast(reason, "error");
+  }
+
+  function stopAllLiveSurfaces(reason) {
+    const surfaceIds = [...liveSurfaces.values()].map((surface) => surface.surfaceId);
+    surfaceIds.forEach((surfaceId) => stopLiveSurfaceById(surfaceId, null, true, false));
+    if (surfaceIds.length && reason) toast(reason);
   }
 
   function stopLiveSurface(nodeId) {
@@ -1052,6 +1092,8 @@
   function deleteNode(id) {
     const node = nodes.find((item) => item.id === id);
     if (!node) return;
+    const liveSurface = liveSurfaces.get(id);
+    if (liveSurface) stopLiveSurfaceById(liveSurface.surfaceId, null, true, false);
     nodes = nodes.filter((item) => item.id !== id);
     if (selectedId === id) selectedId = null;
     renderNodes();
