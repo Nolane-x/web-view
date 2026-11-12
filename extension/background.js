@@ -10,6 +10,7 @@ const MAX_LIVE_SURFACES_PER_WORKSPACE = 3;
 const pendingLiveStarts = new Map();
 const pendingViewportRefreshes = new Map();
 const liveInputQueues = new Map();
+const stoppedLiveSurfaceIds = new Set();
 const MAX_LIVE_INPUT_QUEUE = 96;
 
 const profileIdPromise = chrome.storage.local.get([PROFILE_KEY]).then(async (stored) => {
@@ -77,6 +78,8 @@ async function removeLiveSession(surfaceId, reason, notifyWorkspace = true, deta
   const session = sessions[surfaceId];
   if (!session) return false;
   delete sessions[surfaceId];
+  stoppedLiveSurfaceIds.add(surfaceId);
+  if (stoppedLiveSurfaceIds.size > 256) stoppedLiveSurfaceIds.delete(stoppedLiveSurfaceIds.values().next().value);
   const pendingStart = pendingLiveStarts.get(surfaceId);
   if (pendingStart) pendingStart.reject(new Error(reason || "The live surface stopped before it connected."));
   clearLiveInputQueue(surfaceId, reason || "The live surface stopped.");
@@ -148,6 +151,7 @@ async function startLiveSurface(message, sender) {
   let debuggerAttached = false;
   let interactive = false;
   let interactionReason = "";
+  let acknowledgement = null;
   let stage = "checking the browser tab";
   let viewport = {
     width: Math.max(1, Math.round(tab.width || 1280)),
@@ -203,17 +207,6 @@ async function startLiveSurface(message, sender) {
     sessions[surfaceId] = session;
     await saveLiveSessions(sessions);
 
-    const acknowledgement = new Promise((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
-        pendingLiveStarts.delete(surfaceId);
-        reject(new Error("Nolane did not confirm a decoded video frame. Keep the workspace tab open and try again."));
-      }, LIVE_START_TIMEOUT_MS);
-      pendingLiveStarts.set(surfaceId, {
-        resolve: () => { clearTimeout(timeoutId); pendingLiveStarts.delete(surfaceId); resolve(); },
-        reject: (reason) => { clearTimeout(timeoutId); pendingLiveStarts.delete(surfaceId); reject(reason); }
-      });
-    });
-
     stage = "bringing the Nolane canvas into view";
     const workspaceTab = await chrome.tabs.get(workspaceTabId);
     await chrome.tabs.update(workspaceTabId, { active: true });
@@ -225,6 +218,23 @@ async function startLiveSurface(message, sender) {
     const streamId = await chrome.tabCapture.getMediaStreamId({
       targetTabId: tab.id,
       consumerTabId: workspaceTabId
+    });
+    if (stoppedLiveSurfaceIds.has(surfaceId)) {
+      stoppedLiveSurfaceIds.delete(surfaceId);
+      throw new Error("The source tab navigated to a different website before capture started.");
+    }
+
+    // The acknowledgement timeout starts only after a stream token exists. This
+    // avoids an unobserved rejected Promise if tabCapture itself fails.
+    acknowledgement = new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        pendingLiveStarts.delete(surfaceId);
+        reject(new Error("Nolane did not confirm a decoded video frame. Keep the workspace tab open and try again."));
+      }, LIVE_START_TIMEOUT_MS);
+      pendingLiveStarts.set(surfaceId, {
+        resolve: () => { clearTimeout(timeoutId); pendingLiveStarts.delete(surfaceId); resolve(); },
+        reject: (reason) => { clearTimeout(timeoutId); pendingLiveStarts.delete(surfaceId); reject(reason); }
+      });
     });
 
     stage = "delivering the stream to the Nolane canvas";
@@ -247,6 +257,8 @@ async function startLiveSurface(message, sender) {
   } catch (error) {
     const pending = pendingLiveStarts.get(surfaceId);
     if (pending) pending.reject(error);
+    if (acknowledgement) await acknowledgement.catch(() => {});
+    stoppedLiveSurfaceIds.delete(surfaceId);
     const sessions = await getLiveSessions();
     delete sessions[surfaceId];
     await saveLiveSessions(sessions);
