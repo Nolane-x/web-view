@@ -9,24 +9,38 @@
 <body>
   <header class="header">
     <div class="mark">N</div>
-    <div><strong>Nolane Companion</strong><small>Bring selected Chrome tabs into your workspace</small></div>
+    <div><strong>Nolane Companion <span class="version">0.2.0</span></strong><small>Turn a real Chrome tab into a live canvas surface</small></div>
   </header>
   <main>
     <div class="privacy">
       <span class="privacy-dot"></span>
-      <p><strong>Local and permission-based.</strong> This extension reads tab titles and URLs only after you grant the optional Tabs permission. It never reads cookies, passwords or page contents. Credential-like URL parameters and fragments are removed before import.</p>
+      <p><strong>Local tab streaming.</strong> Live mode captures the active tab as video and sends pointer/keyboard input back to that same tab. No remote relay, cookies or page HTML are sent to a server.</p>
     </div>
+
+    <section class="live-panel">
+      <div class="live-kicker">LIVE CHROME SURFACE</div>
+      <h2 id="activeTabTitle">Checking active tab…</h2>
+      <p id="activeTabDescription">Open the website you want to place inside Nolane, then use this button.</p>
+      <button id="liveButton" class="primary wide" disabled>Stream this tab to Nolane</button>
+      <button id="stopLiveButton" class="quiet wide" hidden>Stop live stream</button>
+      <p class="fineprint">Nolane must already be open in another tab. Keep the source website open in Chrome while using its canvas surface.</p>
+    </section>
+
+    <section class="permission-panel">
+      <div><strong>Why does Chrome show a powerful permission warning?</strong><p>The extension uses Chrome's debugger interface only to forward your mouse and keyboard input to the tab you explicitly stream. Chrome's permission also technically allows broader debugging access, so install this unpacked extension only from source you trust.</p></div>
+    </section>
+
     <section id="permissionPanel" class="panel">
-      <h2>Connect your browser</h2>
-      <p>Grant access to the list of open tabs. You choose which ones to add.</p>
-      <button id="grantButton" class="primary">Grant tab-list permission</button>
+      <h2>Optional tab import</h2>
+      <p>Grant the Tabs permission only if you also want to scan open tabs and import their titles and URLs as cards.</p>
+      <button id="grantButton" class="quiet">Grant optional tab-list permission</button>
     </section>
     <section id="tabsPanel" class="panel" hidden>
       <div class="list-head"><div><h2>Open tabs</h2><p id="tabCount">Select the tabs you want in your canvas.</p></div><button id="refreshButton" class="quiet">Refresh</button></div>
       <div id="tabList" class="tab-list"></div>
       <div class="actions"><button id="selectAllButton" class="quiet">Select all</button><button id="importButton" class="primary" disabled>Import selected</button></div>
     </section>
-    <div id="status" class="status" role="status" aria-live="polite">Checking permission…</div>
+    <div id="status" class="status" role="status" aria-live="polite">Checking the active Chrome tab…</div>
     <button id="openWorkspaceButton" class="open-workspace">Open Nolane Infinite</button>
   </main>
   <script src="popup.js"></script>
