@@ -46,7 +46,7 @@ else pass("Static app shell assets are present.");
 if (/@import\s+url\(/i.test(css)) fail("CSS imports a remote stylesheet. Keep the shell dependency-free.");
 else pass("No remote CSS imports.");
 
-if (!/const SAFE_FRAME_SANDBOX =/.test(js) || !/allow-scripts/.test(js) || /SAFE_FRAME_SANDBOX[^;]*allow-same-origin/.test(js)) fail("Safe Preview must keep scripts enabled but omit allow-same-origin.");
+if (!/const SAFE_FRAME_SANDBOX = "allow-scripts/.test(js) || /const SAFE_FRAME_SANDBOX = "[^"]*allow-same-origin/.test(js)) fail("Safe Preview must keep scripts enabled but omit allow-same-origin.");
 else pass("Safe Preview retains its restricted opaque-origin sandbox.");
 if (!/const COMPATIBILITY_FRAME_SANDBOX = SAFE_FRAME_SANDBOX \+ " allow-same-origin allow-storage-access-by-user-activation"/.test(js)) fail("Compatibility Preview sandbox is missing its explicit origin/storage tokens.");
 else pass("Compatibility Preview uses a separate, explicit opt-in sandbox policy.");
