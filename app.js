@@ -35,6 +35,7 @@
   let view = { x: 25, y: 0, scale: 0.88 };
   let spaces = [];
   let activeSpaceId = "personal";
+  let bridgeConnected = false;
 
   const uid = () => "node-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -335,6 +336,8 @@
     if (node.type === "website") {
       try { clean.url = normalizeUrl(node.url); } catch (_) { return null; }
       clean.description = String(node.description || "A website in your workspace.").slice(0, 240);
+      if (Number.isInteger(node.browserTabId) && node.browserTabId >= 0) clean.browserTabId = node.browserTabId;
+      if (Number.isInteger(node.browserWindowId) && node.browserWindowId >= 0) clean.browserWindowId = node.browserWindowId;
     } else {
       clean.content = String(node.content || "").slice(0, 12000);
       clean.color = ["lavender", "mint", "peach", "blue"].includes(node.color) ? node.color : "lavender";
@@ -452,9 +455,9 @@
     header.className = "node-header";
     header.innerHTML =
       '<span class="node-favicon">' + (node.type === "website" ? escapeHTML(initials(hostOf(node.url))) : '<svg class="icon"><use href="#i-sticky"/></svg>') + '</span>' +
-      '<span class="node-title-wrap"><span class="node-title">' + escapeHTML(node.title) + '</span><span class="node-subtitle">' + escapeHTML(node.type === "website" ? hostOf(node.url) : "Personal note") + '</span></span>' +
+      '<span class="node-title-wrap"><span class="node-title">' + escapeHTML(node.title) + '</span><span class="node-subtitle">' + escapeHTML(node.type === "website" ? ((node.browserTabId !== undefined ? "Chrome tab · " : "") + hostOf(node.url)) : "Personal note") + '</span></span>' +
       '<span class="node-actions">' +
-        (node.type === "website" ? '<button class="node-action" data-action="open" title="Open in browser"><svg class="icon"><use href="#i-external"/></svg></button>' : '<button class="node-action" data-action="edit" title="Edit note"><svg class="icon"><use href="#i-sticky"/></svg></button>') +
+        (node.type === "website" ? '<button class="node-action" data-action="open" title="' + (node.browserTabId !== undefined ? "Switch to existing Chrome tab" : "Open in browser") + '"><svg class="icon"><use href="#i-external"/></svg></button>' : '<button class="node-action" data-action="edit" title="Edit note"><svg class="icon"><use href="#i-sticky"/></svg></button>') +
         '<button class="node-action" data-action="delete" title="Remove"><svg class="icon"><use href="#i-x"/></svg></button>' +
       '</span>';
     article.appendChild(header);
@@ -462,14 +465,17 @@
     const body = document.createElement("div");
     body.className = "node-body";
     if (node.type === "website") {
+      const previewActions = node.browserTabId !== undefined
+        ? '<div class="preview-actions"><button class="mini-button" data-action="open"><svg class="icon"><use href="#i-external"/></svg> Switch to Chrome tab</button><button class="mini-button secondary" data-action="open-url">Open URL</button></div>'
+        : '<div class="preview-actions"><button class="mini-button" data-action="embed"><svg class="icon"><use href="#i-layout"/></svg> Try embedded view</button><button class="mini-button secondary" data-action="open"><svg class="icon"><use href="#i-external"/></svg> Open tab</button></div>';
       body.innerHTML =
         '<div class="web-preview">' +
           '<div class="preview-mark">' + escapeHTML(initials(hostOf(node.url))) + '</div>' +
           '<div class="preview-title">' + escapeHTML(node.title) + '</div>' +
           '<div class="preview-domain">' + escapeHTML(hostOf(node.url)) + '</div>' +
           '<p class="preview-description">' + escapeHTML(node.description || "Open this website directly from your workspace.") + '</p>' +
-          '<div class="preview-actions"><button class="mini-button" data-action="embed"><svg class="icon"><use href="#i-layout"/></svg> Try embedded view</button><button class="mini-button secondary" data-action="open"><svg class="icon"><use href="#i-external"/></svg> Open tab</button></div>' +
-          '<div class="embed-note">Embedding depends on the website\'s own security policy.</div>' +
+          previewActions +
+          '<div class="embed-note">' + (node.browserTabId !== undefined ? "Uses the original Chrome tab and its existing session." : "Embedding depends on the website\\'s own security policy.") + '</div>' +
         '</div>';
     } else {
       body.innerHTML =
@@ -535,6 +541,7 @@
     if (!node) return;
     const action = button.dataset.action;
     if (action === "open" && node.type === "website") openWebsite(node);
+    if (action === "open-url" && node.type === "website") openWebsiteUrl(node);
     if (action === "delete") deleteNode(node.id);
     if (action === "edit") editNote(node);
     if (action === "embed" && node.type === "website") activateEmbed(node, article);
@@ -574,9 +581,121 @@
     toast("Trying to load " + node.title + ". Host policy may prevent embedding.");
   }
 
-  function openWebsite(node) {
+  function openWebsiteUrl(node) {
     window.open(node.url, "_blank", "noopener,noreferrer");
     toast("Opening " + node.title + " in a new browser tab.");
+  }
+
+  function openWebsite(node) {
+    if (node.browserTabId !== undefined && bridgeConnected) {
+      window.postMessage({ source: "nolane-workspace", type: "FOCUS_BROWSER_TAB", tabId: node.browserTabId }, location.origin);
+      toast("Switching to the original Chrome tab for " + node.title + ".");
+      return;
+    }
+    if (node.browserTabId !== undefined && !bridgeConnected) {
+      toast("Browser Companion is disconnected. Opening the website URL instead.");
+    }
+    openWebsiteUrl(node);
+  }
+
+  function setBridgeConnected(connected) {
+    bridgeConnected = !!connected;
+    const title = $("#bridgeStatusTitle");
+    const detail = $("#bridgeStatusText");
+    const pill = $("#bridgeStatusPill");
+    const panel = $(".bridge-status-large");
+    const sidebar = $("#bridgeSidebarState");
+    if (title) title.textContent = bridgeConnected ? "Browser Companion connected" : "Companion not detected";
+    if (detail) detail.textContent = bridgeConnected ? "Your browser can share selected tab links with this workspace." : "Install the local extension, then refresh this page.";
+    if (pill) pill.textContent = bridgeConnected ? "Connected" : "Not connected";
+    if (panel) panel.classList.toggle("connected", bridgeConnected);
+    if (sidebar) sidebar.innerHTML = '<i class="status-dot' + (bridgeConnected ? ' green' : '') + '"></i> ' + (bridgeConnected ? "Connected" : "Not connected");
+    const footer = $("#bridgeFooterState");
+    if (footer) footer.textContent = bridgeConnected ? "Local companion · Connected" : "Optional local companion · MV3";
+  }
+
+  function addBrowserTabsToWorkspace(tabs) {
+    if (!Array.isArray(tabs) || !tabs.length) return;
+    const valid = tabs.map((tab) => {
+      if (!tab || !Number.isInteger(tab.id)) return null;
+      try {
+        return {
+          id: tab.id,
+          windowId: Number.isInteger(tab.windowId) ? tab.windowId : undefined,
+          url: normalizeUrl(tab.url),
+          title: String(tab.title || hostOf(tab.url)).slice(0, 120)
+        };
+      } catch (_) { return null; }
+    }).filter(Boolean);
+    if (!valid.length) return toast("No supported web tabs were selected.", "error");
+
+    const rect = canvas.getBoundingClientRect();
+    const center = worldPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    let added = 0;
+    let updated = 0;
+    valid.forEach((tab, index) => {
+      const existing = nodes.find((node) => node.type === "website" && node.browserTabId === tab.id);
+      if (existing) {
+        existing.url = tab.url;
+        existing.title = tab.title || hostOf(tab.url);
+        existing.browserWindowId = tab.windowId;
+        existing.description = "Imported from Chrome. Switch to the original tab to keep using its current login session.";
+        updated += 1;
+        return;
+      }
+      if (nodes.length >= MAX_NODES) return;
+      const column = index % 3;
+      const row = Math.floor(index / 3);
+      nodes.push({
+        id: uid(),
+        type: "website",
+        title: tab.title || hostOf(tab.url),
+        url: tab.url,
+        description: "Imported from Chrome. Switch to the original tab to keep using its current login session.",
+        browserTabId: tab.id,
+        browserWindowId: tab.windowId,
+        x: Math.round(center.x - 600 + column * 420),
+        y: Math.round(center.y - 170 + row * 330),
+        w: 390,
+        h: 300,
+        z: ++zCounter,
+        createdAt: new Date().toISOString()
+      });
+      added += 1;
+    });
+    activeView = "canvas";
+    renderNodes();
+    scheduleSave();
+    toast("Added " + added + " Chrome tab(s)" + (updated ? " and updated " + updated + " existing card(s)." : " to this workspace."));
+  }
+
+  function handleCompanionMessage(event) {
+    if (event.source !== window || event.origin !== location.origin) return;
+    const message = event.data;
+    if (!message || message.source !== "nolane-companion") return;
+    if (message.type === "COMPANION_READY") {
+      setBridgeConnected(true);
+    } else if (message.type === "TABS_IMPORTED") {
+      setBridgeConnected(true);
+      addBrowserTabsToWorkspace(message.tabs);
+    } else if (message.type === "TAB_FOCUSED") {
+      if (message.ok) toast("Chrome tab focused.");
+      else {
+        const node = nodes.find((item) => item.type === "website" && item.browserTabId === message.tabId);
+        if (node) {
+          node.browserTabId = undefined;
+          node.browserWindowId = undefined;
+          scheduleSave();
+          renderNodes();
+          openWebsiteUrl(node);
+        }
+        toast("The original tab is no longer available. Opened its URL instead.", "error");
+      }
+    }
+  }
+
+  function pingCompanion() {
+    window.postMessage({ source: "nolane-workspace", type: "PING_COMPANION" }, location.origin);
   }
 
   function deleteNode(id) {
@@ -858,7 +977,9 @@
   function initEvents() {
     addForm.addEventListener("submit", (event) => event.preventDefault());
     $("#addButton").addEventListener("click", () => openAddDialog("website"));
-    $("#bridgeButton").addEventListener("click", () => $("#bridgeDialog").showModal());
+    $("#bridgeButton").addEventListener("click", () => { $("#bridgeDialog").showModal(); pingCompanion(); });
+    window.addEventListener("message", handleCompanionMessage);
+    pingCompanion();
     $("#helpButton").addEventListener("click", () => $("#helpDialog").showModal());
     $("#importButton").addEventListener("click", () => fileInput.click());
     $("#exportButton").addEventListener("click", exportWorkspace);
