@@ -127,13 +127,15 @@
     if (!selected.length) return;
 
     try {
+      const profile = await chrome.runtime.sendMessage({ type: "NOLANE_GET_PROFILE_ID" });
+      if (!profile || !profile.ok || !profile.profileId) throw new Error("Could not identify this Chrome profile.");
       const workspaceTab = await findWorkspaceTab();
       if (!workspaceTab) {
         await chrome.tabs.create({ url: WORKSPACE_URL });
         status("Opened Nolane Infinite. Reopen this extension and import the selected tabs.", "success");
         return;
       }
-      const result = await chrome.tabs.sendMessage(workspaceTab.id, { type: "NOLANE_IMPORT_TABS", tabs: selected });
+      const result = await chrome.tabs.sendMessage(workspaceTab.id, { type: "NOLANE_IMPORT_TABS", tabs: selected, browserSessionId: profile.profileId });
       if (!result || !result.ok) throw new Error("The workspace did not accept the selected tabs.");
       status("Imported " + result.count + " tab(s) into Nolane. You can close this popup.", "success");
     } catch (error) {
