@@ -29,6 +29,7 @@ jobs:
           node --check extension/background.js
           node --check extension/content.js
           node --check extension/popup.js
+          node --test tests/*.test.mjs
           node scripts/validate.mjs
           test -s index.html
           test -s styles.css
