@@ -9,6 +9,8 @@ const LIVE_START_TIMEOUT_MS = 12000;
 const MAX_LIVE_SURFACES_PER_WORKSPACE = 3;
 const pendingLiveStarts = new Map();
 const pendingViewportRefreshes = new Map();
+const liveInputQueues = new Map();
+const MAX_LIVE_INPUT_QUEUE = 96;
 
 const profileIdPromise = chrome.storage.local.get([PROFILE_KEY]).then(async (stored) => {
   if (typeof stored[PROFILE_KEY] === "string" && stored[PROFILE_KEY].length > 20) return stored[PROFILE_KEY];
@@ -40,6 +42,12 @@ async function saveLiveSessions(sessions) {
   await chrome.storage.session.set({ [LIVE_SESSIONS_KEY]: sessions });
 }
 
+function isWorkspaceSender(sender) {
+  return Number.isInteger(sender?.tab?.id) &&
+    typeof sender.url === "string" &&
+    sender.url.startsWith(WORKSPACE_URL_PREFIX);
+}
+
 function pageOrigin(value) {
   try { return new URL(value).origin; } catch (_) { return ""; }
 }
@@ -69,6 +77,7 @@ async function removeLiveSession(surfaceId, reason, notifyWorkspace = true, deta
   const session = sessions[surfaceId];
   if (!session) return false;
   delete sessions[surfaceId];
+  clearLiveInputQueue(surfaceId, reason || "The live surface stopped.");
   await saveLiveSessions(sessions);
   const viewportTimer = pendingViewportRefreshes.get(session.sourceTabId);
   if (viewportTimer) clearTimeout(viewportTimer);
@@ -91,6 +100,14 @@ async function removeSessionsForTab(tabId, reason, detachDebugger = true) {
   const matches = Object.values(sessions).filter((session) => session.sourceTabId === tabId);
   for (const session of matches) {
     await removeLiveSession(session.surfaceId, reason, true, detachDebugger);
+  }
+}
+
+async function removeSessionsForWorkspaceTab(tabId, reason) {
+  const sessions = await getLiveSessions();
+  const matches = Object.values(sessions).filter((session) => session.workspaceTabId === tabId);
+  for (const session of matches) {
+    await removeLiveSession(session.surfaceId, reason || "The Nolane workspace was closed or reloaded.", false, true);
   }
 }
 
@@ -163,13 +180,18 @@ async function startLiveSurface(message, sender) {
     const acknowledgement = new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
         pendingLiveStarts.delete(surfaceId);
-        reject(new Error("Nolane did not confirm that the live video stream was attached. Refresh the workspace and try again."));
+        reject(new Error("Nolane did not confirm a decoded video frame. Keep the workspace tab open and try again."));
       }, LIVE_START_TIMEOUT_MS);
       pendingLiveStarts.set(surfaceId, {
         resolve: () => { clearTimeout(timeoutId); pendingLiveStarts.delete(surfaceId); resolve(); },
         reject: (reason) => { clearTimeout(timeoutId); pendingLiveStarts.delete(surfaceId); reject(reason); }
       });
     });
+
+    // Bring the consumer document to the foreground before it starts decoding video.
+    const workspaceTab = await chrome.tabs.get(workspaceTabId);
+    await chrome.tabs.update(workspaceTabId, { active: true });
+    await chrome.windows.update(workspaceTab.windowId, { focused: true });
 
     await chrome.tabs.sendMessage(workspaceTabId, {
       type: "NOLANE_LIVE_SURFACE_START",
@@ -183,10 +205,6 @@ async function startLiveSurface(message, sender) {
     });
     await acknowledgement;
 
-    // Once the workspace has consumed the stream, bring the canvas back into view.
-    const workspaceTab = await chrome.tabs.get(workspaceTabId);
-    await chrome.tabs.update(workspaceTabId, { active: true });
-    await chrome.windows.update(workspaceTab.windowId, { focused: true });
     return { ok: true, surfaceId, title: session.sourceTitle };
   } catch (error) {
     const pending = pendingLiveStarts.get(surfaceId);
@@ -208,8 +226,81 @@ function modifierMask(message) {
     (message.shiftKey ? 8 : 0);
 }
 
+function clearLiveInputQueue(surfaceId, reason) {
+  const queue = liveInputQueues.get(surfaceId);
+  if (!queue) return;
+  queue.cancelled = true;
+  liveInputQueues.delete(surfaceId);
+  const error = new Error(reason || "The live surface stopped.");
+  for (const item of queue.items.splice(0)) {
+    item.waiters.forEach((waiter) => waiter.reject(error));
+  }
+}
+
+function enqueueLiveInput(message, sender) {
+  const surfaceId = typeof message.surfaceId === "string" ? message.surfaceId : "";
+  if (!surfaceId) return Promise.reject(new Error("Live input has no surface identifier."));
+  let queue = liveInputQueues.get(surfaceId);
+  if (!queue) {
+    queue = { items: [], running: false, cancelled: false };
+    liveInputQueues.set(surfaceId, queue);
+  }
+
+  return new Promise((resolve, reject) => {
+    const waiter = { resolve, reject };
+    const tail = queue.items[queue.items.length - 1];
+    if (message.kind === "mouseMoved" && tail?.message.kind === "mouseMoved") {
+      // Keep the latest pointer position while preserving click/key/wheel ordering.
+      tail.message = message;
+      tail.sender = sender;
+      tail.waiters.push(waiter);
+      return;
+    }
+
+    if (queue.items.length >= MAX_LIVE_INPUT_QUEUE) {
+      if (message.kind === "mouseMoved") {
+        resolve({ ok: true, dropped: true });
+        return;
+      }
+      const moveIndex = queue.items.findIndex((item) => item.message.kind === "mouseMoved");
+      if (moveIndex >= 0) {
+        const [discarded] = queue.items.splice(moveIndex, 1);
+        discarded.waiters.forEach((pending) => pending.resolve({ ok: true, dropped: true }));
+      } else {
+        reject(new Error("The live input queue is busy. Pause briefly and try again."));
+        return;
+      }
+    }
+
+    queue.items.push({ message, sender, waiters: [waiter] });
+    if (!queue.running) void drainLiveInputQueue(surfaceId, queue);
+  });
+}
+
+async function drainLiveInputQueue(surfaceId, queue) {
+  if (queue.running) return;
+  queue.running = true;
+  try {
+    while (!queue.cancelled && queue.items.length) {
+      const item = queue.items.shift();
+      try {
+        const result = await dispatchLiveInput(item.message, item.sender);
+        item.waiters.forEach((waiter) => waiter.resolve(result));
+      } catch (error) {
+        item.waiters.forEach((waiter) => waiter.reject(error));
+      }
+    }
+  } finally {
+    queue.running = false;
+    if (liveInputQueues.get(surfaceId) === queue) {
+      if (queue.cancelled || !queue.items.length) liveInputQueues.delete(surfaceId);
+      else void drainLiveInputQueue(surfaceId, queue);
+    }
+  }
+}
+
 async function dispatchLiveInput(message, sender) {
-  if (!Number.isInteger(sender.tab?.id)) throw new Error("Input sender is not a Nolane workspace tab.");
+  if (!isWorkspaceSender(sender)) throw new Error("This live surface is no longer connected to this browser profile.");
   const sessions = await getLiveSessions();
   const session = sessions[message.surfaceId];
   if (!session || session.workspaceTabId !== sender.tab.id || session.profileId !== message.browserSessionId) {
@@ -333,7 +424,16 @@ chrome.debugger.onDetach.addListener((source, reason) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  void removeSessionsForTab(tabId, "The source Chrome tab was closed.", false);
+  void (async () => {
+    await removeSessionsForTab(tabId, "The source Chrome tab was closed.", false);
+    await removeSessionsForWorkspaceTab(tabId, "The Nolane workspace tab was closed.");
+  })();
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status === "loading") {
+    void removeSessionsForWorkspaceTab(tabId, "The Nolane workspace reloaded; reconnect the live surface.");
+  }
 });
 
 chrome.tabCapture.onStatusChanged.addListener((info) => {
@@ -356,7 +456,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === "NOLANE_REGISTER_WORKSPACE") {
     return respond((async () => {
-      if (!sender.tab || !sender.url || !sender.url.startsWith(WORKSPACE_URL_PREFIX)) {
+      if (!isWorkspaceSender(sender)) {
         throw new Error("Only the published Nolane workspace can register this bridge.");
       }
       await chrome.storage.session.set({ [WORKSPACE_KEY]: { tabId: sender.tab.id, url: sender.url } });
@@ -373,7 +473,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return respond((async () => {
       const sessions = await getLiveSessions();
       const session = sessions[message.surfaceId];
-      if (!session || sender.tab?.id !== session.workspaceTabId || message.browserSessionId !== session.profileId) {
+      if (!isWorkspaceSender(sender) || sender.tab.id !== session.workspaceTabId || message.browserSessionId !== session.profileId) {
         throw new Error("Live surface acknowledgement did not match an active session.");
       }
       session.acknowledged = true;
@@ -388,7 +488,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return respond((async () => {
       const sessions = await getLiveSessions();
       const session = sessions[message.surfaceId];
-      if (!session || sender.tab?.id !== session.workspaceTabId) return { ok: true };
+      if (!session || !isWorkspaceSender(sender) || sender.tab.id !== session.workspaceTabId || message.browserSessionId !== session.profileId) return { ok: true };
       const failure = "Live stream failed: " + String(message.error || "Unknown capture error").slice(0, 180);
       const pending = pendingLiveStarts.get(message.surfaceId);
       if (pending) pending.reject(new Error(failure));
@@ -401,7 +501,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return respond((async () => {
       const sessions = await getLiveSessions();
       const session = sessions[message.surfaceId];
-      if (!session || sender.tab?.id !== session.workspaceTabId || message.browserSessionId !== session.profileId) return { ok: true };
+      if (!session || !isWorkspaceSender(sender) || sender.tab.id !== session.workspaceTabId || message.browserSessionId !== session.profileId) return { ok: true };
       await removeLiveSession(session.surfaceId, "Live surface stopped by the workspace.", false);
       return { ok: true };
     })());
@@ -419,11 +519,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === "NOLANE_LIVE_INPUT") {
-    return respond(dispatchLiveInput(message, sender));
+    return respond(enqueueLiveInput(message, sender));
   }
 
   if (message.type === "NOLANE_FOCUS_TAB" && Number.isInteger(message.tabId)) {
     return respond((async () => {
+      if (!isWorkspaceSender(sender)) throw new Error("Only Nolane can focus a saved Chrome tab.");
       const profileId = await profileIdPromise;
       if (message.profileId !== profileId) throw new Error("This card belongs to a different Chrome profile. Import the tab again from this browser.");
       const tab = await chrome.tabs.get(message.tabId);
