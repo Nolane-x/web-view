@@ -144,7 +144,7 @@ if (!/chrome\.tabCapture\.getCapturedTabs/.test(background) || !/already reports
 else pass("Existing tab captures are detected before stream setup.");
 if (!/NOLANE_GET_DIAGNOSTICS/.test(background) || !/diagnosticsButton/.test(popup)) fail("The companion compatibility diagnostics action is incomplete.");
 else pass("The companion exposes a local compatibility diagnostics report.");
-if (!/normalizeVideoInfo/.test(background) || !/presentedFrames/.test(background) || !/video\.requestVideoFrameCallback\((_now, metadata\)/.test(js)) fail("Decoded-frame metrics must be attached to the compatibility diagnostics.");
+if (!/normalizeVideoInfo/.test(background) || !/presentedFrames/.test(background) || !/requestVideoFrameCallback/.test(js) || !/presentedFrames/.test(js)) fail("Decoded-frame metrics must be attached to the compatibility diagnostics.");
 else pass("The compatibility report includes decoded-frame and track metrics.");
 if (!/sourceWindow\.width >= 1120/.test(background) || !/createData\.width = workspaceWidth/.test(background)) fail("Wide windows must place the source and workspace surfaces side by side.");
 else pass("Wide windows receive an automatic side-by-side workspace placement.");
