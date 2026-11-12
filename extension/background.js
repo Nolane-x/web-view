@@ -236,6 +236,10 @@ async function startLiveSurface(message, sender) {
         reject: (reason) => { clearTimeout(timeoutId); pendingLiveStarts.delete(surfaceId); reject(reason); }
       });
     });
+    // A source-origin event can cancel this promise while sendMessage is still
+    // pending. Attach a rejection observer now; the original promise is still
+    // awaited below and will still reject the startup operation.
+    void acknowledgement.catch(() => {});
 
     stage = "delivering the stream to the Nolane canvas";
     await chrome.tabs.sendMessage(workspaceTabId, {
