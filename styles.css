@@ -188,6 +188,7 @@ kbd { font-family: var(--sans); font-size: 9px; border: 1px solid rgba(255,255,2
 .live-tool { padding: 3px 7px; border: 1px solid rgba(255,255,255,.1); border-radius: 5px; background: rgba(255,255,255,.04); color: #bdc6d7; font-size: 7px; cursor: pointer; }
 .live-tool:hover { background: rgba(255,255,255,.1); color: #fff; }
 .live-tool.danger { color: #e69a9a; border-color: rgba(230,154,154,.18); }
+.live-tool[aria-pressed="true"] { color: #8fe0b8; border-color: rgba(91,214,160,.22); background: rgba(91,214,160,.08); }
 .live-surface-stage { position: relative; min-height: 0; flex: 1; display: grid; place-items: center; overflow: hidden; outline: none; background: #07090e; cursor: crosshair; user-select: none; touch-action: none; }
 .live-surface-stage:focus-visible { box-shadow: inset 0 0 0 2px rgba(167,139,250,.8); }
 .live-surface-stage video { display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; background: #07090e; }
