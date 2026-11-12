@@ -1001,7 +1001,7 @@
     if (panel) panel.classList.toggle("connected", bridgeConnected);
     if (sidebar) sidebar.innerHTML = '<i class="status-dot' + (bridgeConnected ? ' green' : '') + '"></i> ' + (bridgeConnected ? "Connected" : "Not connected");
     const footer = $("#bridgeFooterState");
-    if (footer) footer.textContent = bridgeConnected ? "Local companion · Connected" : "Optional local companion · MV3";
+    if (footer) footer.textContent = bridgeConnected ? "Local companion · Connected · Live Surface 0.2.0" : "Optional local companion · Live Surface 0.2.0";
   }
 
   function addBrowserTabsToWorkspace(tabs, sessionId) {
