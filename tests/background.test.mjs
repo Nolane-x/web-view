@@ -255,6 +255,8 @@ test("workspace enforces the concurrent live-surface limit", async () => {
     assert.equal(result.ok, true);
   }
 
+  assert.equal(Object.keys(h.sessionStore.nolaneLiveSessions || {}).length, 3, "three acknowledged live sessions should be stored");
+
   h.tabs.set(13, {
     id: 13,
     windowId: 1,
