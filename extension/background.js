@@ -6,6 +6,7 @@ const PROFILE_KEY = "nolaneProfileId";
 const WORKSPACE_KEY = "nolaneWorkspaceTab";
 const LIVE_SESSIONS_KEY = "nolaneLiveSessions";
 const LIVE_START_TIMEOUT_MS = 12000;
+const MAX_LIVE_SURFACES_PER_WORKSPACE = 3;
 const pendingLiveStarts = new Map();
 
 const profileIdPromise = chrome.storage.local.get([PROFILE_KEY]).then(async (stored) => {
@@ -98,6 +99,13 @@ async function startLiveSurface(message, sender) {
 
   const workspaceTabId = await getWorkspaceTabId();
   const profileId = await profileIdPromise;
+  const activeSessions = Object.values(await getLiveSessions()).filter((session) => session.workspaceTabId === workspaceTabId);
+  if (activeSessions.some((session) => session.sourceTabId === message.tabId)) {
+    throw new Error("This Chrome tab is already streaming to Nolane. Stop its existing live surface first.");
+  }
+  if (activeSessions.length >= MAX_LIVE_SURFACES_PER_WORKSPACE) {
+    throw new Error("This workspace already has " + MAX_LIVE_SURFACES_PER_WORKSPACE + " live Chrome surfaces. Stop one before starting another.");
+  }
   if (message.tabId === workspaceTabId) {
     throw new Error("Switch to the website you want to show, then open the Companion on that tab.");
   }
