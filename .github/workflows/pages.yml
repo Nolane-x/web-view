@@ -26,12 +26,16 @@ jobs:
       - name: Validate static app
         run: |
           node --check app.js
+          node --check extension/background.js
+          node --check extension/content.js
+          node --check extension/popup.js
           node scripts/validate.mjs
           test -s index.html
           test -s styles.css
           test -s manifest.webmanifest
           test -s sw.js
           node -e "JSON.parse(require('fs').readFileSync('manifest.webmanifest', 'utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('extension/manifest.json', 'utf8'))"
 
       - name: Assemble site artifact
         run: |
