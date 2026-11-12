@@ -1,4 +1,4 @@
-# Nolane Browser Companion 0.2.1 — Live Chrome Surface
+# Nolane Browser Companion 0.2.2 — Live Chrome Surface
 
 This release adds **Live Chrome Surface**. It does not try to load the remote website inside an iframe. Instead, it captures the actual active Chrome tab as a video-and-audio stream and renders that stream on the Nolane canvas. Pointer and keyboard events on the canvas are sent back to that same source tab through Chrome DevTools Protocol (CDP).
 
@@ -18,7 +18,7 @@ The capture action must be started from the active source website tab. This is d
 
 ## Powerful permission warning — read this before installing
 
-Version 0.2.1 requires activeTab, tabCapture and **debugger**. Chrome will display strong permission warnings. In particular, its debugger permission can technically access the page debugger backend and read/change data on websites. tabCapture is also classified as broad access by Chrome's warning UI.
+Version 0.2.2 requires activeTab, tabCapture and **debugger**. Chrome will display strong permission warnings. In particular, its debugger permission can technically access the page debugger backend and read/change data on websites. tabCapture is also classified as broad access by Chrome's warning UI. The debugger is now an optional capability at runtime: when Chrome refuses CDP access, Nolane still attempts local video capture and falls back to a view-only card.
 
 The implementation's intended path is narrower than the permission itself: the user starts capture from the currently active tab; the service worker records that source tab ID, the designated Nolane consumer-tab ID, the user's local browser-profile ID and the source origin; its CDP handler exposes only fixed viewport, mouse, keyboard and text-input operations. The code does not call the Cookies API, Network domain, DOM snapshot, response-body or page-storage APIs. The optional tabs permission remains separate and is only for listing/importing selected tab titles and URLs.
 
@@ -27,7 +27,8 @@ No capture stream, cookies, passwords, page HTML or screen image are uploaded to
 ## What the live surface supports
 
 - The actual Chrome-rendered page, including its existing session, origin, cookies and storage (they remain inside the original tab).
-- Mouse movement, clicks, right-click, wheel scrolling and keyboard events forwarded through CDP.
+- Mouse movement, clicks, right-click, wheel scrolling and keyboard events forwarded through CDP when the debugger can attach.
+- Video-only mode when another extension iframe, an existing DevTools session or a Chromium restriction prevents debugger attachment. The canvas reports this mode explicitly, keeps the live video running and offers Focus source instead of claiming pointer/keyboard control.
 - The source page remains a real browser page; the canvas displays a video/control mirror. Up to three tabs can be live at once in a workspace; saved cards are not subject to this concurrent capture limit.
 - Live surfaces are stopped when the source tab closes, capture ends, the debugger detaches, the top-level origin changes, the workspace is switched/deleted, or its canvas card is removed.
 - The source viewport size is refreshed when Chrome reports a frame resize, so pointer coordinates stay aligned after resizing the browser window.
@@ -40,7 +41,7 @@ No capture stream, cookies, passwords, page HTML or screen image are uploaded to
 ## Known limitations
 
 - This is not a native WebContents child. Video encoding/capture/decoding adds latency and consumes CPU/GPU resources. Start with one surface and benchmark before using several.
-- Chrome debugger attachment can conflict with DevTools already open for the source tab. Close DevTools for that tab before connecting.
+- Chrome debugger attachment can conflict with DevTools already open for the source tab or with pages that contain frames injected by other extensions. Close DevTools and other page-debugging tools; for extension-injected frames, try a clean Chrome profile or disable extensions that add overlays/iframes to the target site. Even when CDP is blocked, video-only mode should remain available.
 - Some websites may detect remote debugging or behave differently while attached.
 - Browser-owned UI (address bar, permission prompts, file chooser, passkeys, some popup windows/download flows), protected DRM video and some OS-level dialogs cannot be fully represented in a video surface. Click **Focus source** to use them in the original tab.
 - Chrome-only, minimum supported version 116. Protected pages such as chrome:// and Chrome Web Store pages cannot be streamed.
