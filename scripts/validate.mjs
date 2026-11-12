@@ -106,6 +106,10 @@ if (!/Page\.frameNavigated/.test(background) || !/expectedOrigin/.test(backgroun
 else pass("Live sessions are bound to the source origin.");
 if (!/NOLANE_REGISTER_WORKSPACE/.test(bridge) || !/NOLANE_LIVE_INPUT/.test(bridge)) fail("Workspace content-script registration/input bridge is incomplete.");
 else pass("Content script registers the workspace and forwards input.");
+if (!/LIVE_SURFACE_ACK/.test(js) || !/pendingLiveStarts/.test(background)) fail("Live capture start must wait for workspace stream acknowledgement.");
+else pass("Live capture start waits for the workspace stream acknowledgement.");
+if (!/audio:\s*true/.test(js) || !/createMediaStreamSource/.test(js) || !/toggleLiveAudio/.test(js)) fail("Live surface audio routing and mute controls are incomplete.");
+else pass("Live surface audio is routed locally with explicit mute control.");
 if (!/NOLANE_START_LIVE_SURFACE/.test(popup) || !/Stream this tab to Nolane/.test(popupHTML)) fail("Popup must expose explicit active-tab capture.");
 else pass("Popup exposes explicit current-tab capture.");
 
