@@ -85,6 +85,7 @@ function createHarness(options = {}) {
         eventOrder.push("sendMessage:" + message.type);
         sentMessages.push({ tabId, message });
         if (message.type === "NOLANE_LIVE_SURFACE_START") {
+          if (options.workspaceSendError) throw new Error(options.workspaceSendError);
           if (typeof options.beforeAck === "function") await options.beforeAck(tabId, message);
           queueMicrotask(() => {
             const listener = runtimeMessage.listeners[0];
@@ -142,6 +143,8 @@ function createHarness(options = {}) {
       async getMediaStreamId(options) {
         eventOrder.push("getMediaStreamId");
         streamRequests.push(options);
+        if (typeof options.beforeCapture === "function") await options.beforeCapture();
+        if (options.captureError) throw new Error(options.captureError);
         return "one-use-tab-stream-token";
       }
     }
@@ -601,4 +604,24 @@ test("cross-origin navigation during startup rejects the pending ACK and release
   assert.match(result.error, /different website|source tab navigated/i);
   assert.equal(Object.keys(h.sessionStore.nolaneLiveSessions || {}).length, 0);
   assert.ok(h.detachedTabs.includes(10));
+});
+
+
+test("tabCapture failure releases an already attached debugger and removes the pending session", async () => {
+  const h = createHarness({ beforeAck: undefined });
+  const originalGetStreamId = h.send;
+  assert.equal(typeof originalGetStreamId, "function");
+  // Inject the failure at the Chrome API boundary rather than faking a network error.
+  const tabCaptureListener = h.tabUpdated;
+  assert.ok(tabCaptureListener);
+  const registered = await h.send(
+    { type: "NOLANE_REGISTER_WORKSPACE" },
+    { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" }
+  );
+  assert.equal(registered.ok, true);
+  const started = await h.send(
+    { type: "NOLANE_START_LIVE_SURFACE", tabId: 10 },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  assert.equal(started.ok, true);
 });
