@@ -160,6 +160,7 @@
     const space = spaces.find((item) => item.id === id);
     if (!space) return;
     if (!window.confirm('Delete "' + space.name + '" and all of its local items? This cannot be undone.')) return;
+    syncActiveSpace();
     spaces = spaces.filter((item) => item.id !== id);
     if (activeSpaceId === id) {
       activeSpaceId = spaces[0].id;
@@ -819,7 +820,7 @@
         view = { ...current.view };
       } else if (Array.isArray(data.nodes)) {
         nodes = data.nodes.map(validateNode).filter(Boolean).slice(0, MAX_NODES);
-        spaces = [{ id: "personal", name: "My workspace", nodes: nodes.map((node) => ({ ...node })), view: data.view || { x: 25, y: 0, scale: 1 } }];
+        spaces = [{ id: "personal", name: "My workspace", nodes: nodes.map((node) => ({ ...node })), view: { x: Number(data.view?.x) || 25, y: Number(data.view?.y) || 0, scale: clamp(Number(data.view?.scale) || 1, MIN_SCALE, MAX_SCALE) } }];
         activeSpaceId = "personal";
         view = { ...spaces[0].view };
       } else {
@@ -844,7 +845,6 @@
     $("#addButton").addEventListener("click", () => openAddDialog("website"));
     $("#bridgeButton").addEventListener("click", () => $("#bridgeDialog").showModal());
     $("#helpButton").addEventListener("click", () => $("#helpDialog").showModal());
-    $("#helpButton").addEventListener("click", () => {});
     $("#importButton").addEventListener("click", () => fileInput.click());
     $("#exportButton").addEventListener("click", exportWorkspace);
     fileInput.addEventListener("change", (event) => importWorkspace(event.target.files[0]));
