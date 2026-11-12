@@ -106,6 +106,109 @@
     current.view = { x: view.x, y: view.y, scale: view.scale };
   }
 
+
+  function switchSpace(id) {
+    if (id === activeSpaceId) return;
+    syncActiveSpace();
+    const next = spaces.find((space) => space.id === id);
+    if (!next) return;
+    activeSpaceId = next.id;
+    nodes = next.nodes.map((node) => ({ ...node }));
+    view = { ...next.view };
+    selectedId = null;
+    activeView = "canvas";
+    $("#searchInput").value = "";
+    renderNodes();
+    applyView();
+    updateCounts();
+    scheduleSave();
+    $("#sidebar").classList.remove("open");
+    toast("Switched to " + next.name + ".");
+  }
+
+  function createSpace() {
+    if (spaces.length >= 12) return toast("You can create up to 12 local spaces.", "error");
+    const name = window.prompt("Name your new space", "New space");
+    if (name === null) return;
+    const cleanName = name.trim().slice(0, 48);
+    if (!cleanName) return toast("Give your space a name first.", "error");
+    if (spaces.some((space) => space.name.toLowerCase() === cleanName.toLowerCase())) return toast("A space with that name already exists.", "error");
+    syncActiveSpace();
+    const next = { id: uid(), name: cleanName, nodes: [], view: { x: 25, y: 0, scale: 1 } };
+    spaces.push(next);
+    renderSpaces();
+    switchSpace(next.id);
+  }
+
+  function renameSpace(id) {
+    const space = spaces.find((item) => item.id === id);
+    if (!space) return;
+    const name = window.prompt("Rename workspace", space.name);
+    if (name === null) return;
+    const cleanName = name.trim().slice(0, 48);
+    if (!cleanName) return toast("Workspace name cannot be empty.", "error");
+    if (spaces.some((item) => item.id !== id && item.name.toLowerCase() === cleanName.toLowerCase())) return toast("A space with that name already exists.", "error");
+    space.name = cleanName;
+    renderSpaces();
+    updateViewFilter();
+    scheduleSave();
+    toast("Workspace renamed.");
+  }
+
+  function deleteSpace(id) {
+    if (spaces.length <= 1) return toast("Keep at least one workspace.", "error");
+    const space = spaces.find((item) => item.id === id);
+    if (!space) return;
+    if (!window.confirm('Delete "' + space.name + '" and all of its local items? This cannot be undone.')) return;
+    spaces = spaces.filter((item) => item.id !== id);
+    if (activeSpaceId === id) {
+      activeSpaceId = spaces[0].id;
+      nodes = spaces[0].nodes.map((node) => ({ ...node }));
+      view = { ...spaces[0].view };
+      selectedId = null;
+      activeView = "canvas";
+      $("#searchInput").value = "";
+      renderNodes();
+      applyView();
+    }
+    renderSpaces();
+    scheduleSave();
+    toast("Workspace deleted from this device.");
+  }
+
+  function renderSpaces() {
+    const list = $("#spaceList");
+    if (!list) return;
+    list.replaceChildren();
+    const colors = ["violet", "cyan", "amber", "green", "rose", "blue"];
+    spaces.forEach((space, index) => {
+      const row = document.createElement("div");
+      row.className = "space-row";
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "space-item" + (space.id === activeSpaceId ? " selected" : "");
+      button.title = "Double-click to rename · Right-click to delete";
+      button.innerHTML = '<span class="space-dot ' + colors[index % colors.length] + '"></span><span class="space-name">' + escapeHTML(space.name) + '</span><span class="space-mini-count">' + space.nodes.length + '</span>';
+      button.addEventListener("click", () => switchSpace(space.id));
+      button.addEventListener("dblclick", (event) => { event.preventDefault(); renameSpace(space.id); });
+      button.addEventListener("contextmenu", (event) => { event.preventDefault(); deleteSpace(space.id); });
+      const rename = document.createElement("button");
+      rename.type = "button";
+      rename.className = "space-edit";
+      rename.title = "Rename " + space.name;
+      rename.setAttribute("aria-label", "Rename " + space.name);
+      rename.innerHTML = '<svg class="icon"><use href="#i-more"/></svg>';
+      rename.addEventListener("click", () => renameSpace(space.id));
+      row.append(button, rename);
+      list.appendChild(row);
+    });
+    const current = activeSpace();
+    if (current) {
+      $(".workspace-meta strong").textContent = current.name;
+      $(".breadcrumb > span").textContent = current.name;
+    }
+  }
+
   function normalizeUrl(raw) {
     let value = String(raw || "").trim();
     if (!value) throw new Error("Enter a website address first.");
