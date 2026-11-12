@@ -669,6 +669,7 @@
       z: ++zCounter, createdAt: new Date().toISOString()
     };
     nodes.push(node);
+    activeView = "canvas";
     renderNodes();
     selectNode(node.id);
     scheduleSave();
@@ -695,6 +696,7 @@
       } else nodes.push(node);
     } else nodes.push(node);
     editingId = null;
+    activeView = "canvas";
     renderNodes();
     selectNode(node.id);
     scheduleSave();
@@ -807,18 +809,30 @@
     if (file.size > 2 * 1024 * 1024) return toast("Workspace file is too large (maximum 2 MB).", "error");
     try {
       const data = JSON.parse(await file.text());
-      if (data.schema !== "nolane-infinite-workspace" || !Array.isArray(data.nodes)) throw new Error("This file is not a Nolane workspace export.");
-      const imported = data.nodes.map(validateNode).filter(Boolean).slice(0, MAX_NODES);
-      if (!imported.length && data.nodes.length) throw new Error("No valid workspace items were found.");
-      nodes = imported;
-      selectedId = null;
-      if (data.view && Number.isFinite(data.view.x) && Number.isFinite(data.view.y) && Number.isFinite(data.view.scale)) {
-        view = { x: data.view.x, y: data.view.y, scale: clamp(data.view.scale, MIN_SCALE, MAX_SCALE) };
+      if (data.schema !== "nolane-infinite-workspace") throw new Error("This file is not a Nolane workspace export.");
+      if (Array.isArray(data.spaces) && data.spaces.length) {
+        spaces = data.spaces.map(normalizeSpace).filter(Boolean).slice(0, 12);
+        if (!spaces.length) throw new Error("No valid workspaces were found in this file.");
+        activeSpaceId = spaces.some((space) => space.id === data.activeSpaceId) ? data.activeSpaceId : spaces[0].id;
+        const current = activeSpace();
+        nodes = current.nodes.map((node) => ({ ...node }));
+        view = { ...current.view };
+      } else if (Array.isArray(data.nodes)) {
+        nodes = data.nodes.map(validateNode).filter(Boolean).slice(0, MAX_NODES);
+        spaces = [{ id: "personal", name: "My workspace", nodes: nodes.map((node) => ({ ...node })), view: data.view || { x: 25, y: 0, scale: 1 } }];
+        activeSpaceId = "personal";
+        view = { ...spaces[0].view };
+      } else {
+        throw new Error("The workspace file does not contain any spaces or canvas items.");
       }
+      selectedId = null;
+      activeView = "canvas";
+      $("#searchInput").value = "";
+      renderSpaces();
       renderNodes();
       applyView();
       scheduleSave();
-      toast("Imported " + nodes.length + " workspace items.");
+      toast("Imported " + spaces.length + " workspaces.");
     } catch (error) {
       toast(error.message || "Could not read that workspace file.", "error");
     }
@@ -912,7 +926,11 @@
   initEvents();
   loadWorkspace().catch((error) => {
     console.error(error);
-    nodes = defaultNodes();
+    spaces = defaultSpaces();
+    activeSpaceId = "personal";
+    nodes = activeSpace().nodes.map((node) => ({ ...node }));
+    view = { ...activeSpace().view };
+    renderSpaces();
     renderNodes();
     applyView();
     toast("Local storage could not be opened. This session will still work.", "error");
