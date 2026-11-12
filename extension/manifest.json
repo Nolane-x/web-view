@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Nolane Browser Companion",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "minimum_chrome_version": "116",
-  "description": "Capture real Chrome tabs into Nolane; use pointer and keyboard control when Chrome permits debugging.",
+  "description": "Capture real Chrome tabs into Nolane; keep source pages visible and diagnose compatibility when Chrome blocks input control.",
   "permissions": [
     "storage",
     "activeTab",
