@@ -82,7 +82,7 @@ async function removeLiveSession(surfaceId, reason, notifyWorkspace = true, deta
   const viewportTimer = pendingViewportRefreshes.get(session.sourceTabId);
   if (viewportTimer) clearTimeout(viewportTimer);
   pendingViewportRefreshes.delete(session.sourceTabId);
-  if (detachDebugger) {
+  if (detachDebugger && session.debuggerAttached) {
     try { await chrome.debugger.detach({ tabId: session.sourceTabId }); } catch (_) {}
   }
   if (notifyWorkspace) {
@@ -136,26 +136,51 @@ async function startLiveSurface(message, sender) {
   const safeUrl = cleanShareUrl(tab.url || "");
   const expectedOrigin = pageOrigin(tab.url || "");
   if (!safeUrl || !expectedOrigin) {
-    throw new Error("Chrome cannot stream this page. Use a normal http:// or https:// website tab.");
+    throw new Error("Chrome can stream only a normal http:// or https:// website tab. Extension, settings and browser pages are not supported.");
   }
 
   const surfaceId = crypto.randomUUID();
   const debuggee = { tabId: tab.id };
   let debuggerAttached = false;
+  let interactive = false;
+  let interactionReason = "";
+  let stage = "checking the browser tab";
+  let viewport = {
+    width: Math.max(1, Math.round(tab.width || 1280)),
+    height: Math.max(1, Math.round(tab.height || 720))
+  };
 
   try {
-    await chrome.debugger.attach(debuggee, "1.3");
-    debuggerAttached = true;
-    await chrome.debugger.sendCommand(debuggee, "Page.enable");
-    const metrics = await chrome.debugger.sendCommand(debuggee, "Page.getLayoutMetrics");
-    const visual = metrics.cssVisualViewport || {};
-    const layout = metrics.cssLayoutViewport || {};
-    const viewport = {
-      width: Math.max(1, Math.round(visual.clientWidth || layout.clientWidth || tab.width || 1280)),
-      height: Math.max(1, Math.round(visual.clientHeight || layout.clientHeight || tab.height || 720))
-    };
+    // CDP is optional: Chromium may reject a tab containing another extension's
+    // chrome-extension:// iframe. Preserve the independent tabCapture video path.
+    try {
+      stage = "attaching Chrome's optional input controller";
+      await chrome.debugger.attach(debuggee, "1.3");
+      debuggerAttached = true;
+      stage = "reading the Chrome page viewport";
+      await chrome.debugger.sendCommand(debuggee, "Page.enable");
+      const metrics = await chrome.debugger.sendCommand(debuggee, "Page.getLayoutMetrics");
+      const visual = metrics.cssVisualViewport || {};
+      const layout = metrics.cssLayoutViewport || {};
+      viewport = {
+        width: Math.max(1, Math.round(visual.clientWidth || layout.clientWidth || tab.width || 1280)),
+        height: Math.max(1, Math.round(visual.clientHeight || layout.clientHeight || tab.height || 720))
+      };
+      interactive = true;
+    } catch (debugError) {
+      const raw = String(debugError?.message || debugError);
+      const foreignExtensionFrame = /Cannot access a chrome-extension:\/\/ URL of different extension/i.test(raw);
+      interactionReason = foreignExtensionFrame
+        ? "Chrome blocked its debugger because this page contains a frame or content injected by another extension. The real page video can still be shown. Use Focus source to interact, or try a clean Chrome profile / disable extensions that inject page UI."
+        : "Chrome's debugger could not attach (" + raw.slice(0, 180) + "). The real page video can still be shown. Use Focus source to interact, or close DevTools and other page-debugging tools before reconnecting.";
+      if (debuggerAttached) {
+        try { await chrome.debugger.detach(debuggee); } catch (_) {}
+        debuggerAttached = false;
+      }
+      interactive = false;
+    }
 
-    // Stream tokens are single-use and expire quickly, so request one immediately before delivery.
+    stage = "creating the tab-capture stream";
     const streamId = await chrome.tabCapture.getMediaStreamId({
       targetTabId: tab.id,
       consumerTabId: workspaceTabId
@@ -171,7 +196,10 @@ async function startLiveSurface(message, sender) {
       sourceTitle: String(tab.title || new URL(safeUrl).hostname).slice(0, 120),
       sourceUrl: safeUrl,
       createdAt: Date.now(),
-      acknowledged: false
+      acknowledged: false,
+      debuggerAttached,
+      interactive,
+      interactionReason
     };
     const sessions = await getLiveSessions();
     sessions[surfaceId] = session;
@@ -188,11 +216,12 @@ async function startLiveSurface(message, sender) {
       });
     });
 
-    // Bring the consumer document to the foreground before it starts decoding video.
+    stage = "bringing the Nolane canvas into view";
     const workspaceTab = await chrome.tabs.get(workspaceTabId);
     await chrome.tabs.update(workspaceTabId, { active: true });
     await chrome.windows.update(workspaceTab.windowId, { focused: true });
 
+    stage = "delivering the stream to the Nolane canvas";
     await chrome.tabs.sendMessage(workspaceTabId, {
       type: "NOLANE_LIVE_SURFACE_START",
       surfaceId,
@@ -201,24 +230,28 @@ async function startLiveSurface(message, sender) {
       title: session.sourceTitle,
       url: safeUrl,
       viewport,
-      streamId
+      streamId,
+      interactive,
+      interactionReason
     });
+    stage = "waiting for the first decoded video frame";
     await acknowledgement;
 
-    return { ok: true, surfaceId, title: session.sourceTitle };
+    return { ok: true, surfaceId, title: session.sourceTitle, interactive, interactionReason };
   } catch (error) {
     const pending = pendingLiveStarts.get(surfaceId);
     if (pending) pending.reject(error);
-    if (debuggerAttached) {
-      try { await chrome.debugger.detach(debuggee); } catch (_) {}
-    }
     const sessions = await getLiveSessions();
     delete sessions[surfaceId];
     await saveLiveSessions(sessions);
-    throw error;
+    clearLiveInputQueue(surfaceId, "The live surface did not start.");
+    if (debuggerAttached) {
+      try { await chrome.debugger.detach(debuggee); } catch (_) {}
+    }
+    const detail = String(error?.message || error);
+    throw new Error("Live startup failed while " + stage + ": " + detail);
   }
 }
-
 function modifierMask(message) {
   return (message.altKey ? 1 : 0) |
     (message.ctrlKey ? 2 : 0) |
@@ -311,6 +344,9 @@ async function dispatchLiveInput(message, sender) {
   if (pageOrigin(currentTab.url || "") !== session.expectedOrigin) {
     await removeLiveSession(session.surfaceId, "The source tab navigated to a different website.", true);
     throw new Error("The source website changed. Reconnect the live surface from its Chrome tab.");
+  }
+  if (!session.interactive || !session.debuggerAttached) {
+    throw new Error(session.interactionReason || "This page is connected in video-only mode. Use Focus source to interact with it.");
   }
 
   const target = { tabId: session.sourceTabId };
