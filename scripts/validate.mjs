@@ -94,6 +94,7 @@ else pass("Content script is restricted to the workspace origin.");
 const background = read("extension/background.js");
 const bridge = read("extension/content.js");
 const popup = read("extension/popup.js");
+const popupHTML = read("extension/popup.html");
 if (!/chrome\.tabCapture\.getMediaStreamId/.test(background) || !/consumerTabId:\s*workspaceTabId/.test(background)) fail("Capture stream must be bound to the Nolane consumer tab.");
 else pass("Tab capture stream is bound to the designated workspace tab.");
 if (!/chrome\.debugger\.attach/.test(background) || !/Input\.dispatchMouseEvent/.test(background) || !/Input\.dispatchKeyEvent/.test(background)) fail("CDP input forwarding is incomplete.");
@@ -102,7 +103,7 @@ if (!/Page\.frameNavigated/.test(background) || !/expectedOrigin/.test(backgroun
 else pass("Live sessions are bound to the source origin.");
 if (!/NOLANE_REGISTER_WORKSPACE/.test(bridge) || !/NOLANE_LIVE_INPUT/.test(bridge)) fail("Workspace content-script registration/input bridge is incomplete.");
 else pass("Content script registers the workspace and forwards input.");
-if (!/NOLANE_START_LIVE_SURFACE/.test(popup) || !/Stream this tab to Nolane/.test(popup)) fail("Popup must expose explicit active-tab capture.");
+if (!/NOLANE_START_LIVE_SURFACE/.test(popup) || !/Stream this tab to Nolane/.test(popupHTML)) fail("Popup must expose explicit active-tab capture.");
 else pass("Popup exposes explicit current-tab capture.");
 
 if (!/sanitizeTabUrl/.test(popup) || !/url\.hash = ""/.test(popup)) fail("Tab URL sanitizer is missing.");
