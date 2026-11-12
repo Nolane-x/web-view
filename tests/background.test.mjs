@@ -140,9 +140,9 @@ function createHarness(options = {}) {
     },
     tabCapture: {
       onStatusChanged: captureStatus,
-      async getMediaStreamId(options) {
+      async getMediaStreamId(captureOptions) {
         eventOrder.push("getMediaStreamId");
-        streamRequests.push(options);
+        streamRequests.push(captureOptions);
         if (typeof options.beforeCapture === "function") await options.beforeCapture();
         if (options.captureError) throw new Error(options.captureError);
         return "one-use-tab-stream-token";
