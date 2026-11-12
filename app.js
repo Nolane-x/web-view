@@ -1025,10 +1025,16 @@
     let added = 0;
     let updated = 0;
     valid.forEach((tab, index) => {
-      const existing = nodes.find((node) => node.type === "website" && node.browserTabId === tab.id && node.browserSessionId === sessionId);
+      const exactMatch = nodes.find((node) => node.type === "website" && node.browserTabId === tab.id && node.browserSessionId === sessionId);
+      const tabOrigin = new URL(tab.url).origin;
+      const manualCardMatch = nodes.find((node) => node.type === "website" &&
+        node.browserTabId === undefined && node.browserSessionId === undefined &&
+        (() => { try { return new URL(node.url).origin === tabOrigin; } catch (_) { return false; } })());
+      const existing = exactMatch || manualCardMatch;
       if (existing) {
         existing.url = tab.url;
         existing.title = tab.title || hostOf(tab.url);
+        existing.browserTabId = tab.id;
         existing.browserWindowId = tab.windowId;
         existing.browserSessionId = sessionId;
         existing.description = "Linked to its original Chrome tab. Start a Live Chrome Surface from the Companion to display and control it here.";
@@ -1073,6 +1079,11 @@
       startLiveSurface(message).catch((error) => toast(error.message || "Could not start the live surface.", "error"));
     } else if (message.type === "LIVE_SURFACE_STOPPED") {
       stopLiveSurfaceById(message.surfaceId, message.reason || "Live Chrome surface disconnected.", false);
+    } else if (message.type === "LIVE_VIEWPORT_UPDATE") {
+      const surface = [...liveSurfaces.values()].find((item) => item.surfaceId === message.surfaceId);
+      if (surface && message.viewport && Number.isFinite(message.viewport.width) && Number.isFinite(message.viewport.height)) {
+        surface.viewport = { width: Math.max(1, message.viewport.width), height: Math.max(1, message.viewport.height) };
+      }
     } else if (message.type === "TABS_IMPORTED") {
       setBridgeConnected(!!message.browserSessionId, message.browserSessionId || "");
       addBrowserTabsToWorkspace(message.tabs, message.browserSessionId);
