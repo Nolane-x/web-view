@@ -54,6 +54,22 @@ function pageOrigin(value) {
   try { return new URL(value).origin; } catch (_) { return ""; }
 }
 
+function normalizeVideoInfo(value) {
+  if (!value || typeof value !== "object") return null;
+  const number = (key, max = 100000) => Number.isFinite(value[key])
+    ? Math.max(0, Math.min(max, Number(value[key])))
+    : null;
+  return {
+    width: number("width", 16384),
+    height: number("height", 16384),
+    frameRate: number("frameRate", 240),
+    presentedFrames: number("presentedFrames", 1000000000),
+    mediaTime: number("mediaTime", 86400000),
+    trackReadyState: value.trackReadyState === "live" || value.trackReadyState === "ended" ? value.trackReadyState : "unknown",
+    trackMuted: !!value.trackMuted
+  };
+}
+
 function cleanShareUrl(raw) {
   try {
     const url = new URL(raw);
@@ -234,11 +250,22 @@ async function startLiveSurface(message, sender) {
         // into a separate window. The source tab remains selected in its own
         // non-minimized window, so visibility-aware websites can keep rendering.
         try {
-          const separateWindow = await chrome.windows.create({
+          const sourceWindow = await chrome.windows.get(tab.windowId);
+          const createData = {
             tabId: workspaceTabId,
             type: "normal",
             focused: true
-          });
+          };
+          if (sourceWindow.state === "normal" && Number.isFinite(sourceWindow.left) &&
+              Number.isFinite(sourceWindow.top) && Number.isFinite(sourceWindow.width) &&
+              Number.isFinite(sourceWindow.height) && sourceWindow.width >= 1120) {
+            const workspaceWidth = Math.max(560, Math.floor(sourceWindow.width * 0.52));
+            createData.left = sourceWindow.left + sourceWindow.width - workspaceWidth;
+            createData.top = sourceWindow.top;
+            createData.width = workspaceWidth;
+            createData.height = sourceWindow.height;
+          }
+          const separateWindow = await chrome.windows.create(createData);
           if (Number.isInteger(separateWindow?.id)) {
             sourceKeptVisible = true;
             workspaceWindowId = separateWindow.id;
@@ -309,6 +336,8 @@ async function startLiveSurface(message, sender) {
     stage = "waiting for the first decoded video frame";
     await acknowledgement;
 
+    const confirmedSessions = await getLiveSessions();
+    const videoInfo = normalizeVideoInfo(confirmedSessions[surfaceId]?.videoInfo);
     const diagnostic = {
       at: new Date().toISOString(),
       sourceOrigin: expectedOrigin,
@@ -318,7 +347,8 @@ async function startLiveSurface(message, sender) {
       interactive,
       keepSourceVisible: sourceKeptVisible,
       sourceTabId: tab.id,
-      workspaceTabId
+      workspaceTabId,
+      videoInfo
     };
     await chrome.storage.session.set({ [LAST_DIAGNOSTIC_KEY]: diagnostic });
     return {
@@ -635,7 +665,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           interactive: !!item.interactive,
           keepSourceVisible: !!item.keepSourceVisible,
           acknowledged: !!item.acknowledged,
-          debuggerAttached: !!item.debuggerAttached
+          debuggerAttached: !!item.debuggerAttached,
+          videoInfo: normalizeVideoInfo(item.videoInfo)
         })),
         lastLiveDiagnostic: stored[LAST_DIAGNOSTIC_KEY] || null
       };
@@ -665,6 +696,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         throw new Error("Live surface acknowledgement did not match an active session.");
       }
       session.acknowledged = true;
+      session.videoInfo = normalizeVideoInfo(message.videoInfo);
       await saveLiveSessions(sessions);
       const pending = pendingLiveStarts.get(message.surfaceId);
       if (pending) pending.resolve();
