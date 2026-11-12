@@ -180,6 +180,8 @@ kbd { font-family: var(--sans); font-size: 9px; border: 1px solid rgba(255,255,2
 .iframe-tool { border: 0; background: transparent; color: #8b95a6; cursor: pointer; padding: 2px; display: grid; place-items: center; }
 .iframe-tool:hover { color: white; }
 .iframe-tool .icon { width: 12px; height: 12px; }
+.iframe-mode { min-height: 21px; padding: 0 7px; border: 1px solid rgba(167,139,250,.2); border-radius: 4px; background: rgba(167,139,250,.09); color: #c5b9ff; font-size: 7px; cursor: pointer; }
+.iframe-mode:hover { background: rgba(167,139,250,.17); color: white; }
 .website-frame { border: 0; width: 100%; flex: 1; min-height: 0; background: white; }
 .frame-fallback { padding: 8px; background: #171c27; color: #9aa4b5; font-size: 8px; text-align: center; }
 .note-node { height: 100%; display: flex; flex-direction: column; padding: 20px 20px 16px; background: #29253a; color: #eae5ff; }
