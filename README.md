@@ -9,7 +9,7 @@ Nolane Infinite is a local-first canvas for arranging websites, ideas and tools 
 ## What works today
 
 - Infinite canvas with pointer-based pan and cursor-anchored zoom.
-- Website cards with direct open-in-browser and an optional embedded-view attempt.
+- Website cards with direct open-in-browser, a restricted sandbox preview, and an explicit Compatibility Preview for trusted sites that need normal origin/storage access.
 - Notes with editable text and four color themes.
 - Multiple named workspaces (up to 12), each with its own canvas, layout and saved items.
 - Create, switch, rename and delete local workspaces.
@@ -33,7 +33,7 @@ Nolane Infinite is a local-first canvas for arranging websites, ideas and tools 
 
 ## Important compatibility boundary
 
-A website can refuse iframe embedding through CSP frame-ancestors or X-Frame-Options. Third-party cookie restrictions can also affect embedded sessions. When that happens, use **Open tab** to visit the original website in the user's normal browser profile.
+A website can refuse iframe embedding through CSP frame-ancestors or X-Frame-Options. The default **Safe Preview** uses an opaque sandbox origin and may break applications that need origin-bound storage or APIs. **Compatibility Preview** adds allow-same-origin and the Storage Access sandbox token after an explicit confirmation, which can fix some client-side failures but expands the trust boundary; enable it only for sites you trust. It still cannot override anti-framing headers or guarantee third-party cookies. When either mode fails, use **Open tab** to visit the original website in the user's normal browser profile. The workspace cannot read a cross-origin frame's console, so it cannot always diagnose the exact remote JavaScript error.
 
 The optional Chrome MV3 Browser Companion is now included in extension/. It asks for the Tabs permission only after the user clicks its grant button, lets the user select open tabs, and adds their titles/URLs as workspace cards. Selecting a card focuses the original Chrome tab, so its existing login session stays in Chrome. The extension does not read cookies, passwords, page contents or tokens. It does not turn tabs into embedded DOM surfaces; universal authenticated surfaces still require a local browser runtime (for example a custom Chromium host or a native WebView host). See extension/README.md and docs/ARCHITECTURE.md.
 
