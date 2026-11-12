@@ -39,6 +39,7 @@
   let activeSpaceId = "personal";
   let bridgeConnected = false;
   let bridgeSessionId = "";
+  const liveSurfaces = new Map();
 
   const uid = () => "node-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -469,18 +470,20 @@
 
     const body = document.createElement("div");
     body.className = "node-body";
-    if (node.type === "website") {
+    if (node.type === "website" && liveSurfaces.has(node.id)) {
+      body.appendChild(createLiveSurfaceElement(node, liveSurfaces.get(node.id)));
+    } else if (node.type === "website") {
       const previewActions = node.browserTabId !== undefined
-        ? '<div class="preview-actions"><button class="mini-button" data-action="open"><svg class="icon"><use href="#i-external"/></svg> Switch to Chrome tab</button><button class="mini-button secondary" data-action="open-url">Open URL</button></div>'
-        : '<div class="preview-actions"><button class="mini-button" data-action="embed"><svg class="icon"><use href="#i-layout"/></svg> Try safe preview</button><button class="mini-button secondary" data-action="open"><svg class="icon"><use href="#i-external"/></svg> Open tab</button></div>';
+        ? '<div class="preview-actions"><button class="mini-button" data-action="open"><svg class="icon"><use href="#i-external"/></svg> Focus source tab</button><button class="mini-button secondary" data-action="open-url">Open URL</button><button class="mini-button secondary" data-action="live-help">Stream help</button></div>'
+        : '<div class="preview-actions"><button class="mini-button" data-action="open"><svg class="icon"><use href="#i-external"/></svg> Open tab</button><button class="mini-button secondary" data-action="live-help">Create live surface</button></div>';
       body.innerHTML =
         '<div class="web-preview">' +
           '<div class="preview-mark">' + escapeHTML(initials(hostOf(node.url))) + '</div>' +
           '<div class="preview-title">' + escapeHTML(node.title) + '</div>' +
           '<div class="preview-domain">' + escapeHTML(hostOf(node.url)) + '</div>' +
-          '<p class="preview-description">' + escapeHTML(node.description || "Open this website directly from your workspace.") + '</p>' +
+          '<p class="preview-description">' + escapeHTML(node.description || "Open this website in Chrome, then stream its real tab into this card.") + '</p>' +
           previewActions +
-          '<div class="embed-note">' + (node.browserTabId !== undefined ? "Uses the original Chrome tab and its existing session." : "Embedding depends on the website\\'s own security policy.") + '</div>' +
+          '<div class="embed-note">Live view uses the real Chrome tab; it does not rely on iframe embedding.</div>' +
         '</div>';
     } else {
       body.innerHTML =
@@ -501,6 +504,255 @@
     article.addEventListener("pointerdown", () => selectNode(node.id));
     article.addEventListener("click", handleNodeAction);
     return article;
+  }
+
+
+  function postLiveInput(surface, payload) {
+    window.postMessage({
+      source: "nolane-workspace",
+      type: "LIVE_INPUT",
+      surfaceId: surface.surfaceId,
+      browserSessionId: surface.browserSessionId,
+      ...payload
+    }, location.origin);
+  }
+
+  function createLiveSurfaceElement(node, surface) {
+    const root = document.createElement("div");
+    root.className = "live-surface";
+    const toolbar = document.createElement("div");
+    toolbar.className = "live-surface-toolbar";
+    toolbar.innerHTML =
+      '<span class="live-indicator"><i></i> LIVE CHROME TAB</span>' +
+      '<span class="live-surface-actions">' +
+      '<button class="live-tool" data-action="focus-live" title="Focus the original Chrome tab">Focus source</button>' +
+      '<button class="live-tool danger" data-action="stop-live" title="Stop live capture">Stop</button>' +
+      '</span>';
+    const stage = document.createElement("div");
+    stage.className = "live-surface-stage";
+    stage.tabIndex = 0;
+    stage.setAttribute("role", "application");
+    stage.setAttribute("aria-label", "Live Chrome page. Click to send mouse and keyboard input to the original tab.");
+    const video = document.createElement("video");
+    video.autoplay = true;
+    video.muted = true;
+    video.playsInline = true;
+    video.srcObject = surface.stream;
+    const hint = document.createElement("div");
+    hint.className = "live-surface-hint";
+    hint.textContent = "Click inside to interact · Input is sent to the original Chrome tab";
+    stage.append(video, hint);
+
+    function coordinates(event) {
+      const rect = stage.getBoundingClientRect();
+      const videoWidth = video.videoWidth || surface.viewport.width;
+      const videoHeight = video.videoHeight || surface.viewport.height;
+      const aspect = videoWidth / Math.max(1, videoHeight);
+      const boxAspect = rect.width / Math.max(1, rect.height);
+      let contentWidth = rect.width;
+      let contentHeight = rect.height;
+      if (aspect > boxAspect) contentHeight = rect.width / aspect;
+      else contentWidth = rect.height * aspect;
+      const offsetX = (rect.width - contentWidth) / 2;
+      const offsetY = (rect.height - contentHeight) / 2;
+      const localX = event.clientX - rect.left - offsetX;
+      const localY = event.clientY - rect.top - offsetY;
+      if (localX < 0 || localY < 0 || localX > contentWidth || localY > contentHeight) return null;
+      return {
+        x: Math.max(0, Math.min(surface.viewport.width, localX / contentWidth * surface.viewport.width)),
+        y: Math.max(0, Math.min(surface.viewport.height, localY / contentHeight * surface.viewport.height))
+      };
+    }
+
+    function modifiers(event) {
+      return {
+        altKey: !!event.altKey,
+        ctrlKey: !!event.ctrlKey,
+        metaKey: !!event.metaKey,
+        shiftKey: !!event.shiftKey
+      };
+    }
+
+    let lastMoveAt = 0;
+    stage.addEventListener("pointerdown", (event) => {
+      const point = coordinates(event);
+      if (!point) return;
+      stage.focus({ preventScroll: true });
+      try { stage.setPointerCapture(event.pointerId); } catch (_) {}
+      postLiveInput(surface, {
+        kind: "mousePressed", ...point,
+        button: event.button === 2 ? "right" : event.button === 1 ? "middle" : "left",
+        buttons: event.buttons || 1,
+        clickCount: event.detail || 1,
+        ...modifiers(event)
+      });
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    stage.addEventListener("pointermove", (event) => {
+      const now = performance.now();
+      if (now - lastMoveAt < 28) return;
+      lastMoveAt = now;
+      const point = coordinates(event);
+      if (!point) return;
+      postLiveInput(surface, { kind: "mouseMoved", ...point, buttons: event.buttons || 0, ...modifiers(event) });
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    const endPointer = (event) => {
+      const point = coordinates(event);
+      if (point) {
+        postLiveInput(surface, {
+          kind: "mouseReleased", ...point,
+          button: event.button === 2 ? "right" : event.button === 1 ? "middle" : "left",
+          buttons: 0,
+          clickCount: event.detail || 1,
+          ...modifiers(event)
+        });
+      }
+      try { stage.releasePointerCapture(event.pointerId); } catch (_) {}
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    stage.addEventListener("pointerup", endPointer);
+    stage.addEventListener("pointercancel", endPointer);
+    stage.addEventListener("wheel", (event) => {
+      const point = coordinates(event);
+      if (!point) return;
+      postLiveInput(surface, { kind: "mouseWheel", ...point, deltaX: event.deltaX, deltaY: event.deltaY, ...modifiers(event) });
+      event.preventDefault();
+      event.stopPropagation();
+    }, { passive: false });
+    stage.addEventListener("contextmenu", (event) => { event.preventDefault(); event.stopPropagation(); });
+    stage.addEventListener("keydown", (event) => {
+      postLiveInput(surface, {
+        kind: "keyDown",
+        key: event.key,
+        code: event.code,
+        keyCode: event.keyCode,
+        location: event.location,
+        repeat: event.repeat,
+        text: event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey ? event.key : "",
+        unmodifiedText: event.key.length === 1 ? event.key : "",
+        ...modifiers(event)
+      });
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    stage.addEventListener("keyup", (event) => {
+      postLiveInput(surface, {
+        kind: "keyUp",
+        key: event.key,
+        code: event.code,
+        keyCode: event.keyCode,
+        location: event.location,
+        ...modifiers(event)
+      });
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    stage.addEventListener("compositionend", (event) => {
+      if (event.data) postLiveInput(surface, { kind: "insertText", text: event.data });
+    });
+    root.append(toolbar, stage);
+    video.play().catch(() => {});
+    return root;
+  }
+
+  async function startLiveSurface(message) {
+    let stream = null;
+    try {
+      if (!message || typeof message.surfaceId !== "string" || !Number.isInteger(message.sourceTabId) ||
+          typeof message.streamId !== "string" || message.browserSessionId !== bridgeSessionId) {
+        throw new Error("The live-stream request did not match this Chrome profile.");
+      }
+      if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
+        throw new Error("This browser page cannot consume a tab stream. Open Nolane over its HTTPS GitHub Pages address.");
+      }
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          mandatory: {
+            chromeMediaSource: "tab",
+            chromeMediaSourceId: message.streamId
+          }
+        }
+      });
+
+      const safeUrl = normalizeUrl(message.url);
+      addBrowserTabsToWorkspace([{
+        id: message.sourceTabId,
+        url: safeUrl,
+        title: String(message.title || hostOf(safeUrl)).slice(0, 120)
+      }], message.browserSessionId);
+      const node = nodes.find((item) => item.type === "website" &&
+        item.browserTabId === message.sourceTabId && item.browserSessionId === message.browserSessionId);
+      if (!node) throw new Error("The source tab could not be added to the active workspace.");
+
+      const previous = liveSurfaces.get(node.id);
+      if (previous) previous.stream.getTracks().forEach((track) => track.stop());
+      const viewport = message.viewport && Number.isFinite(message.viewport.width) && Number.isFinite(message.viewport.height)
+        ? { width: Math.max(1, message.viewport.width), height: Math.max(1, message.viewport.height) }
+        : { width: 1280, height: 720 };
+      liveSurfaces.set(node.id, {
+        surfaceId: message.surfaceId,
+        sourceTabId: message.sourceTabId,
+        browserSessionId: message.browserSessionId,
+        viewport,
+        stream
+      });
+      activeView = "canvas";
+      $("#searchInput").value = "";
+      renderNodes();
+      scheduleSave();
+      window.postMessage({
+        source: "nolane-workspace",
+        type: "LIVE_SURFACE_ACK",
+        surfaceId: message.surfaceId,
+        browserSessionId: message.browserSessionId
+      }, location.origin);
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack) videoTrack.addEventListener("ended", () => stopLiveSurfaceById(message.surfaceId, "Chrome ended the captured tab stream.", false), { once: true });
+      toast("Live Chrome surface connected: " + node.title + ".");
+    } catch (error) {
+      if (stream) stream.getTracks().forEach((track) => track.stop());
+      if (message && typeof message.surfaceId === "string") {
+        window.postMessage({
+          source: "nolane-workspace",
+          type: "LIVE_SURFACE_ERROR",
+          surfaceId: message.surfaceId,
+          error: String(error?.message || error).slice(0, 220)
+        }, location.origin);
+      }
+      throw error;
+    }
+  }
+
+  function stopLiveSurfaceById(surfaceId, reason, notifyExtension = false) {
+    let nodeId = "";
+    let surface = null;
+    for (const [id, item] of liveSurfaces) {
+      if (item.surfaceId === surfaceId) { nodeId = id; surface = item; break; }
+    }
+    if (!surface) return;
+    liveSurfaces.delete(nodeId);
+    surface.stream.getTracks().forEach((track) => track.stop());
+    if (notifyExtension) {
+      window.postMessage({
+        source: "nolane-workspace",
+        type: "LIVE_SURFACE_STOP",
+        surfaceId,
+        browserSessionId: surface.browserSessionId
+      }, location.origin);
+    }
+    renderNodes();
+    if (reason) toast(reason, "error");
+  }
+
+  function stopLiveSurface(nodeId) {
+    const surface = liveSurfaces.get(nodeId);
+    if (!surface) return;
+    stopLiveSurfaceById(surface.surfaceId, "Live surface stopped.", true);
   }
 
   function updateViewFilter() {
@@ -552,6 +804,9 @@
     if (action === "embed" && node.type === "website") activateEmbed(node, article, node.embedMode || "safe");
     if (action === "compatibility" && node.type === "website") setEmbedMode(node, article, "compat");
     if (action === "safe-mode" && node.type === "website") setEmbedMode(node, article, "safe");
+    if (action === "stop-live" && node.type === "website") stopLiveSurface(node.id);
+    if (action === "focus-live" && node.type === "website") openWebsite(node);
+    if (action === "live-help" && node.type === "website") toast("Open this website in a Chrome tab, click the Nolane Companion icon there, then choose Stream this tab to Nolane.");
     if (action === "reload") {
       const frame = $("iframe", article);
       if (frame) { frame.src = node.url; toast("Refreshing " + node.title + "."); }
@@ -720,6 +975,10 @@
     if (!message || message.source !== "nolane-companion") return;
     if (message.type === "COMPANION_READY") {
       setBridgeConnected(!!message.browserSessionId, message.browserSessionId || "");
+    } else if (message.type === "LIVE_SURFACE_START") {
+      startLiveSurface(message).catch((error) => toast(error.message || "Could not start the live surface.", "error"));
+    } else if (message.type === "LIVE_SURFACE_STOPPED") {
+      stopLiveSurfaceById(message.surfaceId, message.reason || "Live Chrome surface disconnected.", false);
     } else if (message.type === "TABS_IMPORTED") {
       setBridgeConnected(!!message.browserSessionId, message.browserSessionId || "");
       addBrowserTabsToWorkspace(message.tabs, message.browserSessionId);
@@ -1097,6 +1356,16 @@
     window.addEventListener("blur", () => { spacePressed = false; canvas.classList.remove("space-pan"); pointerUp(); });
     window.addEventListener("resize", updateMinimap);
     window.addEventListener("pagehide", () => {
+      for (const surface of liveSurfaces.values()) {
+        window.postMessage({
+          source: "nolane-workspace",
+          type: "LIVE_SURFACE_STOP",
+          surfaceId: surface.surfaceId,
+          browserSessionId: surface.browserSessionId
+        }, location.origin);
+        surface.stream.getTracks().forEach((track) => track.stop());
+      }
+      liveSurfaces.clear();
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(workspaceSnapshot())); } catch (_) {}
     });
   }
