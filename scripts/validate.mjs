@@ -65,5 +65,21 @@ else pass("Static workspace does not access privileged browser APIs.");
 if (!html.includes('id="bridgeDialog"') || !html.includes("Companion not detected")) fail("Browser Companion status UI is missing.");
 else pass("Browser Companion status is explicit and does not imply a working extension.");
 
+const extensionManifest = JSON.parse(read("extension/manifest.json"));
+for (const file of ["extension/background.js", "extension/content.js", "extension/popup.html", "extension/popup.css", "extension/popup.js", "extension/README.md"]) {
+  if (!fs.existsSync(path.join(root, file))) fail("Browser Companion asset missing: " + file);
+}
+if (extensionManifest.manifest_version !== 3 || !extensionManifest.optional_permissions?.includes("tabs")) fail("Browser Companion must be an MV3 extension with optional Tabs permission.");
+else pass("Browser Companion manifest is MV3 and requests Tabs permission optionally.");
+const allExtensionPermissions = [...(extensionManifest.permissions || []), ...(extensionManifest.optional_permissions || [])];
+if (allExtensionPermissions.some((permission) => ["cookies", "debugger", "history", "webRequest", "scripting", "tabCapture"].includes(permission))) fail("Browser Companion requests a disallowed or unnecessary sensitive permission.");
+else pass("Browser Companion does not request cookie, debugger, history, webRequest, scripting or tab-capture permissions.");
+if (!extensionManifest.content_scripts?.some((entry) => entry.matches?.includes("https://nolane-x.github.io/web-view/*"))) fail("Browser Companion content script is not restricted to the published workspace origin.");
+else pass("Browser Companion content script is restricted to the workspace origin.");
+if (!/sanitizeTabUrl/.test(read("extension/popup.js")) || !/url\.hash = ""/.test(read("extension/popup.js"))) fail("Browser Companion URL sanitizer is missing.");
+else pass("Browser Companion strips URL fragments and sensitive-looking query parameters before import.");
+if (!/NOLANE_FOCUS_TAB/.test(read("extension/background.js")) || !/NOLANE_IMPORT_TABS/.test(read("extension/content.js"))) fail("Browser Companion tab handoff message handlers are incomplete.");
+else pass("Browser Companion implements selected-tab import and return-to-tab messaging.");
+
 if (process.exitCode) process.exit(process.exitCode);
 console.log("All static checks passed.");
