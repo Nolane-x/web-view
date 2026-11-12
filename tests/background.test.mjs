@@ -95,7 +95,16 @@ function createHarness(options = {}) {
             listener({
               type: "NOLANE_LIVE_SURFACE_ACK",
               surfaceId: message.surfaceId,
-              browserSessionId: message.browserSessionId
+              browserSessionId: message.browserSessionId,
+              videoInfo: {
+                width: 1280,
+                height: 720,
+                frameRate: 30,
+                presentedFrames: 1,
+                mediaTime: 0,
+                trackReadyState: "live",
+                trackMuted: false
+              }
             }, {
               tab: { id: tabId },
               url: "https://nolane-x.github.io/web-view/"
@@ -117,6 +126,9 @@ function createHarness(options = {}) {
     },
     windows: {
       async update(windowId, changes) { eventOrder.push("windows.update:" + windowId); windowUpdates.push({ windowId, changes }); return {}; },
+      async get(windowId) {
+        return { id: windowId, state: "normal", left: 0, top: 0, width: 1365, height: 768 };
+      },
       async create(createData) {
         eventOrder.push("windows.create:" + createData.tabId);
         windowCreates.push({ ...createData });
@@ -674,7 +686,11 @@ test("keep-source-visible mode moves the existing workspace tab to a second wind
   assert.equal(h.tabs.get(10).windowId, 1);
   assert.notEqual(h.tabs.get(20).windowId, 1);
   assert.equal(h.tabs.get(20).windowId, started.workspaceWindowId);
-  assert.deepEqual(h.windowCreates[0], { tabId: 20, type: "normal", focused: true });
+  assert.equal(h.windowCreates[0].tabId, 20);
+  assert.equal(h.windowCreates[0].type, "normal");
+  assert.equal(h.windowCreates[0].focused, true);
+  assert.equal(h.windowCreates[0].width, 709);
+  assert.equal(h.windowCreates[0].left, 656);
 });
 
 test("legacy single-window mode remains available when the user disables source visibility", async () => {
@@ -722,4 +738,17 @@ test("popup diagnostics are scoped to the companion and omit raw page URLs", asy
   );
   assert.equal(denied.ok, false);
   assert.match(denied.error, /Companion popup/i);
+});
+
+
+test("first decoded video frame metadata is retained in the local compatibility report", async () => {
+  const h = createHarness();
+  await h.send({ type: "NOLANE_REGISTER_WORKSPACE" }, { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" });
+  await h.send({ type: "NOLANE_START_LIVE_SURFACE", tabId: 10 }, { url: "chrome-extension://nolane-test/popup.html" });
+  const diagnostic = await h.send({ type: "NOLANE_GET_DIAGNOSTICS" }, { url: "chrome-extension://nolane-test/popup.html" });
+  assert.equal(diagnostic.lastLiveDiagnostic.videoInfo.width, 1280);
+  assert.equal(diagnostic.lastLiveDiagnostic.videoInfo.height, 720);
+  assert.equal(diagnostic.lastLiveDiagnostic.videoInfo.frameRate, 30);
+  assert.equal(diagnostic.liveSessions[0].videoInfo.presentedFrames, 1);
+  assert.equal(diagnostic.liveSessions[0].videoInfo.trackReadyState, "live");
 });
