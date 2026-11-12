@@ -13,9 +13,9 @@ The application cannot inspect the contents of a cross-origin iframe. It therefo
 
 ## Browser Companion: future integration point
 
-The companion panel is currently a status-only placeholder. No extension runtime, extension ID, cookie access, debugger permission or tab-capture permission is included in this release.
+The optional MV3 companion is implemented in extension/. Its popup requests the optional Tabs permission only after an explicit user click, then lets the user select which open HTTP(S) tabs to import. It sends only selected tab IDs, window IDs, titles and URLs to the workspace. The content script bridges those messages only on the published GitHub Pages origin; the service worker can focus the selected original tab. Existing website sessions stay inside Chrome. The extension does not request cookies, debugger, history, webRequest, scripting or tab-capture permissions.
 
-A future MV3 extension should use an explicit, narrow message protocol and user-initiated tab selection. It must not export cookies, passwords or third-party access tokens to the workspace. The extension can manage permitted browser tabs and may offer a user-approved tab mirror, but capture-and-input routing is not equivalent to a native embedded WebContents and has latency, focus, popup and permission limitations.
+This companion is a tab handoff tool, not a live browser surface. It does not expose the original tab's DOM to the canvas and does not mirror its rendered page. A selected card can focus the actual Chrome tab; if its tab ID is stale after a browser restart or tab closure, the card falls back to opening the URL.
 
 ## Universal web surface research
 
