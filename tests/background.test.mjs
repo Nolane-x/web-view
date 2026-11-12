@@ -246,7 +246,7 @@ test("mouse and keyboard input are forwarded only from the registered workspace 
     button: "left"
   }, { tab: { id: 99 }, url: "https://attacker.example/" });
   assert.equal(wrongSender.ok, false);
-  assert.match(wrongSender.error, /workspace tab/i);
+  assert.match(wrongSender.error, /no longer connected to this browser profile/i);
 });
 
 test("live input is rejected and the debugger is detached when the source changes origin", async () => {
@@ -271,7 +271,7 @@ test("live input is rejected and the debugger is detached when the source change
   }, { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" });
 
   assert.equal(result.ok, false);
-  assert.match(result.error, /different website/i);
+  assert.match(result.error, /source website changed/i);
   assert.ok(h.detachedTabs.includes(10));
   assert.ok(h.sentMessages.some((item) =>
     item.tabId === 20 &&
