@@ -401,8 +401,15 @@
   }
 
   function openWebsite(node) {
-    const popup = window.open(node.url, "_blank", "noopener,noreferrer");
-    if (!popup) toast("Your browser blocked the new tab. Allow pop-ups for this workspace.", "error");
+    const anchor = document.createElement("a");
+    anchor.href = node.url;
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+    anchor.hidden = true;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    toast("Opening " + node.title + " in a new browser tab.");
   }
 
   function deleteNode(id) {
@@ -416,7 +423,7 @@
   }
 
   function startNodeDrag(event, id) {
-    if (event.button !== 0 || event.target.closest(".node-actions")) return;
+    if (event.button !== 0 || spacePressed || event.target.closest(".node-actions")) return;
     const node = nodes.find((item) => item.id === id);
     if (!node) return;
     selectNode(id);
@@ -426,7 +433,7 @@
   }
 
   function startNodeResize(event, id) {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || spacePressed) return;
     const node = nodes.find((item) => item.id === id);
     if (!node) return;
     selectNode(id);
@@ -485,7 +492,8 @@
     if (nodes.length >= MAX_NODES) { toast("This workspace has reached its current limit of " + MAX_NODES + " items.", "error"); return false; }
     let url;
     try { url = normalizeUrl(rawUrl); } catch (error) { return toast(error.message, "error"); }
-    const point = worldPoint(canvas.clientWidth / 2, canvas.clientHeight / 2);
+    const rect = canvas.getBoundingClientRect();
+    const point = worldPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
     const host = hostOf(url);
     const node = {
       id: uid(), type: "website", title: (title || host).trim().slice(0, 120) || host, url,
@@ -502,7 +510,7 @@
   }
 
   function createNote(title, content, color) {
-    if (nodes.length >= MAX_NODES) { toast("This workspace has reached its current limit of " + MAX_NODES + " items.", "error"); return false; }
+    if (!editingId && nodes.length >= MAX_NODES) { toast("This workspace has reached its current limit of " + MAX_NODES + " items.", "error"); return false; }
     const point = worldPoint(canvas.clientWidth / 2, canvas.clientHeight / 2);
     const node = {
       id: editingId || uid(), type: "note", title: (title || "Untitled note").trim().slice(0, 120) || "Untitled note",
@@ -676,9 +684,9 @@
       noteColor = button.dataset.color;
       updateColorChoices();
     }));
-    $("#zoomIn").addEventListener("click", () => zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, 1.16));
-    $("#zoomOut").addEventListener("click", () => zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, 1 / 1.16));
-    $("#zoomValue").addEventListener("click", () => { view.scale = 1; applyView(); scheduleSave(); });
+    $("#zoomIn").addEventListener("click", () => { const rect = canvas.getBoundingClientRect(); zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 1.16); });
+    $("#zoomOut").addEventListener("click", () => { const rect = canvas.getBoundingClientRect(); zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 1 / 1.16); });
+    $("#zoomValue").addEventListener("click", () => { const rect = canvas.getBoundingClientRect(); const cx = rect.left + rect.width / 2; const cy = rect.top + rect.height / 2; zoomAt(cx, cy, 1 / view.scale); });
     $("#fitButton").addEventListener("click", fitCanvas);
     $("#resetButton").addEventListener("click", () => { view = { x: 25, y: 0, scale: .88 }; applyView(); scheduleSave(); });
     $("#minimapButton").addEventListener("click", () => {
