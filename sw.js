@@ -1,4 +1,4 @@
-const CACHE_NAME = "nolane-infinite-shell-v1";
+const CACHE_NAME = "nolane-infinite-shell-v2";
 const ASSETS = ["", "index.html", "styles.css", "app.js", "manifest.webmanifest", "icon.svg"];
 
 self.addEventListener("install", (event) => {
