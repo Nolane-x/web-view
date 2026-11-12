@@ -23,6 +23,7 @@ function createHarness(options = {}) {
   const detachedTabs = [];
   const tabUpdates = [];
   const windowUpdates = [];
+  const eventOrder = [];
   let uuidCounter = 0;
   const runtimeMessage = makeEvent();
   const debuggerEvent = makeEvent();
@@ -81,6 +82,7 @@ function createHarness(options = {}) {
         return { ...tab };
       },
       async sendMessage(tabId, message) {
+        eventOrder.push("sendMessage:" + message.type);
         sentMessages.push({ tabId, message });
         if (message.type === "NOLANE_LIVE_SURFACE_START") {
           queueMicrotask(() => {
@@ -98,6 +100,7 @@ function createHarness(options = {}) {
         return { ok: true };
       },
       async update(tabId, changes) {
+        eventOrder.push("tabs.update:" + tabId);
         tabUpdates.push({ tabId, changes });
         const tab = tabs.get(tabId);
         if (!tab) throw new Error("No tab with id: " + tabId);
@@ -108,7 +111,7 @@ function createHarness(options = {}) {
       onUpdated: tabUpdated
     },
     windows: {
-      async update(windowId, changes) { windowUpdates.push({ windowId, changes }); return {}; }
+      async update(windowId, changes) { eventOrder.push("windows.update:" + windowId); windowUpdates.push({ windowId, changes }); return {}; }
     },
     debugger: {
       onEvent: debuggerEvent,
@@ -136,6 +139,7 @@ function createHarness(options = {}) {
     tabCapture: {
       onStatusChanged: captureStatus,
       async getMediaStreamId(options) {
+        eventOrder.push("getMediaStreamId");
         streamRequests.push(options);
         return "one-use-tab-stream-token";
       }
@@ -182,7 +186,8 @@ function createHarness(options = {}) {
     sessionStore,
     localStore,
     tabRemoved,
-    tabUpdated
+    tabUpdated,
+    eventOrder
   };
 }
 
@@ -206,6 +211,8 @@ test("live capture is tied to the active source tab and the exact Nolane consume
   assert.ok(h.tabUpdates.some((update) => update.tabId === 20 && update.changes.active === true));
   assert.ok(h.windowUpdates.some((update) => update.windowId === 1 && update.changes.focused === true));
   assert.equal(h.streamRequests.length, 1);
+  assert.ok(h.eventOrder.indexOf("windows.update:1") < h.eventOrder.indexOf("getMediaStreamId"), "focus the consumer tab before minting the short-lived stream ID");
+  assert.ok(h.eventOrder.indexOf("getMediaStreamId") < h.eventOrder.indexOf("sendMessage:NOLANE_LIVE_SURFACE_START"), "deliver the token immediately after it is created");
   assert.equal(
     JSON.stringify(h.streamRequests[0]),
     JSON.stringify({ targetTabId: 10, consumerTabId: 20 })
@@ -543,4 +550,37 @@ test("CDP viewport error releases partial debugger and still captures source tab
   assert.equal(h.streamRequests.length, 1);
   assert.ok(h.detachedTabs.includes(10), "partial debugger attachment must be released");
   assert.equal(Object.values(h.sessionStore.nolaneLiveSessions)[0].debuggerAttached, false);
+});
+
+
+test("cross-origin navigation stops a video-only stream without debugger events", async () => {
+  const h = createHarness({ attachError: "Cannot access a chrome-extension:// URL of different extension" });
+  await h.send({ type: "NOLANE_REGISTER_WORKSPACE" }, { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" });
+  const started = await h.send({ type: "NOLANE_START_LIVE_SURFACE", tabId: 10 }, { url: "chrome-extension://nolane-test/popup.html" });
+  assert.equal(started.ok, true);
+  assert.equal(started.interactive, false);
+
+  h.tabUpdated.fire(10, { url: "https://youpass.vn/practice/reading" }, { id: 10, url: "https://youpass.vn/practice/reading" });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(Object.keys(h.sessionStore.nolaneLiveSessions || {}).length, 1, "same-origin navigation should keep the approved session");
+
+  h.tabUpdated.fire(10, { url: "https://example.org/redirected" }, { id: 10, url: "https://example.org/redirected" });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(Object.keys(h.sessionStore.nolaneLiveSessions || {}).length, 0);
+  assert.ok(h.sentMessages.some((item) =>
+    item.tabId === 20 &&
+    item.message.type === "NOLANE_LIVE_SURFACE_STOPPED" &&
+    item.message.surfaceId === started.surfaceId &&
+    /different website/.test(item.message.reason)
+  ));
+});
+
+test("legacy live sessions without debuggerAttached still release their previous CDP attachment", async () => {
+  const h = createHarness();
+  await h.send({ type: "NOLANE_REGISTER_WORKSPACE" }, { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" });
+  const started = await h.send({ type: "NOLANE_START_LIVE_SURFACE", tabId: 10 }, { url: "chrome-extension://nolane-test/popup.html" });
+  delete h.sessionStore.nolaneLiveSessions[started.surfaceId].debuggerAttached;
+  h.tabUpdated.fire(20, { status: "loading" }, { id: 20 });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.ok(h.detachedTabs.includes(10));
 });
