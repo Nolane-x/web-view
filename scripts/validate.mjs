@@ -72,8 +72,8 @@ if (!html.includes('id="bridgeDialog"') || !html.includes("Companion not detecte
 else pass("Browser Companion status is explicit and does not imply a working extension.");
 
 const extensionManifest = JSON.parse(read("extension/manifest.json"));
-if (extensionManifest.version !== "0.2.1") fail("Browser Companion release metadata must be synchronized at version 0.2.1.");
-else pass("Browser Companion release metadata is synchronized at 0.2.1.");
+if (extensionManifest.version !== "0.2.2") fail("Browser Companion release metadata must be synchronized at version 0.2.2.");
+else pass("Browser Companion release metadata is synchronized at 0.2.2.");
 for (const file of ["extension/background.js", "extension/content.js", "extension/popup.html", "extension/popup.css", "extension/popup.js", "extension/README.md"]) {
   if (!fs.existsSync(path.join(root, file))) fail("Browser Companion asset missing: " + file);
 }
@@ -116,7 +116,11 @@ if (!/LIVE_SURFACE_ACK/.test(js) || !/pendingLiveStarts/.test(background)) fail(
 else pass("Live capture start waits for the workspace stream acknowledgement.");
 if (!/waitForLiveVideoFrame/.test(js) || !/requestVideoFrameCallback/.test(js)) fail("Live capture must verify a decoded video frame before acknowledging success.");
 else pass("Live capture verifies a decoded frame before acknowledging success.");
-if (!/MAX_LIVE_INPUT_QUEUE/.test(background) || !/enqueueLiveInput/.test(background) || !/mouseMoved/.test(background)) fail("Live input must use a bounded, ordered queue with pointer-move coalescing.");
+if (!/interactionReason/.test(background) || !/debuggerAttached/.test(background) || !/interactive/.test(background) || !/tabCapture\.getMediaStreamId/.test(background)) fail("Debugger failure must not prevent local tab video capture.");
+else pass("CDP is optional; tab video capture can continue in explicit view-only mode.");
+if (!/LIVE VIDEO · VIEW ONLY/.test(js) || !/live-surface-readonly/.test(js)) fail("Workspace must clearly render video-only surfaces as read-only.");
+else pass("View-only surfaces are visibly distinguished from interactive surfaces.");
+if (!MAX_LIVE_INPUT_QUEUE || !/enqueueLiveInput/.test(background) || !/mouseMoved/.test(background)) fail("Live input must use a bounded, ordered queue with pointer-move coalescing.");
 else pass("Live input uses a bounded queue and preserves discrete input order.");
 if (!/chrome\.tabs\.onUpdated/.test(background) || !/removeSessionsForWorkspaceTab/.test(background)) fail("Workspace reload/close must release active source debugger sessions.");
 else pass("Workspace reload/close releases source debugger sessions.");
