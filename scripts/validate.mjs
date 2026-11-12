@@ -104,6 +104,10 @@ if (!/chrome\.debugger\.attach/.test(background) || !/Input\.dispatchMouseEvent/
 else pass("CDP input uses fixed mouse and keyboard methods.");
 if (!/Page\.frameNavigated/.test(background) || !/expectedOrigin/.test(background)) fail("Live sessions must stop when the source origin changes.");
 else pass("Live sessions are bound to the source origin.");
+if (!/Page\.frameResized/.test(background) || !/NOLANE_LIVE_VIEWPORT_UPDATE/.test(bridge) || !/LIVE_VIEWPORT_UPDATE/.test(js)) fail("Live viewport resize synchronization is incomplete.");
+else pass("Chrome viewport resizing updates the live canvas coordinate system.");
+if (!/manualCardMatch/.test(js) || !/existing\.browserTabId = tab\.id/.test(js)) fail("Manual website cards cannot be rebound to their matching Chrome tab.");
+else pass("Existing manual website cards can attach to the live Chrome tab without duplicates.");
 if (!/NOLANE_REGISTER_WORKSPACE/.test(bridge) || !/NOLANE_LIVE_INPUT/.test(bridge)) fail("Workspace content-script registration/input bridge is incomplete.");
 else pass("Content script registers the workspace and forwards input.");
 if (!/LIVE_SURFACE_ACK/.test(js) || !/pendingLiveStarts/.test(background)) fail("Live capture start must wait for workspace stream acknowledgement.");
