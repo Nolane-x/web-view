@@ -11,10 +11,12 @@ Nolane Infinite is a local-first canvas for arranging websites, ideas and tools 
 - Infinite canvas with pointer-based pan and cursor-anchored zoom.
 - Website cards with direct open-in-browser and an optional embedded-view attempt.
 - Notes with editable text and four color themes.
+- Multiple named workspaces (up to 12), each with its own canvas, layout and saved items.
+- Create, switch, rename and delete local workspaces.
 - Drag, resize, select and remove canvas items.
 - Workspace search and separate website/note views.
 - Local persistence through IndexedDB, with a localStorage fallback.
-- JSON workspace export and import.
+- JSON export and import for the complete set of workspaces.
 - PWA manifest and an offline-cached static app shell.
 - Responsive layout for desktop and smaller screens.
 - GitHub Actions deployment to GitHub Pages.
