@@ -4,6 +4,7 @@
   const WORKSPACE_MATCH = "https://nolane-x.github.io/web-view/*";
   const $ = (selector) => document.querySelector(selector);
   let availableTabs = [];
+  let activeTab = null;
 
   function status(message, kind) {
     const element = $("#status");
@@ -12,7 +13,7 @@
   }
 
   function isWorkspaceTab(tab) {
-    return typeof tab.url === "string" && tab.url.startsWith(WORKSPACE_URL);
+    return typeof tab?.url === "string" && tab.url.startsWith(WORKSPACE_URL);
   }
 
   function sanitizeTabUrl(raw) {
@@ -24,7 +25,6 @@
           url.searchParams.delete(key);
         }
       }
-      // URL fragments often contain OAuth implicit-flow tokens; do not export them.
       url.hash = "";
       return url.href;
     } catch (_) {
@@ -34,6 +34,66 @@
 
   function safeHost(url) {
     try { return new URL(url).hostname.replace(/^www\./, ""); } catch (_) { return "Website"; }
+  }
+
+  async function refreshActiveTab() {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      activeTab = tab || null;
+      const title = $("#activeTabTitle");
+      const details = $("#activeTabDescription");
+      const button = $("#liveButton");
+      if (!activeTab) {
+        title.textContent = "No active tab found";
+        details.textContent = "Open a normal website tab first.";
+        button.disabled = true;
+        return;
+      }
+      title.textContent = activeTab.title || safeHost(activeTab.url || "");
+      if (isWorkspaceTab(activeTab)) {
+        details.textContent = "This is the workspace tab. Switch to the website you want to stream, then open the Companion there.";
+        button.disabled = true;
+      } else if (!sanitizeTabUrl(activeTab.url || "")) {
+        details.textContent = "This page cannot be streamed. Open a normal http:// or https:// website.";
+        button.disabled = true;
+      } else {
+        details.textContent = safeHost(activeTab.url) + " is ready. Nolane must already be open in another tab.";
+        button.disabled = false;
+      }
+    } catch (error) {
+      status("Could not inspect the active tab: " + (error.message || error), "error");
+    }
+  }
+
+  async function startLiveSurface() {
+    if (!activeTab || !Number.isInteger(activeTab.id)) return;
+    $("#liveButton").disabled = true;
+    status("Starting a local tab stream…");
+    try {
+      const result = await chrome.runtime.sendMessage({
+        type: "NOLANE_START_LIVE_SURFACE",
+        tabId: activeTab.id
+      });
+      if (!result || !result.ok) throw new Error(result?.error || "The workspace did not accept the stream.");
+      status("Live surface started for " + (result.title || safeHost(activeTab.url)) + ".", "success");
+      $("#stopLiveButton").hidden = false;
+    } catch (error) {
+      status("Could not start live surface: " + (error.message || error), "error");
+    } finally {
+      await refreshActiveTab();
+    }
+  }
+
+  async function stopLiveSurface() {
+    if (!activeTab || !Number.isInteger(activeTab.id)) return;
+    try {
+      const result = await chrome.runtime.sendMessage({ type: "NOLANE_STOP_TAB", tabId: activeTab.id });
+      if (!result?.ok) throw new Error(result?.error || "Could not stop this tab stream.");
+      status("Live stream stopped.", "success");
+      $("#stopLiveButton").hidden = true;
+    } catch (error) {
+      status(error.message || String(error), "error");
+    }
   }
 
   function renderTabs() {
@@ -47,7 +107,6 @@
       label.className = "tab-row";
       const checkbox = document.createElement("input");
       checkbox.type = "checkbox";
-      checkbox.checked = false;
       checkbox.dataset.tabId = String(tab.id);
       const info = document.createElement("span");
       info.className = "tab-info";
@@ -75,14 +134,13 @@
     $("#permissionPanel").hidden = allowed;
     $("#tabsPanel").hidden = !allowed;
     if (allowed) await refreshTabs();
-    else status("Tab-list permission has not been granted.");
   }
 
   async function grantPermission() {
     try {
       const granted = await chrome.permissions.request({ permissions: ["tabs"] });
       if (!granted) {
-        status("Permission was not granted. You can still use Nolane without importing tabs.", "error");
+        status("Tab-list permission was not granted. Live streaming still works without it.", "error");
         return;
       }
       $("#permissionPanel").hidden = true;
@@ -98,11 +156,10 @@
       availableTabs = (await chrome.tabs.query({}))
         .filter((tab) => Number.isInteger(tab.id) && typeof tab.url === "string")
         .map((tab) => ({ ...tab, url: sanitizeTabUrl(tab.url) }))
-        .filter((tab) => !!tab.url)
-        .filter((tab) => !isWorkspaceTab(tab))
+        .filter((tab) => !!tab.url && !isWorkspaceTab(tab))
         .sort((a, b) => Number(!!b.active) - Number(!!a.active));
       renderTabs();
-      status(availableTabs.length ? "Choose tabs, then import them into your active Nolane workspace." : "No web tabs are available to import.", "success");
+      status(availableTabs.length ? "Choose tabs, then import their links as cards. Use Live Chrome Surface for an interactive view." : "No regular web tabs were found.");
     } catch (error) {
       status("Could not list tabs: " + (error.message || error), "error");
     }
@@ -132,17 +189,23 @@
       const workspaceTab = await findWorkspaceTab();
       if (!workspaceTab) {
         await chrome.tabs.create({ url: WORKSPACE_URL });
-        status("Opened Nolane Infinite. Reopen this extension and import the selected tabs.", "success");
+        status("Opened Nolane Infinite. Reopen the extension and import the selected tabs.", "success");
         return;
       }
-      const result = await chrome.tabs.sendMessage(workspaceTab.id, { type: "NOLANE_IMPORT_TABS", tabs: selected, browserSessionId: profile.profileId });
+      const result = await chrome.tabs.sendMessage(workspaceTab.id, {
+        type: "NOLANE_IMPORT_TABS",
+        tabs: selected,
+        browserSessionId: profile.profileId
+      });
       if (!result || !result.ok) throw new Error("The workspace did not accept the selected tabs.");
-      status("Imported " + result.count + " tab(s) into Nolane. You can close this popup.", "success");
+      status("Imported " + result.count + " tab(s) into Nolane.", "success");
     } catch (error) {
       status("Could not reach Nolane. Refresh the workspace page and try again. " + (error.message || ""), "error");
     }
   }
 
+  $("#liveButton").addEventListener("click", startLiveSurface);
+  $("#stopLiveButton").addEventListener("click", stopLiveSurface);
   $("#grantButton").addEventListener("click", grantPermission);
   $("#refreshButton").addEventListener("click", refreshTabs);
   $("#selectAllButton").addEventListener("click", () => {
@@ -152,5 +215,6 @@
   $("#tabList").addEventListener("change", updateImportButton);
   $("#importButton").addEventListener("click", importSelected);
   $("#openWorkspaceButton").addEventListener("click", () => chrome.tabs.create({ url: WORKSPACE_URL }));
+  refreshActiveTab().catch((error) => status(error.message || String(error), "error"));
   checkPermission().catch((error) => status(error.message || String(error), "error"));
 })();
