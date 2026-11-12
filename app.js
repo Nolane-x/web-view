@@ -864,12 +864,10 @@
     });
     $("#searchInput").addEventListener("input", updateViewFilter);
     $$(".nav-item").forEach((button) => button.addEventListener("click", () => changeView(button.dataset.view)));
-    $("#newSpaceBtn").addEventListener("click", () => toast("Multiple named spaces are planned for a future release."));
-    $("#workspaceMenu").addEventListener("click", () => toast("This is your local personal space."));
-    $$(".space-item").forEach((button) => button.addEventListener("click", () => {
-      if (button.dataset.toast) toast(button.dataset.toast);
-      else toast("You're already in this space.");
-    }));
+    $("#newSpaceBtn").addEventListener("click", createSpace);
+    $("#workspaceMenu").addEventListener("click", () => { const current = activeSpace(); if (current) renameSpace(current.id); });
+    $("#emptyAddWebsite").addEventListener("click", () => openAddDialog("website"));
+    $("#emptyAddNote").addEventListener("click", () => openAddDialog("note"));
     $("#mobileMenu").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
     canvas.addEventListener("pointerdown", beginPan);
     window.addEventListener("pointermove", pointerMove);
