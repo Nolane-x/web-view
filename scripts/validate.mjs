@@ -257,12 +257,16 @@ if (!nativeHost.includes("HandleDownloadStarting") || !nativeHost.includes("Byte
     !nativeHost.includes("operation?.Resume()") || !nativeHost.includes("operation?.Cancel()") ||
     !nativeHost.includes("DownloadHistoryRecord") || !nativeHost.includes("File.Move(temporaryPath, _downloadHistoryPath, true)") ||
     !nativeHost.includes("Keep Handled=false") || !nativeHost.includes("Interlocked.CompareExchange(ref entry.LastPersistedTick") ||
-    !nativeHost.includes("now - last >= 3000")) fail("Native download tracking, controls or atomic history persistence are incomplete.");
+    !nativeHost.includes("now - last >= 3000") || !nativeHost.includes("HasRetainedDownload") ||
+    !nativeHost.includes("PendingRemoval = true") || !nativeHost.includes("ReleasePendingSurfaceIfPossible")) fail("Native download tracking, controls, atomic history persistence or in-flight surface retention are incomplete.");
 else pass("Native download manager tracks progress, supports pause/resume/cancel and atomically persists a bounded local history.");
 if (!nativeHost.includes("ToggleDownloads_Click") || !nativeHost.includes("ClearFinishedDownloads_Click") ||
     !nativeHost.includes("OpenDownloadedFile") || !nativeHost.includes("ShowDownloadedFile") ||
     !nativeHost.includes("Path.IsPathFullyQualified")) fail("Native download panel actions or saved-path validation are incomplete.");
 else pass("Native download panel exposes open/reveal/clear actions and validates local saved paths.");
+if (!nativeHost.includes("website is hidden, but its download is active or resumable") ||
+    !nativeHost.includes("surface.View.Visibility != Visibility.Visible && !HasRetainedDownload(surface.Id)")) fail("Off-screen or deleted website surfaces must not destroy active/resumable downloads.");
+else pass("Off-screen and removed cards retain their WebView2 operation until downloads complete or are canceled.");
 if (!nativeBridge.includes("createCommand") || !nativeBridge.includes("createNavigationCommand") ||
     !nativeBridge.includes("normalizeSurfaceState") || !nativeBridgeTests.includes("allow-listed protocol") ||
     !nativeBridgeTests.includes("rejects credentials") || !nativeBridgeTests.includes("native address bar")) fail("The native browser command/state/address contract is not independently testable.");

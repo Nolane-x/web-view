@@ -234,6 +234,7 @@ public sealed partial class MainWindow : Window
                 var surface = await GetOrCreateSurfaceAsync(item);
                 if (surface is null) continue;
                 surface.LastVisibleAt = DateTimeOffset.UtcNow;
+                surface.PendingRemoval = false;
                 ApplyBounds(surface.View, item);
                 await SetSurfaceVisibleAsync(surface, true);
                 if (!StringComparer.Ordinal.Equals(surface.Url, item.Url))
@@ -332,6 +333,7 @@ public sealed partial class MainWindow : Window
         {
             Id = Guid.NewGuid().ToString("N"),
             Operation = operation,
+            SurfaceId = surface.Id,
             SourceHost = SafeHost(operation.Uri),
             MimeType = StringRaw(operation.MimeType, 120),
             StartedAtUtc = DateTimeOffset.UtcNow,
@@ -358,6 +360,7 @@ public sealed partial class MainWindow : Window
             UpdateDownloadEntry(entry);
             Interlocked.Exchange(ref entry.LastPersistedTick, Environment.TickCount64);
             QueueDownloadUiRefresh(persist: true);
+            if (!HasRetainedDownload(surface.Id)) ReleasePendingSurfaceIfPossible(surface.Id);
         };
 
         // Keep Handled=false so WebView2 displays its native Save dialog and the user chooses the destination.
@@ -768,6 +771,25 @@ public sealed partial class MainWindow : Window
         PublishSurfaceState(surface, "error", "WebView2 process event: " + kind + ". Reload this website if it remains unavailable.");
     }
 
+    private bool HasRetainedDownload(string surfaceId)
+    {
+        return _downloads.Any(entry =>
+        {
+            if (!StringComparer.Ordinal.Equals(entry.SurfaceId, surfaceId)) return false;
+            var operation = entry.Operation;
+            return operation is not null &&
+                (operation.State == CoreWebView2DownloadState.InProgress ||
+                 (operation.State == CoreWebView2DownloadState.Interrupted && operation.CanResume));
+        });
+    }
+
+    private void ReleasePendingSurfaceIfPossible(string surfaceId)
+    {
+        if (_surfaces.TryGetValue(surfaceId, out var surface) &&
+            surface.PendingRemoval && !HasRetainedDownload(surfaceId))
+            _ = RemoveSurfaceAsync(surfaceId);
+    }
+
     private async Task SetSurfaceVisibleAsync(BrowserSurface surface, bool visible)
     {
         if (!surface.Initialized) { surface.View.Visibility = visible ? Visibility.Visible : Visibility.Collapsed; return; }
@@ -784,6 +806,11 @@ public sealed partial class MainWindow : Window
         else
         {
             surface.View.Visibility = Visibility.Collapsed;
+            if (HasRetainedDownload(surface.Id))
+            {
+                PublishSurfaceStatus(surface.Id, "suspended", "This website is hidden, but its download is active or resumable. Nolane is keeping the browser operation alive.");
+                return;
+            }
             if (!surface.Suspended)
             {
                 try { surface.Suspended = await surface.View.CoreWebView2.TrySuspendAsync(); }
@@ -795,7 +822,8 @@ public sealed partial class MainWindow : Window
 
     private async Task EvictHiddenSurfacesAsync()
     {
-        var hidden = _surfaces.Values.Where(surface => surface.View.Visibility != Visibility.Visible)
+        var hidden = _surfaces.Values
+            .Where(surface => surface.View.Visibility != Visibility.Visible && !HasRetainedDownload(surface.Id))
             .OrderBy(surface => surface.LastVisibleAt).ToList();
         while (_surfaces.Count > MaxCachedSurfaces && hidden.Count > 0)
         {
@@ -807,7 +835,15 @@ public sealed partial class MainWindow : Window
 
     private async Task RemoveSurfaceAsync(string id)
     {
-        if (!_surfaces.Remove(id, out var surface)) return;
+        if (!_surfaces.TryGetValue(id, out var surface)) return;
+        if (HasRetainedDownload(id))
+        {
+            surface.PendingRemoval = true;
+            surface.View.Visibility = Visibility.Collapsed;
+            PublishSurfaceStatus(id, "suspended", "This card was removed, but Nolane is retaining its browser until the download completes or is canceled.");
+            return;
+        }
+        if (!_surfaces.Remove(id)) return;
         try
         {
             if (surface.Initialized)
@@ -1048,6 +1084,7 @@ public sealed partial class MainWindow : Window
     {
         public string Id { get; set; } = "";
         public CoreWebView2DownloadOperation? Operation { get; set; }
+        public string SurfaceId { get; set; } = "";
         public string FileName { get; set; } = "Website download";
         public string SourceHost { get; set; } = "website";
         public string FilePath { get; set; } = "";
@@ -1087,6 +1124,7 @@ public sealed partial class MainWindow : Window
         public WebView2 View { get; } = view;
         public bool Initialized { get; set; }
         public bool Suspended { get; set; }
+        public bool PendingRemoval { get; set; }
         public DateTimeOffset LastVisibleAt { get; set; } = DateTimeOffset.UtcNow;
         public DateTimeOffset LastRendererRecoveryAt { get; set; } = DateTimeOffset.MinValue;
         public int RendererRecoveryAttempts { get; set; }
