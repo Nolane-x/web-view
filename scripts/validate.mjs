@@ -72,8 +72,8 @@ if (!html.includes('id="bridgeDialog"') || !html.includes("Companion not detecte
 else pass("Browser Companion status is explicit and does not imply a working extension.");
 
 const extensionManifest = JSON.parse(read("extension/manifest.json"));
-if (extensionManifest.version !== "0.2.9") fail("Browser Companion release metadata must be synchronized at version 0.2.9.");
-else pass("Browser Companion release metadata is synchronized at 0.2.9.");
+if (extensionManifest.version !== "0.2.10") fail("Browser Companion release metadata must be synchronized at version 0.2.10.");
+else pass("Browser Companion release metadata is synchronized at 0.2.10.");
 for (const file of ["extension/background.js", "extension/compatibility.js", "extension/content.js", "extension/popup.html", "extension/popup.css", "extension/popup.js", "extension/README.md"]) {
   if (!fs.existsSync(path.join(root, file))) fail("Browser Companion asset missing: " + file);
 }
