@@ -136,7 +136,34 @@
     } else {
       history.textContent = "No local history for this website origin yet.";
     }
-    panel.append(category, title, summary, code, actions, recovery, hints, history);
+    const apply = document.createElement("button");
+    apply.className = "compat-apply";
+    apply.type = "button";
+    apply.textContent = result.diagnosis?.recovery?.label || "Inspect status";
+    apply.disabled = !result.diagnosis?.recovery || ["none", "inspect"].includes(result.diagnosis.recovery.action);
+    apply.addEventListener("click", () => applyCompatibilityRecommendation(result.diagnosis.recovery.action));
+    panel.append(category, title, summary, code, actions, recovery, apply, hints, history);
+  }
+
+
+  async function applyCompatibilityRecommendation(action) {
+    if (!activeTab || !Number.isInteger(activeTab.id)) return;
+    const button = $("#compatibilityResult .compat-apply");
+    if (button) button.disabled = true;
+    try {
+      const result = await chrome.runtime.sendMessage({
+        type: "NOLANE_APPLY_COMPATIBILITY_ACTION",
+        tabId: activeTab.id,
+        action,
+        keepSourceVisible: $("#keepSourceVisible").checked
+      });
+      if (!result?.ok) throw new Error(result?.error || "The compatibility action could not be applied.");
+      status(result.message || "Recommended action applied.", "success");
+      if (result.action === "refresh-video") await diagnoseActiveTab();
+    } catch (error) {
+      status("Could not apply the recommendation: " + (error.message || error), "error");
+      if (button) button.disabled = false;
+    }
   }
 
   async function diagnoseActiveTab() {
