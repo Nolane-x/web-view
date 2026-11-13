@@ -38,6 +38,9 @@ jobs:
         shell: pwsh
         run: |
           dotnet restore desktop-host/Nolane.DesktopHost.csproj -r win-x64
+          dotnet list desktop-host/Nolane.DesktopHost.csproj package --include-transitive
+          $webViewPackage = Join-Path $env:USERPROFILE ".nuget/packages/microsoft.web.webview2/1.0.3179.45"
+          if (-not (Test-Path $webViewPackage)) { throw "The pinned WebView2 SDK package 1.0.3179.45 was not restored." }
           dotnet publish desktop-host/Nolane.DesktopHost.csproj -c Release -r win-x64 --self-contained true -p:WindowsAppSDKSelfContained=true -p:PublishSingleFile=false -o "${{ runner.temp }}/nolane-native-host"
       - name: Package native host
         shell: pwsh

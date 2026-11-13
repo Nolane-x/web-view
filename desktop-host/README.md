@@ -60,3 +60,5 @@ Use Export backup to save a versioned JSON copy, or Import backup to validate an
 
 
 Library backup/restore uses the native Windows Shell Common Item Dialog (IFileSaveDialog/IFileOpenDialog), owned by the WinUI window HWND. It filters JSON backups, requests overwrite confirmation for exports and requires an existing file for imports. It avoids picker-specific package dependencies and remains usable in elevated desktop processes.
+
+The native host pins `Microsoft.Web.WebView2 1.0.3179.45` directly. This is the exact WebView2 SDK version present in the known-good Windows host package and matches the version selected by the Windows App SDK 1.8 WinUI dependency graph. Windows CI verifies that this package is restored before compiling the host.
