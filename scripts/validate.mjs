@@ -230,12 +230,13 @@ if (!nativeHost.includes("nolane.surfaces.sync") || !nativeHost.includes("Ensure
 else pass("Native WebView2 host creates real browser surfaces and bounds active renderers.");
 if (!nativeProject.includes("Microsoft.WindowsAppSDK") || nativeProject.includes("Microsoft.Web.WebView2") ||
     !nativeProject.includes("net8.0-windows10.0.19041.0") || !nativeProject.includes("WindowsAppSDKSelfContained") ||
-    !nativeHost.includes("FileSaveDialogCom") || !nativeHost.includes("FileOpenDialogCom") ||
+    !nativeHost.includes("private string? PickLibraryBackupPath(bool save)") ||
+    !nativeHost.includes("Type.GetTypeFromCLSID(classId") ||
     !nativeHost.includes("IFileSaveDialog") || !nativeHost.includes("IFileOpenDialog") ||
     !nativeHost.includes("WinRT.Interop.WindowNative.GetWindowHandle(this)") ||
     !nativeHost.includes("FileDialogOptions.OverwritePrompt") ||
     !nativeHost.includes("FileDialogOptions.FileMustExist") ||
-    !nativeHost.includes("ShellItemDisplayName.FileSystemPath")) fail("Native host must retain its verified WebView2 package graph and use the HWND-owned Windows Shell Common Item Dialog.");
+    !nativeHost.includes("ShellItemDisplayName.FileSystemPath")) fail("Native host must retain its verified WebView2 package graph and implement the HWND-owned Windows Shell Common Item Dialog.");
 else pass("Native host retains the verified WinUI/WebView2 dependency graph and uses the HWND-owned Windows Shell Common Item Dialog.");
 if (!nativeHost.includes("WorkspaceView.Loaded += MainWindow_Loaded")) fail("Native browser host must initialize WebView2 from its control Loaded event.");
 else pass("Native browser host starts initialization only after the WebView2 control is loaded.");
