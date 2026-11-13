@@ -85,3 +85,5 @@ For websites that cannot be reliably controlled through the Chrome video mirror,
 The native host uses a dedicated shared WebView2 profile under the user's Local AppData folder. It does not import or reuse Chrome cookies. Sign in to sites once inside the native host. It keeps at most four visible website surfaces active at once and suspends off-screen surfaces to reduce resource use. Windows 11 normally includes the Evergreen WebView2 Runtime; the app reports a clear runtime error if it is missing. The Chrome Companion remains available for normal Chrome tabs and sessions.
 
 Build/download the optional Windows host from the Build Native WebView2 Host GitHub Actions workflow. This is a separate Windows application; a static GitHub Pages page in normal Chrome cannot create native WebView2 child controls by itself.
+
+The native host hides its browser overlays while workspace dialogs or the mobile sidebar are open, and serializes surface-layout updates so rapid panning/zooming cannot spawn duplicate WebView2 controls. Its workspace message channel uses an explicit handshake rather than relying only on a one-shot page-load event.

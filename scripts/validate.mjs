@@ -224,8 +224,13 @@ if (!nativeWorkflow.includes("runs-on: windows-latest") || !nativeWorkflow.inclu
     !nativeWorkflow.includes("upload-artifact") || !nativeWorkflow.includes("Nolane.DesktopHost.exe")) fail("Native Windows build workflow is incomplete.");
 else pass("Dedicated Windows CI builds and packages the native browser host.");
 if (!js.includes("scheduleNativeSurfaceSync") || !js.includes("chrome.webview.postMessage") ||
-    !js.includes("nolane.native.ready") || !js.includes("nolane.native.surface")) fail("Static workspace and native browser host bridge is incomplete.");
-else pass("Static workspace sends website-card geometry to the native host and receives browser status.");
+    !js.includes("nolane.native.ready") || !js.includes("nolane.native.surface") ||
+    !js.includes("dialog[open], #sidebar.open") || !js.includes("new MutationObserver(scheduleNativeSurfaceSync)")) fail("Static workspace/native browser bridge or native-overlay visibility guard is incomplete.");
+else pass("Static workspace syncs website-card geometry, receives native status and hides browser overlays for workspace dialogs.");
+if (!nativeHost.includes("SemaphoreSlim") || !nativeHost.includes("_syncGate.WaitAsync()") || !nativeHost.includes("nolane.host.hello")) fail("Native surface synchronization must be serialized and use a reliable workspace handshake.");
+else pass("Native surface synchronization is serialized and uses an explicit ready handshake.");
+if (!nativeHost.includes('uri.AbsolutePath.Equals("/web-view"') || !nativeHost.includes('uri.AbsolutePath.StartsWith("/web-view/"')) fail("Native host workspace origin/path allowlist is too broad.");
+else pass("Native host accepts only the exact Nolane workspace path family.");
 
 if (process.exitCode) process.exit(process.exitCode);
 console.log("All static checks passed.");

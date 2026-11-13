@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -22,6 +23,7 @@ public sealed partial class MainWindow : Window
     private readonly Dictionary<string, BrowserSurface> _surfaces = new(StringComparer.Ordinal);
     private bool _workspaceReady;
     private long _syncRevision;
+    private readonly SemaphoreSlim _syncGate = new(1, 1);
 
     public MainWindow()
     {
@@ -84,8 +86,15 @@ public sealed partial class MainWindow : Window
         {
             using var document = JsonDocument.Parse(e.WebMessageAsJson);
             var root = document.RootElement;
-            if (!TryGetString(root, "type", out var type) || type != "nolane.surfaces.sync") return;
+            if (!TryGetString(root, "type", out var type)) return;
             if (!root.TryGetProperty("protocol", out var protocol) || protocol.GetInt32() != 1) return;
+            if (type == "nolane.host.hello")
+            {
+                _workspaceReady = true;
+                PostWorkspaceMessage(new { type = "nolane.native.ready", protocol = 1, engine = "WebView2", maxVisibleSurfaces = MaxVisibleSurfaces });
+                return;
+            }
+            if (type != "nolane.surfaces.sync") return;
             if (!root.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array) return;
             var parsed = new List<SurfaceDescriptor>();
             foreach (var item in items.EnumerateArray())
@@ -100,41 +109,50 @@ public sealed partial class MainWindow : Window
 
     private async Task SynchronizeSurfacesAsync(List<SurfaceDescriptor> items, long revision)
     {
-        var present = items.Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
-        foreach (var staleId in _surfaces.Keys.Where(id => !present.Contains(id)).ToArray())
-            await RemoveSurfaceAsync(staleId);
-
-        var activeCount = 0;
-        foreach (var item in items.OrderByDescending(item => item.ZIndex))
+        await _syncGate.WaitAsync();
+        try
         {
             if (revision != _syncRevision) return;
-            if (!item.Visible || item.Width < 80 || item.Height < 60)
-            {
-                if (_surfaces.TryGetValue(item.Id, out var hidden)) await SetSurfaceVisibleAsync(hidden, false);
-                continue;
-            }
-            if (activeCount >= MaxVisibleSurfaces)
-            {
-                if (_surfaces.TryGetValue(item.Id, out var limited)) await SetSurfaceVisibleAsync(limited, false);
-                PublishSurfaceStatus(item.Id, "limit", "Only four website surfaces can be visible at once. Pan the canvas or hide another card.");
-                continue;
-            }
+            var present = items.Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
+            foreach (var staleId in _surfaces.Keys.Where(id => !present.Contains(id)).ToArray())
+                await RemoveSurfaceAsync(staleId);
 
-            activeCount++;
-            var surface = await GetOrCreateSurfaceAsync(item);
-            if (surface is null) continue;
-            surface.LastVisibleAt = DateTimeOffset.UtcNow;
-            ApplyBounds(surface.View, item);
-            await SetSurfaceVisibleAsync(surface, true);
-            if (!StringComparer.Ordinal.Equals(surface.Url, item.Url))
+            var activeCount = 0;
+            foreach (var item in items.OrderByDescending(item => item.ZIndex))
             {
-                surface.Url = item.Url;
-                surface.View.CoreWebView2.Navigate(item.Url);
-                PublishSurfaceStatus(item.Id, "loading", "Navigating to " + SafeHost(item.Url));
+                if (revision != _syncRevision) return;
+                if (!item.Visible || item.Width < 80 || item.Height < 60)
+                {
+                    if (_surfaces.TryGetValue(item.Id, out var hidden)) await SetSurfaceVisibleAsync(hidden, false);
+                    continue;
+                }
+                if (activeCount >= MaxVisibleSurfaces)
+                {
+                    if (_surfaces.TryGetValue(item.Id, out var limited)) await SetSurfaceVisibleAsync(limited, false);
+                    PublishSurfaceStatus(item.Id, "limit", "Only four website surfaces can be visible at once. Pan the canvas or hide another card.");
+                    continue;
+                }
+
+                activeCount++;
+                var surface = await GetOrCreateSurfaceAsync(item);
+                if (surface is null) continue;
+                surface.LastVisibleAt = DateTimeOffset.UtcNow;
+                ApplyBounds(surface.View, item);
+                await SetSurfaceVisibleAsync(surface, true);
+                if (!StringComparer.Ordinal.Equals(surface.Url, item.Url))
+                {
+                    surface.Url = item.Url;
+                    surface.View.CoreWebView2.Navigate(item.Url);
+                    PublishSurfaceStatus(item.Id, "loading", "Navigating to " + SafeHost(item.Url));
+                }
             }
+            await EvictHiddenSurfacesAsync();
+            StatusText.Text = $"Native browser connected · {activeCount}/{MaxVisibleSurfaces} visible website surfaces";
         }
-        await EvictHiddenSurfacesAsync();
-        StatusText.Text = $"Native browser connected · {activeCount}/{MaxVisibleSurfaces} visible website surfaces";
+        finally
+        {
+            _syncGate.Release();
+        }
     }
 
     private async Task<BrowserSurface?> GetOrCreateSurfaceAsync(SurfaceDescriptor item)
@@ -158,6 +176,11 @@ public sealed partial class MainWindow : Window
             core.Settings.AreDefaultContextMenusEnabled = true;
             core.Settings.IsZoomControlEnabled = true;
             core.Settings.IsStatusBarEnabled = false;
+            core.NewWindowRequested += (_, args) =>
+            {
+                args.Handled = true;
+                OpenExternal(args.Uri);
+            };
             core.NavigationStarting += (_, args) =>
             {
                 if (Uri.TryCreate(args.Uri, UriKind.Absolute, out var uri) &&
@@ -295,7 +318,8 @@ public sealed partial class MainWindow : Window
         Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
         uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) &&
         uri.Host.Equals(WorkspaceHost, StringComparison.OrdinalIgnoreCase) &&
-        uri.AbsolutePath.StartsWith("/web-view", StringComparison.OrdinalIgnoreCase);
+        (uri.AbsolutePath.Equals("/web-view", StringComparison.OrdinalIgnoreCase) ||
+         uri.AbsolutePath.StartsWith("/web-view/", StringComparison.OrdinalIgnoreCase));
 
     private static string SafeHost(string value) =>
         Uri.TryCreate(value, UriKind.Absolute, out var uri) ? uri.Host : "website";

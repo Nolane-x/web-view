@@ -418,7 +418,8 @@
         if (!body) continue;
         const rect = body.getBoundingClientRect();
         const style = getComputedStyle(body);
-        const visible = style.display !== "none" && style.visibility !== "hidden" &&
+        const uiBlocked = !!document.querySelector("dialog[open], #sidebar.open");
+        const visible = !uiBlocked && style.display !== "none" && style.visibility !== "hidden" &&
           rect.width >= 80 && rect.height >= 60 &&
           rect.right > area.left && rect.bottom > area.top &&
           rect.left < area.right && rect.top < area.bottom;
@@ -467,6 +468,11 @@
   if (window.chrome?.webview?.addEventListener) {
     window.chrome.webview.addEventListener("message", handleNativeHostMessage);
     window.addEventListener("resize", scheduleNativeSurfaceSync, { passive: true });
+    window.chrome.webview.postMessage({ type: "nolane.host.hello", protocol: 1 });
+    const nativeUiObserver = new MutationObserver(scheduleNativeSurfaceSync);
+    document.querySelectorAll("dialog, #sidebar").forEach((element) => {
+      nativeUiObserver.observe(element, { attributes: true, attributeFilter: ["open", "class"] });
+    });
   }
 
   function worldPoint(clientX, clientY) {
