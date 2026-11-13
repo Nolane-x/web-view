@@ -72,8 +72,8 @@ if (!html.includes('id="bridgeDialog"') || !html.includes("Companion not detecte
 else pass("Browser Companion status is explicit and does not imply a working extension.");
 
 const extensionManifest = JSON.parse(read("extension/manifest.json"));
-if (extensionManifest.version !== "0.2.5") fail("Browser Companion release metadata must be synchronized at version 0.2.5.");
-else pass("Browser Companion release metadata is synchronized at 0.2.5.");
+if (extensionManifest.version !== "0.2.6") fail("Browser Companion release metadata must be synchronized at version 0.2.6.");
+else pass("Browser Companion release metadata is synchronized at 0.2.6.");
 for (const file of ["extension/background.js", "extension/content.js", "extension/popup.html", "extension/popup.css", "extension/popup.js", "extension/README.md"]) {
   if (!fs.existsSync(path.join(root, file))) fail("Browser Companion asset missing: " + file);
 }
@@ -144,6 +144,12 @@ if (!/chrome\.tabCapture\.getCapturedTabs/.test(background) || !/already reports
 else pass("Existing tab captures are detected before stream setup.");
 if (!/NOLANE_GET_DIAGNOSTICS/.test(background) || !/diagnosticsButton/.test(popup)) fail("The companion compatibility diagnostics action is incomplete.");
 else pass("The companion exposes a local compatibility diagnostics report.");
+if (!/LIVE_SURFACE_HEALTH/.test(background) || !/NOLANE_LIVE_SURFACE_HEALTH/.test(bridge) || !/normalizeHealthState/.test(background)) fail("Continuous live-surface health telemetry is incomplete.");
+else pass("Live video health transitions are authenticated and persisted locally.");
+if (!/requestVideoFrameCallback\(onFrame\)/.test(js) || !/Date\.now\(\) - monitor\.lastFrameAt > 12000/.test(js) || !/stopLiveFrameMonitor/.test(js)) fail("Long-running live video watchdog or teardown is incomplete.");
+else pass("Long-running decoded-frame watchdog detects stalls and cleans up safely.");
+if (!/chrome\.tabCapture\.onStatusChanged/.test(background) || !/info\.status === "pending"/.test(background) || !/info\.status === "active"/.test(background)) fail("Chrome tab-capture lifecycle states are not tracked.");
+else pass("Tab capture pending/active/stopped/error lifecycle is tracked.");
 if (!/normalizeVideoInfo/.test(background) || !/presentedFrames/.test(background) || !/requestVideoFrameCallback/.test(js) || !/presentedFrames/.test(js)) fail("Decoded-frame metrics must be attached to the compatibility diagnostics.");
 else pass("The compatibility report includes decoded-frame and track metrics.");
 if (!/sourceWindow\.width >= 1120/.test(background) || !/createData\.width = workspaceWidth/.test(background)) fail("Wide windows must place the source and workspace surfaces side by side.");
