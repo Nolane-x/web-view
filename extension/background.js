@@ -813,6 +813,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         diagnosis.title = "Another tool is already capturing this tab";
         diagnosis.summary = "Chrome reports a " + captureInfo.status + " capture, but Nolane does not own that session.";
         diagnosis.actions = ["Stop the other capture first.", "Then start a new Nolane stream from this tab."];
+        diagnosis.recovery = {
+          action: "inspect",
+          label: "Stop the other capture first",
+          reason: "Nolane must not try to take over another recorder's active capture."
+        };
       }
       const history = (profileStore[COMPATIBILITY_PROFILES_KEY] || {})[site.origin] || null;
       return {
@@ -832,6 +837,55 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           lastSeen: history.lastSeen
         } : null
       };
+    })());
+  }
+
+  if (message.type === "NOLANE_APPLY_COMPATIBILITY_ACTION") {
+    return respond((async () => {
+      const popupUrl = chrome.runtime.getURL("popup.html");
+      if (!sender.url || !sender.url.startsWith(popupUrl)) throw new Error("Compatibility actions are available only from the Companion popup.");
+      if (!Number.isInteger(message.tabId)) throw new Error("Could not identify the active source tab.");
+      const tab = await chrome.tabs.get(message.tabId);
+      const sessions = await getLiveSessions();
+      const session = Object.values(sessions).find((item) => item.sourceTabId === tab.id) || null;
+      const recommendation = NolaneCompatibility.assessSession(session);
+      let expectedAction = recommendation.action;
+      if (!session) {
+        const captured = await chrome.tabCapture.getCapturedTabs().catch(() => []);
+        expectedAction = (captured || []).some((item) => item.tabId === tab.id && ["pending", "active"].includes(item.status))
+          ? "inspect" : "start-capture";
+      }
+      if (message.action !== expectedAction) {
+        throw new Error("The requested action is no longer recommended. Analyze this tab again and use its latest suggestion.");
+      }
+      if (expectedAction === "refresh-video") {
+        await chrome.tabs.sendMessage(session.workspaceTabId, {
+          type: "NOLANE_LIVE_SURFACE_REFRESH",
+          surfaceId: session.surfaceId
+        });
+        return { ok: true, action: expectedAction, message: "Refresh request sent to the existing live surface." };
+      }
+      if (expectedAction === "restart-capture") {
+        await removeLiveSession(session.surfaceId, "Replacing an ended capture track.", true, true);
+        const restarted = await startLiveSurface({
+          tabId: tab.id,
+          keepSourceVisible: message.keepSourceVisible !== false
+        }, sender);
+        return { ...restarted, action: expectedAction, message: "A new Chrome capture was started." };
+      }
+      if (expectedAction === "start-capture") {
+        const started = await startLiveSurface({
+          tabId: tab.id,
+          keepSourceVisible: message.keepSourceVisible !== false
+        }, sender);
+        return { ...started, action: expectedAction, message: "Live capture started." };
+      }
+      if (expectedAction === "focus-source") {
+        await chrome.tabs.update(tab.id, { active: true });
+        await chrome.windows.update(tab.windowId, { focused: true });
+        return { ok: true, action: expectedAction, message: "The source website was focused." };
+      }
+      throw new Error(recommendation.reason || "No automatic compatibility action is available.");
     })());
   }
 
