@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.Web.WebView2.Core;
 
 namespace Nolane.DesktopHost;
@@ -294,6 +295,13 @@ public sealed partial class MainWindow : Window
         Canvas.SetZIndex(view, item.ZIndex);
         view.Width = Math.Clamp(item.Width, 80, 2400);
         view.Height = Math.Clamp(item.Height, 60, 1800);
+        view.Clip = new RectangleGeometry
+        {
+            Rect = new Windows.Foundation.Rect(
+                item.ClipX, item.ClipY,
+                Math.Clamp(item.ClipWidth, 0, view.Width),
+                Math.Clamp(item.ClipHeight, 0, view.Height))
+        };
     }
 
     private void PostWorkspaceMessage(object message)
@@ -319,9 +327,16 @@ public sealed partial class MainWindow : Window
         var y = ReadNumber(element, "y");
         var width = ReadNumber(element, "width");
         var height = ReadNumber(element, "height");
+        var clipX = ReadNumber(element, "clipX");
+        var clipY = ReadNumber(element, "clipY");
+        var clipWidth = ReadNumber(element, "clipWidth");
+        var clipHeight = ReadNumber(element, "clipHeight");
+        if (clipX < 0 || clipY < 0 || clipWidth < 0 || clipHeight < 0 ||
+            clipX + clipWidth > width + 1 || clipY + clipHeight > height + 1) return false;
         var z = (int)Math.Clamp(ReadNumber(element, "zIndex"), -100000, 100000);
         var visible = element.TryGetProperty("visible", out var v) && v.ValueKind == JsonValueKind.True;
-        descriptor = new SurfaceDescriptor(id, uri.ToString(), x, y, width, height, z, visible);
+        descriptor = new SurfaceDescriptor(id, uri.ToString(), x, y, width, height,
+            clipX, clipY, clipWidth, clipHeight, z, visible);
         return true;
     }
 
@@ -376,5 +391,8 @@ public sealed partial class MainWindow : Window
         public DateTimeOffset LastVisibleAt { get; set; } = DateTimeOffset.UtcNow;
     }
 
-    private sealed record SurfaceDescriptor(string Id, string Url, double X, double Y, double Width, double Height, int ZIndex, bool Visible);
+    private sealed record SurfaceDescriptor(
+        string Id, string Url, double X, double Y, double Width, double Height,
+        double ClipX, double ClipY, double ClipWidth, double ClipHeight,
+        int ZIndex, bool Visible);
 }

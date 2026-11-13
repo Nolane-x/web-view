@@ -422,16 +422,24 @@
         const rect = body.getBoundingClientRect();
         const style = getComputedStyle(body);
         const uiBlocked = !!document.querySelector("dialog[open], #sidebar.open");
+        const clipLeft = Math.max(rect.left, area.left);
+        const clipTop = Math.max(rect.top, area.top);
+        const clipRight = Math.min(rect.right, area.right);
+        const clipBottom = Math.min(rect.bottom, area.bottom);
+        const clipWidth = Math.max(0, clipRight - clipLeft);
+        const clipHeight = Math.max(0, clipBottom - clipTop);
         const visible = !uiBlocked && style.display !== "none" && style.visibility !== "hidden" &&
-          rect.width >= 80 && rect.height >= 60 &&
-          rect.right > area.left && rect.bottom > area.top &&
-          rect.left < area.right && rect.top < area.bottom;
+          rect.width >= 80 && rect.height >= 60 && clipWidth >= 80 && clipHeight >= 60;
         items.push({
           id: node.id, url: node.url, title: node.title,
           x: Math.round(rect.left * 100) / 100,
           y: Math.round(rect.top * 100) / 100,
           width: Math.round(rect.width * 100) / 100,
           height: Math.round(rect.height * 100) / 100,
+          clipX: Math.round((clipLeft - rect.left) * 100) / 100,
+          clipY: Math.round((clipTop - rect.top) * 100) / 100,
+          clipWidth: Math.round(clipWidth * 100) / 100,
+          clipHeight: Math.round(clipHeight * 100) / 100,
           zIndex: Number(node.z) || 1, visible
         });
       }

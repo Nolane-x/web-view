@@ -79,3 +79,5 @@ The canvas excludes nodes already bound to a Companion Chrome tab and nodes with
 Workspace snapshots are profile-local too: moving from Chrome to the native host requires the app's JSON export/import flow because IndexedDB/localStorage is not shared between Chrome and WebView2 user-data folders. After import, old tab IDs are not treated as live Chrome bindings unless the Companion reports the exact same active browser-profile ID; otherwise those URL cards may use native WebView2 surfaces.
 
 The host clears stale Chrome tab IDs from imported nodes before rendering when no matching Companion profile is connected. This converts imported tab cards to URL-backed native cards instead of leaving a permanently misleading Focus Chrome action.
+
+Each child WebView2 receives its original un-clipped bounds plus a local RectangleGeometry clip computed from the intersection with the canvas viewport. This preserves page layout while ensuring the native overlay cannot draw or receive input outside the canvas area.

@@ -93,3 +93,5 @@ Native WebView2 intentionally leaves Chrome-imported cards and active Companion 
 The Windows host has its own WebView2 browser profile, including the workspace's IndexedDB/localStorage. To move your current canvas from Chrome, export the workspace JSON in Chrome and import it after opening the Windows host; then sign in to the websites inside WebView2. Imported cards that still carry old Chrome tab IDs are treated as normal native website cards unless the Companion is currently connected to the matching Chrome profile.
 
 When an exported Chrome workspace is imported in the native host, old Chrome-only tab IDs are cleared because the native host cannot access the Chrome profile. Their saved URLs become normal native website cards; you sign in again in the WebView2 profile.
+
+Native browser controls are clipped to the live canvas viewport, so dragging a card across the workspace edge cannot make a child browser cover the sidebar or top bar.

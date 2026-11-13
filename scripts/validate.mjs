@@ -216,7 +216,8 @@ const nativeHost = read("desktop-host/MainWindow.xaml.cs");
 const nativeProject = read("desktop-host/Nolane.DesktopHost.csproj");
 const nativeWorkflow = read(".github/workflows/desktop-host.yml");
 if (!nativeHost.includes("nolane.surfaces.sync") || !nativeHost.includes("EnsureCoreWebView2Async") || !nativeHost.includes("CreateWithOptionsAsync") ||
-    !nativeHost.includes("TrySuspendAsync") || !nativeHost.includes("MaxVisibleSurfaces = 4")) fail("Native WebView2 host must create real browser surfaces and bound active renderers.");
+    !nativeHost.includes("TrySuspendAsync") || !nativeHost.includes("MaxVisibleSurfaces = 4") ||
+    !nativeHost.includes("RectangleGeometry") || !nativeHost.includes("item.ClipWidth")) fail("Native WebView2 host must create real browser surfaces, bound renderers and clip child browsers to the canvas viewport.");
 else pass("Native WebView2 host creates real browser surfaces and bounds active renderers.");
 if (!nativeProject.includes("Microsoft.WindowsAppSDK") || !nativeProject.includes("net8.0-windows10.0.19041.0") ||
     !nativeProject.includes("WindowsAppSDKSelfContained")) fail("Native host project is missing its Windows App SDK target.");
@@ -235,6 +236,7 @@ const nativeSyncFunction = js.slice(js.indexOf("function scheduleNativeSurfaceSy
 if (!nativeSyncFunction.includes("bridgeConnected && node.browserTabId !== undefined") ||
     !nativeSyncFunction.includes("node.browserSessionId === bridgeSessionId") ||
     !nativeSyncFunction.includes("liveSurfaces.has(node.id)") ||
+    !nativeSyncFunction.includes("clipX:") || !nativeSyncFunction.includes("clipWidth:") ||
     !js.includes("function clearUnavailableChromeTabBindings") ||
     !js.includes("clearUnavailableChromeTabBindings();")) fail("Native WebView2 must preserve current Chrome sessions and convert stale imported tab IDs.");
 else pass("Native WebView2 surfaces preserve Chrome-owned tabs and active Chrome live streams.");
