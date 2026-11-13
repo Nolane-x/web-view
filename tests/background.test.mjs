@@ -61,7 +61,7 @@ function createHarness(options = {}) {
     runtime: {
       onMessage: runtimeMessage,
       getURL(path) { return "chrome-extension://nolane-test/" + path; },
-      getManifest() { return { version: "0.2.8" }; }
+      getManifest() { return { version: "0.2.9" }; }
     },
     storage: {
       local: {
@@ -736,7 +736,7 @@ test("popup diagnostics are scoped to the companion and omit raw page URLs", asy
     { url: "chrome-extension://nolane-test/popup.html" }
   );
   assert.equal(diagnostic.ok, true);
-  assert.equal(diagnostic.extensionVersion, "0.2.8");
+  assert.equal(diagnostic.extensionVersion, "0.2.9");
   assert.equal(JSON.stringify(diagnostic.capturedTabs), JSON.stringify([{ tabId: 10, status: "active", fullscreen: false }]));
   assert.ok(Array.isArray(diagnostic.liveSessions));
   const denied = await h.send(
@@ -942,4 +942,59 @@ test("current-tab analyzer is restricted to the companion popup and normal web t
     { url: "chrome-extension://nolane-test/popup.html" }
   );
   assert.equal(noTab.ok, false);
+});
+
+
+test("compatibility action refreshes the current surface only when the engine recommends it", async () => {
+  const h = createHarness();
+  await h.send({ type: "NOLANE_REGISTER_WORKSPACE" }, { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" });
+  const started = await h.send({ type: "NOLANE_START_LIVE_SURFACE", tabId: 10 }, { url: "chrome-extension://nolane-test/popup.html" });
+  h.sessionStore.nolaneLiveSessions[started.surfaceId].healthState = "stalled";
+  h.sessionStore.nolaneLiveSessions[started.surfaceId].videoInfo = {
+    width: 1280, height: 720, trackReadyState: "live", trackMuted: false
+  };
+  const applied = await h.send({
+    type: "NOLANE_APPLY_COMPATIBILITY_ACTION",
+    tabId: 10,
+    action: "refresh-video"
+  }, { url: "chrome-extension://nolane-test/popup.html" });
+  assert.equal(applied.ok, true);
+  assert.equal(applied.action, "refresh-video");
+  assert.ok(h.sentMessages.some((item) => item.message.type === "NOLANE_LIVE_SURFACE_REFRESH" && item.message.surfaceId === started.surfaceId));
+
+  const stale = await h.send({
+    type: "NOLANE_APPLY_COMPATIBILITY_ACTION",
+    tabId: 10,
+    action: "restart-capture"
+  }, { url: "chrome-extension://nolane-test/popup.html" });
+  assert.equal(stale.ok, false);
+  assert.match(stale.error, /no longer recommended/i);
+});
+
+test("compatibility action can restart an ended track", async () => {
+  const h = createHarness();
+  await h.send({ type: "NOLANE_REGISTER_WORKSPACE" }, { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" });
+  const started = await h.send({ type: "NOLANE_START_LIVE_SURFACE", tabId: 10 }, { url: "chrome-extension://nolane-test/popup.html" });
+  h.sessionStore.nolaneLiveSessions[started.surfaceId].captureStatus = "stopped";
+  h.sessionStore.nolaneLiveSessions[started.surfaceId].videoInfo = { trackReadyState: "ended" };
+  const restarted = await h.send({
+    type: "NOLANE_APPLY_COMPATIBILITY_ACTION",
+    tabId: 10,
+    action: "restart-capture"
+  }, { url: "chrome-extension://nolane-test/popup.html" });
+  assert.equal(restarted.ok, true);
+  assert.equal(restarted.action, "restart-capture");
+  assert.equal(h.streamRequests.length, 2);
+  assert.equal(Object.keys(h.sessionStore.nolaneLiveSessions).length, 1);
+});
+
+test("compatibility remediation commands are restricted to the companion popup", async () => {
+  const h = createHarness();
+  const denied = await h.send({
+    type: "NOLANE_APPLY_COMPATIBILITY_ACTION",
+    tabId: 10,
+    action: "start-capture"
+  }, { url: "https://attacker.example/" });
+  assert.equal(denied.ok, false);
+  assert.match(denied.error, /Companion popup/i);
 });
