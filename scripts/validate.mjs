@@ -244,6 +244,7 @@ if (!nativeProject.includes("Microsoft.WindowsAppSDK") ||
     !nativeHost.includes("ShellItemDisplayName.FileSystemPath")) fail("Native host must retain its verified WebView2 package graph and implement the HWND-owned Windows Shell Common Item Dialog.");
 else pass("Native host retains the verified WinUI/WebView2 dependency graph and uses the HWND-owned Windows Shell Common Item Dialog.");
 if (!nativeHost.includes("WorkspaceView.Loaded += MainWindow_Loaded")) fail("Native browser host must initialize WebView2 from its control Loaded event.");
+else pass("Native browser host starts initialization only after the WebView2 control is loaded.");
 if (!workflow.includes("Compile isolated WebView2 projection smoke test") ||
     !workflow.includes("WebView2ProjectionSmokeTest.csproj") ||
     !workflow.includes("WebView2EnableCsWinRTProjection=true") ||
@@ -251,7 +252,6 @@ if (!workflow.includes("Compile isolated WebView2 projection smoke test") ||
     !smokeCs.includes("typeof(CoreWebView2DownloadOperation)") ||
     !smokeProject.includes("Microsoft.WindowsAppSDK")) fail("Windows CI must independently compile the WebView2 CsWinRT API projection before building the native host.");
 else pass("Windows CI isolates the WinUI/WebView2 CsWinRT API projection in a minimal compile-smoke project before native host publish.");
-else pass("Native browser host starts initialization only after the WebView2 control is loaded.");
 if (!nativeHost.includes("GetAvailableBrowserVersionString") || !nativeHost.includes("NewBrowserVersionAvailable")) fail("Native host must detect the Evergreen WebView2 Runtime and newer runtime updates.");
 else pass("Native host checks runtime availability and detects browser-runtime updates.");
 if (!nativeHost.includes("HandleSurfaceProcessFailure") || !nativeHost.includes("RenderProcessExited") ||
