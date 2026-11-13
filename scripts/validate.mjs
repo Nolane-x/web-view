@@ -228,6 +228,9 @@ if (!nativeWorkflow.includes("contents: write") || !nativeWorkflow.includes("gh 
 else pass("Successful main-branch builds publish a stable, rolling Windows host download.");
 const filterFunction = js.slice(js.indexOf("function updateViewFilter"), js.indexOf("function selectNode"));
 const selectionFunction = js.slice(js.indexOf("function selectNode"), js.indexOf("function handleNodeAction"));
+const nativeSyncFunction = js.slice(js.indexOf("function scheduleNativeSurfaceSync"), js.indexOf("function handleNativeHostMessage"));
+if (!nativeSyncFunction.includes("node.browserTabId !== undefined") || !nativeSyncFunction.includes("liveSurfaces.has(node.id)")) fail("Native WebView2 surfaces must not cover imported Chrome tabs or active Chrome live streams.");
+else pass("Native WebView2 surfaces preserve Chrome-owned tabs and active Chrome live streams.");
 if (!js.includes("scheduleNativeSurfaceSync") || !js.includes("chrome.webview.postMessage") ||
     !js.includes("nolane.native.ready") || !js.includes("nolane.native.surface") ||
     !js.includes("dialog[open], #sidebar.open") || !js.includes("new MutationObserver(scheduleNativeSurfaceSync)") ||

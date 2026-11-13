@@ -71,3 +71,6 @@ Resource policy: at most four visible child browsers are active concurrently. Hi
 
 
 The native child-layer has a workspace handshake and coalesces layout revisions into a single pending snapshot, preventing a backlog of stale pan/zoom messages and concurrent initialization from creating duplicate browser controls. Website layers are suspended while a workspace dialog or mobile navigation overlay is open, so native browser surfaces cannot cover the parent workspace's own controls. The host accepts messages only from the exact `/web-view` path or its descendants on the trusted HTTPS host.
+
+
+The canvas excludes nodes already bound to a Companion Chrome tab and nodes with an active Live Chrome Surface from the native child overlay. This preserves the actual Chrome session/video mirror for those cards and prevents the native WebView2 profile from silently replacing the authenticated Chrome surface.
