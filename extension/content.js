@@ -82,6 +82,28 @@
       return;
     }
 
+    if (message.type === "LIVE_SURFACE_HEALTH" && typeof message.surfaceId === "string") {
+      sendRuntime({
+        type: "NOLANE_LIVE_SURFACE_HEALTH",
+        surfaceId: message.surfaceId,
+        browserSessionId: String(message.browserSessionId || ""),
+        healthState: ["checking", "healthy", "stalled", "muted", "paused", "ended"].includes(message.healthState)
+          ? message.healthState : "checking",
+        videoInfo: message.videoInfo && typeof message.videoInfo === "object" ? {
+          width: Number.isFinite(message.videoInfo.width) ? message.videoInfo.width : null,
+          height: Number.isFinite(message.videoInfo.height) ? message.videoInfo.height : null,
+          frameRate: Number.isFinite(message.videoInfo.frameRate) ? message.videoInfo.frameRate : null,
+          presentedFrames: Number.isFinite(message.videoInfo.presentedFrames) ? message.videoInfo.presentedFrames : null,
+          mediaTime: Number.isFinite(message.videoInfo.mediaTime) ? message.videoInfo.mediaTime : null,
+          droppedFrames: Number.isFinite(message.videoInfo.droppedFrames) ? message.videoInfo.droppedFrames : null,
+          totalVideoFrames: Number.isFinite(message.videoInfo.totalVideoFrames) ? message.videoInfo.totalVideoFrames : null,
+          trackReadyState: message.videoInfo.trackReadyState === "live" || message.videoInfo.trackReadyState === "ended" ? message.videoInfo.trackReadyState : "unknown",
+          trackMuted: !!message.videoInfo.trackMuted
+        } : null
+      });
+      return;
+    }
+
     if (message.type === "LIVE_SURFACE_ERROR" && typeof message.surfaceId === "string") {
       sendRuntime({
         type: "NOLANE_LIVE_SURFACE_ERROR",
