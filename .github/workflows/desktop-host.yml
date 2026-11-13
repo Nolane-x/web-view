@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: "native-webview2-host-${{ github.event_name }}"
@@ -45,6 +45,22 @@ jobs:
           $output = "${{ runner.temp }}/nolane-native-host"
           if (-not (Test-Path (Join-Path $output "Nolane.DesktopHost.exe"))) { throw "The native host executable was not produced." }
           Compress-Archive -Path (Join-Path $output "*") -DestinationPath "${{ runner.temp }}/nolane-native-webview2-host-win-x64.zip" -CompressionLevel Optimal
+      - name: Publish stable Windows download
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $repo = $env:GITHUB_REPOSITORY
+          $asset = "${{ runner.temp }}/nolane-native-webview2-host-win-x64.zip"
+          gh release view native-latest --repo $repo *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create native-latest --repo $repo --target $env:GITHUB_SHA --title "Nolane Native WebView2 Host (latest)" --notes "Rolling Windows x64 WebView2 host build from the main branch. The stable download URL always points to the newest successful main-branch build."
+            if ($LASTEXITCODE -ne 0) { throw "Could not create the native-latest GitHub release." }
+          }
+          gh release upload native-latest $asset --repo $repo --clobber
+          if ($LASTEXITCODE -ne 0) { throw "Could not publish the native host release asset." }
+
       - name: Upload native host bundle
         uses: actions/upload-artifact@v5
         with:

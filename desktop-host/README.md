@@ -8,7 +8,7 @@ A normal static website cannot create native browser children. The Chrome Compan
 
 ## Build
 
-The GitHub Actions workflow named Build Native WebView2 Host builds a self-contained x64 unpackaged WinUI 3 app:
+The latest self-contained Windows x64 build is available at [Nolane Native WebView2 Host](https://github.com/Nolane-x/web-view/releases/download/native-latest/nolane-native-webview2-host-win-x64.zip). It is also published as a GitHub Actions artifact from the Build Native WebView2 Host workflow. The workflow builds a self-contained x64 unpackaged WinUI 3 app:
 
 1. Download the nolane-native-webview2-host-win-x64 artifact from the latest successful run.
 2. Extract the ZIP.
