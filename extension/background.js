@@ -65,9 +65,15 @@ function normalizeVideoInfo(value) {
     frameRate: number("frameRate", 240),
     presentedFrames: number("presentedFrames", 1000000000),
     mediaTime: number("mediaTime", 86400000),
+    droppedFrames: number("droppedFrames", 1000000000),
+    totalVideoFrames: number("totalVideoFrames", 1000000000),
     trackReadyState: value.trackReadyState === "live" || value.trackReadyState === "ended" ? value.trackReadyState : "unknown",
     trackMuted: !!value.trackMuted
   };
+}
+
+function normalizeHealthState(value) {
+  return ["checking", "healthy", "stalled", "muted", "paused", "ended"].includes(value) ? value : "checking";
 }
 
 function cleanShareUrl(raw) {
@@ -226,6 +232,10 @@ async function startLiveSurface(message, sender) {
       sourceUrl: safeUrl,
       createdAt: Date.now(),
       acknowledged: false,
+      captureStatus: "requested",
+      captureStatusAt: Date.now(),
+      healthState: "checking",
+      lastHealthAt: 0,
       debuggerAttached,
       interactive,
       interactionReason,
@@ -625,9 +635,27 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 });
 
 chrome.tabCapture.onStatusChanged.addListener((info) => {
-  if (info.status === "stopped" || info.status === "error") {
-    void removeSessionsForTab(info.tabId, "Chrome stopped capturing this tab.", true);
-  }
+  void (async () => {
+    const sessions = await getLiveSessions();
+    const matches = Object.values(sessions).filter((session) => session.sourceTabId === info.tabId);
+    if (info.status === "stopped" || info.status === "error") {
+      for (const session of matches) {
+        await removeLiveSession(
+          session.surfaceId,
+          info.status === "error" ? "Chrome reported a tab-capture error." : "Chrome stopped capturing this tab.",
+          true
+        );
+      }
+      return;
+    }
+    if (info.status === "pending" || info.status === "active") {
+      for (const session of matches) {
+        session.captureStatus = info.status;
+        session.captureStatusAt = Date.now();
+      }
+      if (matches.length) await saveLiveSessions(sessions);
+    }
+  })();
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -666,6 +694,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           keepSourceVisible: !!item.keepSourceVisible,
           acknowledged: !!item.acknowledged,
           debuggerAttached: !!item.debuggerAttached,
+          captureStatus: item.captureStatus || "unknown",
+          captureStatusAt: item.captureStatusAt || null,
+          healthState: normalizeHealthState(item.healthState),
+          lastHealthAt: item.lastHealthAt || null,
           videoInfo: normalizeVideoInfo(item.videoInfo)
         })),
         lastLiveDiagnostic: stored[LAST_DIAGNOSTIC_KEY] || null
@@ -692,7 +724,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return respond((async () => {
       const sessions = await getLiveSessions();
       const session = sessions[message.surfaceId];
-      if (!isWorkspaceSender(sender) || sender.tab.id !== session.workspaceTabId || message.browserSessionId !== session.profileId) {
+      if (!session || !isWorkspaceSender(sender) || sender.tab.id !== session.workspaceTabId || message.browserSessionId !== session.profileId) {
         throw new Error("Live surface acknowledgement did not match an active session.");
       }
       session.acknowledged = true;
@@ -700,6 +732,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       await saveLiveSessions(sessions);
       const pending = pendingLiveStarts.get(message.surfaceId);
       if (pending) pending.resolve();
+      return { ok: true };
+    })());
+  }
+
+  if (message.type === "NOLANE_LIVE_SURFACE_HEALTH") {
+    return respond((async () => {
+      const sessions = await getLiveSessions();
+      const session = sessions[message.surfaceId];
+      if (!session || !isWorkspaceSender(sender) || sender.tab.id !== session.workspaceTabId ||
+          message.browserSessionId !== session.profileId) {
+        return { ok: false, error: "Live health update did not match an active workspace session." };
+      }
+      session.healthState = normalizeHealthState(message.healthState);
+      session.lastHealthAt = Date.now();
+      const videoInfo = normalizeVideoInfo(message.videoInfo);
+      if (videoInfo) session.videoInfo = videoInfo;
+      await saveLiveSessions(sessions);
+      const stored = await chrome.storage.session.get(LAST_DIAGNOSTIC_KEY);
+      const previous = stored[LAST_DIAGNOSTIC_KEY] || {};
+      await chrome.storage.session.set({
+        [LAST_DIAGNOSTIC_KEY]: {
+          ...previous,
+          healthState: session.healthState,
+          healthUpdatedAt: new Date(session.lastHealthAt).toISOString(),
+          videoInfo: session.videoInfo || null
+        }
+      });
       return { ok: true };
     })());
   }
