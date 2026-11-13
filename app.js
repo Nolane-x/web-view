@@ -860,6 +860,19 @@
           if (surface.healthState !== "muted") setLiveSurfaceHealth(surface.surfaceId, "muted", liveVideoMetrics(currentVideo, track));
           return;
         }
+        if (typeof currentVideo.requestVideoFrameCallback !== "function") {
+          let quality = {};
+          try { quality = currentVideo.getVideoPlaybackQuality ? currentVideo.getVideoPlaybackQuality() : {}; } catch (_) {}
+          const frameCounter = Number.isFinite(quality.totalVideoFrames) ? quality.totalVideoFrames :
+            (Number.isFinite(currentVideo.currentTime) ? currentVideo.currentTime : null);
+          if (frameCounter !== null && frameCounter !== monitor.lastFrameCounter) {
+            monitor.lastFrameCounter = frameCounter;
+            monitor.lastFrameAt = Date.now();
+            const info = liveVideoMetrics(currentVideo, track);
+            surface.videoInfo = info;
+            if (surface.healthState !== "healthy") setLiveSurfaceHealth(surface.surfaceId, "healthy", info);
+          }
+        }
         if (Date.now() - monitor.lastFrameAt > 12000) {
           if (surface.healthState !== "stalled") setLiveSurfaceHealth(surface.surfaceId, "stalled", liveVideoMetrics(currentVideo, track));
         }
@@ -1110,7 +1123,10 @@
       toast("Live Chrome surface connected: " + node.title + ".");
     } catch (error) {
       const mounted = nodeId ? liveSurfaces.get(nodeId) : null;
-      if (mounted?.surfaceId === message?.surfaceId) liveSurfaces.delete(nodeId);
+      if (mounted?.surfaceId === message?.surfaceId) {
+        stopLiveFrameMonitor(mounted);
+        liveSurfaces.delete(nodeId);
+      }
       if (stream) stream.getTracks().forEach((track) => track.stop());
       if (audioContext && audioContext.state !== "closed") audioContext.close().catch(() => {});
       if (nodeId) {
