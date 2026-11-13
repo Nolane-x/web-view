@@ -376,3 +376,7 @@ kbd { font-family: var(--sans); font-size: 9px; border: 1px solid rgba(255,255,2
 .bridge-status-large.connected .bridge-orbit { background: rgba(91,214,160,.12); color: #70d8a8; }
 .bridge-status-large.connected .status-pill { color: #70d8a8; border-color: rgba(91,214,160,.2); background: rgba(91,214,160,.08); }
 .node-source-badge { color: #74d7a8; font-size: 7px; letter-spacing: .3px; }
+
+.live-health-status { display:inline-flex; align-items:center; max-width:120px; padding:2px 5px; border:1px solid rgba(91,214,160,.2); border-radius:4px; color:#88dcb0; font-size:6px; font-weight:800; letter-spacing:.45px; white-space:nowrap; }
+.live-health-status[data-health="checking"], .live-health-status[data-health="paused"] { border-color:rgba(160,170,190,.18); color:#9aa5b8; }
+.live-health-status[data-health="stalled"], .live-health-status[data-health="muted"] { border-color:rgba(239,170,105,.35); color:#e5b477; }
