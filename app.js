@@ -767,7 +767,7 @@
     };
   }
 
-  function setLiveSurfaceHealth(surfaceId, state, videoInfo, notifyExtension = true) {
+  function setLiveSurfaceHealth(surfaceId, state, videoInfo, notifyExtension = true, forceNotify = false) {
     let nodeId = "";
     let surface = null;
     for (const [id, item] of liveSurfaces) {
@@ -792,7 +792,7 @@
           ? "Chrome temporarily marked the captured video track as muted."
           : nextState === "paused" ? "Health monitoring pauses while this workspace or card is hidden." : "Live video frame monitoring.";
     }
-    if (changed && notifyExtension) {
+    if ((changed || forceNotify) && notifyExtension) {
       window.postMessage({
         source: "nolane-workspace",
         type: "LIVE_SURFACE_HEALTH",
@@ -814,6 +814,7 @@
         intervalId: null,
         lastFrameAt: Date.now(),
         lastMetrics: surface.videoInfo || null,
+        lastHealthReportAt: 0,
         lastFrameCounter: surface.videoInfo?.presentedFrames ?? null,
         previousFrame: null,
         track,
@@ -869,8 +870,11 @@
             monitor.lastFrameCounter = frameCounter;
             monitor.lastFrameAt = Date.now();
             const info = liveVideoMetrics(currentVideo, track);
-            surface.videoInfo = info;
-            if (surface.healthState !== "healthy") setLiveSurfaceHealth(surface.surfaceId, "healthy", info);
+            const shouldReport = surface.healthState !== "healthy" || Date.now() - monitor.lastHealthReportAt > 15000;
+            if (shouldReport) {
+              setLiveSurfaceHealth(surface.surfaceId, "healthy", info, true, true);
+              monitor.lastHealthReportAt = Date.now();
+            } else surface.videoInfo = info;
           }
         }
         if (Date.now() - monitor.lastFrameAt > 12000) {
@@ -898,8 +902,11 @@
         monitor.previousFrame = metadata;
         monitor.lastMetrics = info;
         if (info.presentedFrames !== null) monitor.lastFrameCounter = info.presentedFrames;
-        if (surface.healthState !== "healthy") setLiveSurfaceHealth(surface.surfaceId, "healthy", info);
-        else surface.videoInfo = info;
+        const shouldReport = surface.healthState !== "healthy" || Date.now() - monitor.lastHealthReportAt > 15000;
+        if (shouldReport) {
+          setLiveSurfaceHealth(surface.surfaceId, "healthy", info, true, true);
+          monitor.lastHealthReportAt = Date.now();
+        } else surface.videoInfo = info;
         monitor.callbackId = video.requestVideoFrameCallback(onFrame);
       };
       monitor.callbackId = video.requestVideoFrameCallback(onFrame);
