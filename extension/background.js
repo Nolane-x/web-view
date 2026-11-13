@@ -73,7 +73,7 @@ function normalizeVideoInfo(value) {
 }
 
 function normalizeHealthState(value) {
-  return ["checking", "healthy", "stalled", "muted", "paused", "ended"].includes(value) ? value : "checking";
+  return ["checking", "healthy", "recovering", "stalled", "muted", "paused", "ended"].includes(value) ? value : "checking";
 }
 
 function cleanShareUrl(raw) {
