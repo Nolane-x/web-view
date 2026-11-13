@@ -60,6 +60,12 @@
       title = "Chrome blocked input control";
       summary = "Chrome refused debugger attachment because this page may contain a frame or content injected by another extension. Video capture can still work independently.";
       actions = ["Keep the video-only surface and use Focus source.", "For full pointer/keyboard control, test a clean Chrome profile or temporarily disable extensions that inject page overlays."];
+    } else if (!state.session && (capture === "pending" || capture === "active")) {
+      code = "CAPTURE_ALREADY_ACTIVE";
+      severity = "warning";
+      title = "Another tool is already capturing this tab";
+      summary = "Chrome reports a pending or active capture, but Nolane does not own that session.";
+      actions = ["Stop the capture in the other recorder or workspace.", "Then start a new Nolane stream from this tab."];
     } else if (/already reports an active capture|already.*captur|capture.*already/i.test(text)) {
       code = "CAPTURE_ALREADY_ACTIVE";
       severity = "warning";
