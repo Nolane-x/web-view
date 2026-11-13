@@ -426,6 +426,26 @@
     catch (_) { toast("Could not send the browser command to Native Host.", "error"); }
   }
 
+  function navigateNativeSurface(surfaceId, rawUrl) {
+    let url;
+    try { url = normalizeUrl(rawUrl); }
+    catch (error) {
+      toast(error.message || "Enter a valid HTTP or HTTPS address.", "error");
+      return;
+    }
+    const command = window.NolaneNativeBridge?.createNavigationCommand(surfaceId, url);
+    if (!command || !window.chrome?.webview?.postMessage) {
+      toast("Native browser is not connected or this address is not supported.", "error");
+      return;
+    }
+    try {
+      window.chrome.webview.postMessage(command);
+      toast("Navigating to " + hostOf(url) + ".");
+    } catch (_) {
+      toast("Could not navigate this website card.", "error");
+    }
+  }
+
   function scheduleNativeSurfaceSync() {
     if (!nativeHostAvailable || !window.chrome?.webview?.postMessage || nativeSyncFrame) return;
     nativeSyncFrame = requestAnimationFrame(() => {
@@ -491,6 +511,8 @@
             scheduleSave();
             scheduleNativeSurfaceSync();
           }
+          const address = $('.node[data-id="' + CSS.escape(state.id) + '"] .native-address-input', world);
+          if (address && document.activeElement !== address) address.value = currentUrl;
         } catch (_) {}
       }
       const card = $('.node[data-id="' + CSS.escape(state.id) + '"]', world);
@@ -625,12 +647,28 @@
       : "";
     header.innerHTML =
       '<span class="node-favicon">' + (node.type === "website" ? escapeHTML(initials(hostOf(node.url))) : '<svg class="icon"><use href="#i-sticky"/></svg>') + '</span>' +
-      '<span class="node-title-wrap"><span class="node-title">' + escapeHTML(node.title) + '</span><span class="node-subtitle">' + escapeHTML(node.type === "website" ? ((node.browserTabId !== undefined ? "Chrome tab · " : "") + hostOf(node.url)) : "Personal note") + '</span></span>' +
+      '<span class="node-title-wrap"><span class="node-title">' + escapeHTML(node.title) + '</span>' +
+        (canUseNativeSurface(node)
+          ? '<input class="native-address-input" type="text" aria-label="Website address" title="Type an address and press Enter" spellcheck="false" autocomplete="off" value="' + escapeHTML(node.url) + '">'
+          : '<span class="node-subtitle">' + escapeHTML(node.type === "website" ? ((node.browserTabId !== undefined ? "Chrome tab · " : "") + hostOf(node.url)) : "Personal note") + '</span>') +
+      '</span>' +
       '<span class="node-actions">' + nativeTools +
         (node.type === "website" ? '<button class="node-action" data-action="open" title="' + (node.browserTabId !== undefined ? "Switch to existing Chrome tab" : "Open in browser") + '"><svg class="icon"><use href="#i-external"/></svg></button>' : '<button class="node-action" data-action="edit" title="Edit note"><svg class="icon"><use href="#i-sticky"/></svg></button>') +
         '<button class="node-action" data-action="delete" title="Remove"><svg class="icon"><use href="#i-x"/></svg></button>' +
       '</span>';
     article.appendChild(header);
+    const nativeAddressInput = header.querySelector(".native-address-input");
+    if (nativeAddressInput) {
+      nativeAddressInput.addEventListener("pointerdown", (event) => event.stopPropagation());
+      nativeAddressInput.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        event.stopPropagation();
+        navigateNativeSurface(node.id, nativeAddressInput.value);
+        nativeAddressInput.blur();
+      });
+      nativeAddressInput.addEventListener("click", (event) => event.stopPropagation());
+    }
 
     const body = document.createElement("div");
     body.className = "node-body";

@@ -242,8 +242,12 @@ else pass("Native browser retains user-controlled downloads, blocks unsolicited 
 if (!nativeHost.includes("core.HistoryChanged") || !nativeHost.includes("core.IsMutedChanged") ||
     !nativeHost.includes("core.IsDocumentPlayingAudioChanged") || !nativeHost.includes("ExecuteSurfaceCommand")) fail("Native browser history/audio controls and state reporting are incomplete.");
 else pass("Native browser exposes per-surface navigation, audio controls and state telemetry.");
-if (!nativeBridge.includes("createCommand") || !nativeBridge.includes("normalizeSurfaceState") ||
-    !nativeBridgeTests.includes("allow-listed protocol") || !nativeBridgeTests.includes("rejects credentials")) fail("The native browser message contract is not independently testable.");
+if (!nativeBridge.includes("createCommand") || !nativeBridge.includes("createNavigationCommand") ||
+    !nativeBridge.includes("normalizeSurfaceState") || !nativeBridgeTests.includes("allow-listed protocol") ||
+    !nativeBridgeTests.includes("rejects credentials") || !nativeBridgeTests.includes("native address bar")) fail("The native browser command/state/address contract is not independently testable.");
+else pass("The native browser command/state/address contract is independently tested.");
+if (!js.includes("native-address-input") || !js.includes("navigateNativeSurface") ||
+    !nativeHost.includes('case "navigate":') || !nativeHost.includes("IsSafeWebUri(targetUrl ?? \"\" )".replace(" \"\"","\"")) ) fail("Native website cards need a safe, editable per-card address bar.");
 else pass("The native browser command/state contract is independently testable.");
 if (!nativeWorkflow.includes("runs-on: windows-latest") || !nativeWorkflow.includes("dotnet publish") ||
     !nativeWorkflow.includes("upload-artifact") || !nativeWorkflow.includes("Nolane.DesktopHost.exe")) fail("Native Windows build workflow is incomplete.");

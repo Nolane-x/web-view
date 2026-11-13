@@ -15,6 +15,26 @@
     });
   }
 
+  function createNavigationCommand(surfaceId, rawUrl) {
+    if (typeof surfaceId !== "string" || !surfaceId.trim() || surfaceId.length > 128) return null;
+    if (typeof rawUrl !== "string" || !rawUrl.trim() || rawUrl.length > 4096) return null;
+    let value = rawUrl.trim();
+    if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) value = "https://" + value;
+    try {
+      const parsed = new URL(value);
+      if ((parsed.protocol !== "http:" && parsed.protocol !== "https:") || parsed.username || parsed.password) return null;
+      return Object.freeze({
+        type: "nolane.surface.command",
+        protocol: 1,
+        id: surfaceId,
+        action: "navigate",
+        url: parsed.href
+      });
+    } catch (_) {
+      return null;
+    }
+  }
+
   function normalizeSurfaceState(message) {
     if (!message || typeof message !== "object" || message.type !== "nolane.native.surface") return null;
     if (typeof message.id !== "string" || !message.id.trim() || message.id.length > 128) return null;
@@ -41,7 +61,7 @@
     });
   }
 
-  const api = Object.freeze({ createCommand, normalizeSurfaceState });
+  const api = Object.freeze({ createCommand, createNavigationCommand, normalizeSurfaceState });
   const root = typeof window !== "undefined" ? window : globalThis;
   root.NolaneNativeBridge = api;
 })();

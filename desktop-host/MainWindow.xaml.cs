@@ -123,7 +123,12 @@ public sealed partial class MainWindow : Window
             if (type == "nolane.surface.command")
             {
                 if (TryGetString(root, "id", out var surfaceId) && TryGetString(root, "action", out var action))
-                    ExecuteSurfaceCommand(surfaceId, action);
+                {
+                    string? targetUrl = null;
+                    if (root.TryGetProperty("url", out var urlElement) && urlElement.ValueKind == JsonValueKind.String)
+                        targetUrl = urlElement.GetString();
+                    ExecuteSurfaceCommand(surfaceId, action, targetUrl);
+                }
                 return;
             }
             if (type != "nolane.surfaces.sync") return;
@@ -358,7 +363,7 @@ public sealed partial class MainWindow : Window
         };
     }
 
-    private void ExecuteSurfaceCommand(string id, string action)
+    private void ExecuteSurfaceCommand(string id, string action, string? targetUrl = null)
     {
         if (!_surfaces.TryGetValue(id, out var surface) || !surface.Initialized || surface.Suspended) return;
         var core = surface.View.CoreWebView2;
@@ -366,6 +371,17 @@ public sealed partial class MainWindow : Window
         {
             switch (action)
             {
+                case "navigate":
+                    if (!IsSafeWebUri(targetUrl ?? "") || targetUrl!.Length > 4096)
+                    {
+                        PublishSurfaceState(surface, "error", "Only valid HTTP or HTTPS addresses without embedded credentials are allowed.");
+                        break;
+                    }
+                    var destination = new Uri(targetUrl).AbsoluteUri;
+                    surface.Url = destination;
+                    core.Navigate(destination);
+                    PublishSurfaceState(surface, "loading", "Navigating to " + SafeHost(destination));
+                    break;
                 case "back":
                     if (core.CanGoBack) core.GoBack();
                     break;

@@ -50,3 +50,18 @@ test("native surface state is bounded and coerces unknown values safely", () => 
   assert.equal(value.canGoForward, false);
   assert.equal(value.isMuted, false);
 });
+
+test("native address bar creates normalized HTTP and HTTPS navigation commands", () => {
+  const https = bridge.createNavigationCommand("node-7", "example.com/a b");
+  assert.equal(https.action, "navigate");
+  assert.equal(https.url, "https://example.com/a%20b");
+  const http = bridge.createNavigationCommand("node-7", "http://localhost:3000/");
+  assert.equal(http.url, "http://localhost:3000/");
+});
+
+test("native address bar rejects unsafe schemes, credentials and oversized URLs", () => {
+  for (const url of ["javascript:alert(1)", "file:///C:/secret", "https://user:pass@example.com/", ""]) {
+    assert.equal(bridge.createNavigationCommand("node-7", url), null);
+  }
+  assert.equal(bridge.createNavigationCommand("node-7", "a".repeat(4097)), null);
+});

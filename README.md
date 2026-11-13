@@ -100,3 +100,5 @@ Native browser controls are clipped to the live canvas viewport, so dragging a c
 ## Native browser controls and safety
 
 Each native website card now has independent Back, Forward, Reload and Mute controls. The current HTTP(S) page address is synced back into the workspace, so navigation survives a future restart/export. WebView2 runtime availability is checked at startup and updates are detected; restart Nolane after a runtime update is ready. Camera, microphone, geolocation, notifications and other WebView2 permissions are requested through an explicit Allow once/Block prompt and are not persisted by Nolane. WebView2 keeps its native user-driven download dialog. Unsolicited `window.open` popups are blocked; user-initiated popups open in the system browser.
+
+Native website cards also expose an address field in the card header. Enter a hostname or full HTTP(S) URL and press Enter to navigate that card in place; the host rejects unsafe schemes and embedded credentials, and the current URL is synced back into the saved workspace.
