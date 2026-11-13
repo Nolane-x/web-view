@@ -797,7 +797,8 @@ test("long-running stream health updates are authenticated and included in diagn
   assert.equal(recoveredDiagnostic.liveSessions[0].healthState, "healthy");
   assert.equal(diagnostic.liveSessions[0].healthState, "recovering");
   assert.equal(diagnostic.liveSessions[0].videoInfo.droppedFrames, 42);
-  assert.equal(diagnostic.lastLiveDiagnostic.healthState, "stalled");
+  assert.equal(diagnostic.lastLiveDiagnostic.healthState, "recovering");
+  assert.equal(recoveredDiagnostic.lastLiveDiagnostic.healthState, "healthy");
   assert.equal(typeof diagnostic.liveSessions[0].lastHealthAt, "number");
 
   const denied = await h.send(healthMessage, { tab: { id: 999 }, url: "https://attacker.example/" });
