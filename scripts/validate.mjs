@@ -258,7 +258,7 @@ const nativeEligibility = js.slice(js.indexOf("function isChromeOwnedNode"), js.
 if (!nativeSyncFunction.includes("canUseNativeSurface(node)") ||
     !nativeEligibility.includes("bridgeConnected && node.browserTabId !== undefined") ||
     !nativeEligibility.includes("node.browserSessionId === bridgeSessionId") ||
-    !nativeSyncFunction.includes("liveSurfaces.has(node.id)") ||
+    !nativeEligibility.includes("!liveSurfaces.has(node.id)") ||
     !nativeSyncFunction.includes("clipX:") || !nativeSyncFunction.includes("clipWidth:") ||
     !js.includes("function clearUnavailableChromeTabBindings") ||
     !js.includes("clearUnavailableChromeTabBindings();")) fail("Native WebView2 must preserve current Chrome sessions and convert stale imported tab IDs.");
