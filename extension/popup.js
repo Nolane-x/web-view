@@ -93,6 +93,74 @@
   }
 
 
+
+  function renderCompatibilityResult(result) {
+    const panel = $("#compatibilityResult");
+    panel.replaceChildren();
+    panel.hidden = false;
+    panel.className = "compat-result " + (result.diagnosis?.severity || "info");
+    const category = document.createElement("div");
+    category.className = "compat-category";
+    category.textContent = (result.site?.label || "Website") + " · " + (result.site?.confidence || "unknown") + " match";
+    const title = document.createElement("strong");
+    title.className = "compat-title";
+    title.textContent = result.diagnosis?.title || "Analysis complete";
+    const summary = document.createElement("p");
+    summary.className = "compat-summary";
+    summary.textContent = result.diagnosis?.summary || "No compatibility details were returned.";
+    const code = document.createElement("code");
+    code.textContent = result.diagnosis?.code || "UNKNOWN";
+    const actions = document.createElement("ul");
+    (result.diagnosis?.actions || []).forEach((item) => {
+      const li = document.createElement("li");
+      li.textContent = item;
+      actions.appendChild(li);
+    });
+    const hints = document.createElement("div");
+    hints.className = "compat-hints";
+    (result.diagnosis?.hints || []).forEach((item) => {
+      const p = document.createElement("p");
+      p.textContent = item;
+      hints.appendChild(p);
+    });
+    const recovery = document.createElement("div");
+    recovery.className = "compat-recovery";
+    recovery.textContent = "Suggested action: " + (result.diagnosis?.recovery?.label || "Inspect status") +
+      (result.diagnosis?.recovery?.reason ? " — " + result.diagnosis.recovery.reason : "");
+    const history = document.createElement("div");
+    history.className = "compat-history";
+    if (result.profile) {
+      history.textContent = "Local history · " + result.profile.attempts + " attempts · " +
+        result.profile.successes + " successful · " + result.profile.failures + " failed · " +
+        result.profile.healthTransitions + " health changes";
+    } else {
+      history.textContent = "No local history for this website origin yet.";
+    }
+    panel.append(category, title, summary, code, actions, recovery, hints, history);
+  }
+
+  async function diagnoseActiveTab() {
+    const button = $("#diagnoseButton");
+    button.disabled = true;
+    button.textContent = "Analyzing…";
+    try {
+      await refreshActiveTab();
+      if (!activeTab || !Number.isInteger(activeTab.id)) throw new Error("No active website tab was found.");
+      const result = await chrome.runtime.sendMessage({
+        type: "NOLANE_DIAGNOSE_TAB",
+        tabId: activeTab.id
+      });
+      if (!result?.ok) throw new Error(result?.error || "Could not analyze this website.");
+      renderCompatibilityResult(result);
+      status("Compatibility analysis completed locally for " + safeHost(activeTab.url) + ".", "success");
+    } catch (error) {
+      status("Compatibility analysis failed: " + (error.message || error), "error");
+    } finally {
+      button.disabled = false;
+      button.textContent = "Analyze this website";
+    }
+  }
+
   async function copyDiagnostics() {
     const button = $("#diagnosticsButton");
     button.disabled = true;
@@ -255,6 +323,7 @@
   $("#liveButton").addEventListener("click", startLiveSurface);
   $("#stopLiveButton").addEventListener("click", stopLiveSurface);
   $("#diagnosticsButton").addEventListener("click", copyDiagnostics);
+  $("#diagnoseButton").addEventListener("click", diagnoseActiveTab);
   $("#grantButton").addEventListener("click", grantPermission);
   $("#refreshButton").addEventListener("click", refreshTabs);
   $("#selectAllButton").addEventListener("click", () => {
