@@ -1,9 +1,12 @@
 "use strict";
 
+importScripts("compatibility.js");
+
 const WORKSPACE_ORIGIN = "https://nolane-x.github.io";
 const WORKSPACE_URL_PREFIX = WORKSPACE_ORIGIN + "/web-view/";
 const PROFILE_KEY = "nolaneProfileId";
 const LAST_DIAGNOSTIC_KEY = "nolaneLastLiveDiagnostic";
+const COMPATIBILITY_PROFILES_KEY = "nolaneCompatibilityProfiles";
 const WORKSPACE_KEY = "nolaneWorkspaceTab";
 const LIVE_SESSIONS_KEY = "nolaneLiveSessions";
 const LIVE_START_TIMEOUT_MS = 12000;
@@ -74,6 +77,63 @@ function normalizeVideoInfo(value) {
 
 function normalizeHealthState(value) {
   return ["checking", "healthy", "recovering", "stalled", "muted", "paused", "ended"].includes(value) ? value : "checking";
+}
+
+async function recordCompatibilityObservation(origin, site, observation = {}) {
+  if (!origin || !site || typeof NolaneCompatibility === "undefined") return;
+  const stored = await chrome.storage.local.get(COMPATIBILITY_PROFILES_KEY);
+  const profiles = stored[COMPATIBILITY_PROFILES_KEY] && typeof stored[COMPATIBILITY_PROFILES_KEY] === "object"
+    ? { ...stored[COMPATIBILITY_PROFILES_KEY] }
+    : {};
+  const now = new Date().toISOString();
+  const previous = profiles[origin] || {
+    origin,
+    category: site.category,
+    categoryLabel: site.label,
+    firstSeen: now,
+    attempts: 0,
+    successes: 0,
+    failures: 0,
+    healthTransitions: 0
+  };
+  previous.category = site.category;
+  previous.categoryLabel = site.label;
+  previous.lastSeen = now;
+  previous.attempts += observation.attempted ? 1 : 0;
+  previous.successes += observation.success ? 1 : 0;
+  previous.failures += observation.failure ? 1 : 0;
+  previous.healthTransitions += observation.healthChanged ? 1 : 0;
+  if (observation.code) previous.lastCode = String(observation.code).slice(0, 64);
+  if (observation.healthState) previous.lastHealthState = normalizeHealthState(observation.healthState);
+  if (observation.captureStatus) previous.lastCaptureStatus = String(observation.captureStatus).slice(0, 24);
+  profiles[origin] = previous;
+  const entries = Object.entries(profiles).sort((a, b) =>
+    String(b[1]?.lastSeen || "").localeCompare(String(a[1]?.lastSeen || ""))
+  );
+  const bounded = Object.fromEntries(entries.slice(0, 40));
+  await chrome.storage.local.set({ [COMPATIBILITY_PROFILES_KEY]: bounded });
+}
+
+function diagnoseLiveSession(site, session, lastDiagnostic) {
+  const diagnosis = NolaneCompatibility.diagnose({
+    site,
+    session: !!session,
+    stage: lastDiagnostic?.stage || (session ? "connected" : "not started"),
+    errorName: lastDiagnostic?.errorName || "",
+    errorMessage: lastDiagnostic?.errorMessage || "",
+    healthState: session?.healthState || lastDiagnostic?.healthState || "",
+    captureStatus: session?.captureStatus || "",
+    acknowledged: !!session?.acknowledged,
+    videoInfo: normalizeVideoInfo(session?.videoInfo || lastDiagnostic?.videoInfo)
+  });
+  return {
+    ...diagnosis,
+    recovery: session ? NolaneCompatibility.assessSession(session) : {
+      action: "start-capture",
+      label: "Start live capture",
+      reason: "There is no active capture session for this tab."
+    }
+  };
 }
 
 function cleanShareUrl(raw) {
@@ -177,6 +237,7 @@ async function startLiveSurface(message, sender) {
     throw new Error("Chrome can stream only a normal http:// or https:// website tab. Extension, settings and browser pages are not supported.");
   }
 
+  const compatibilitySite = NolaneCompatibility.classifyUrl(safeUrl);
   const surfaceId = crypto.randomUUID();
   const debuggee = { tabId: tab.id };
   let debuggerAttached = false;
@@ -230,6 +291,8 @@ async function startLiveSurface(message, sender) {
       viewport,
       sourceTitle: String(tab.title || new URL(safeUrl).hostname).slice(0, 120),
       sourceUrl: safeUrl,
+      siteCategory: compatibilitySite.category,
+      siteCategoryLabel: compatibilitySite.label,
       createdAt: Date.now(),
       acknowledged: false,
       captureStatus: "requested",
@@ -360,7 +423,9 @@ async function startLiveSurface(message, sender) {
       workspaceTabId,
       videoInfo
     };
+    diagnostic.diagnosis = diagnoseLiveSession(compatibilitySite, confirmedSessions[surfaceId], diagnostic);
     await chrome.storage.session.set({ [LAST_DIAGNOSTIC_KEY]: diagnostic });
+    await recordCompatibilityObservation(expectedOrigin, compatibilitySite, { attempted: true, success: true, code: "READY" });
     return {
       ok: true,
       surfaceId,
@@ -396,7 +461,20 @@ async function startLiveSurface(message, sender) {
       sourceTabId: tab.id,
       workspaceTabId
     };
-    try { await chrome.storage.session.set({ [LAST_DIAGNOSTIC_KEY]: diagnostic }); } catch (_) {}
+    diagnostic.diagnosis = NolaneCompatibility.diagnose({
+      site: compatibilitySite,
+      stage,
+      errorName: diagnostic.errorName,
+      errorMessage: detail
+    });
+    try {
+      await chrome.storage.session.set({ [LAST_DIAGNOSTIC_KEY]: diagnostic });
+      await recordCompatibilityObservation(expectedOrigin, compatibilitySite, {
+        attempted: true,
+        failure: true,
+        code: diagnostic.diagnosis.code
+      });
+    } catch (_) {}
     throw new Error("Live startup failed while " + stage + ": " + detail);
   }
 }
@@ -698,9 +776,54 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           captureStatusAt: item.captureStatusAt || null,
           healthState: normalizeHealthState(item.healthState),
           lastHealthAt: item.lastHealthAt || null,
-          videoInfo: normalizeVideoInfo(item.videoInfo)
+          videoInfo: normalizeVideoInfo(item.videoInfo),
+          siteCategory: item.siteCategory || "general",
+          siteCategoryLabel: item.siteCategoryLabel || "General website",
+          recovery: NolaneCompatibility.assessSession(item)
         })),
+        compatibilityProfiles: Object.values((await chrome.storage.local.get(COMPATIBILITY_PROFILES_KEY))[COMPATIBILITY_PROFILES_KEY] || {}),
         lastLiveDiagnostic: stored[LAST_DIAGNOSTIC_KEY] || null
+      };
+    })());
+  }
+
+  if (message.type === "NOLANE_DIAGNOSE_TAB") {
+    return respond((async () => {
+      const popupUrl = chrome.runtime.getURL("popup.html");
+      if (!sender.url || !sender.url.startsWith(popupUrl)) throw new Error("Website analysis is available only from the Companion popup.");
+      if (!Number.isInteger(message.tabId)) throw new Error("Could not identify the active website tab.");
+      const tab = await chrome.tabs.get(message.tabId);
+      const cleanUrl = cleanShareUrl(tab.url || "");
+      if (!cleanUrl) throw new Error("Only normal HTTP/HTTPS website tabs can be analyzed.");
+      const site = NolaneCompatibility.classifyUrl(cleanUrl);
+      const [sessions, captured, profileStore, diagnosticStore] = await Promise.all([
+        getLiveSessions(),
+        chrome.tabCapture.getCapturedTabs().catch(() => []),
+        chrome.storage.local.get(COMPATIBILITY_PROFILES_KEY),
+        chrome.storage.session.get(LAST_DIAGNOSTIC_KEY)
+      ]);
+      const session = Object.values(sessions).find((item) => item.sourceTabId === tab.id) || null;
+      const captureInfo = (captured || []).find((item) => item.tabId === tab.id) || null;
+      const savedDiagnostic = diagnosticStore[LAST_DIAGNOSTIC_KEY];
+      const relevantDiagnostic = savedDiagnostic?.sourceOrigin === site.origin ? savedDiagnostic : null;
+      const diagnosis = diagnoseLiveSession(site, session, relevantDiagnostic);
+      const history = (profileStore[COMPATIBILITY_PROFILES_KEY] || {})[site.origin] || null;
+      return {
+        ok: true,
+        site,
+        diagnosis,
+        captureInfo: captureInfo ? { status: captureInfo.status, fullscreen: !!captureInfo.fullscreen } : null,
+        profile: history ? {
+          category: history.category,
+          attempts: history.attempts,
+          successes: history.successes,
+          failures: history.failures,
+          healthTransitions: history.healthTransitions,
+          lastCode: history.lastCode || null,
+          lastHealthState: history.lastHealthState || null,
+          firstSeen: history.firstSeen,
+          lastSeen: history.lastSeen
+        } : null
       };
     })());
   }
@@ -744,11 +867,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           message.browserSessionId !== session.profileId) {
         return { ok: false, error: "Live health update did not match an active workspace session." };
       }
+      const previousHealth = normalizeHealthState(session.healthState);
       session.healthState = normalizeHealthState(message.healthState);
       session.lastHealthAt = Date.now();
       const videoInfo = normalizeVideoInfo(message.videoInfo);
       if (videoInfo) session.videoInfo = videoInfo;
       await saveLiveSessions(sessions);
+      if (previousHealth !== session.healthState) {
+        const site = NolaneCompatibility.classifyUrl(session.expectedOrigin);
+        await recordCompatibilityObservation(session.expectedOrigin, site, {
+          healthChanged: true,
+          healthState: session.healthState,
+          code: session.healthState
+        });
+      }
       const stored = await chrome.storage.session.get(LAST_DIAGNOSTIC_KEY);
       const previous = stored[LAST_DIAGNOSTIC_KEY] || {};
       await chrome.storage.session.set({
@@ -756,7 +888,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           ...previous,
           healthState: session.healthState,
           healthUpdatedAt: new Date(session.lastHealthAt).toISOString(),
-          videoInfo: session.videoInfo || null
+          videoInfo: session.videoInfo || null,
+          diagnosis: diagnoseLiveSession(
+            NolaneCompatibility.classifyUrl(session.expectedOrigin),
+            session,
+            previous
+          )
         }
       });
       return { ok: true };
