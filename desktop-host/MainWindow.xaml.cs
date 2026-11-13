@@ -31,7 +31,12 @@ public sealed partial class MainWindow : Window
     private readonly SemaphoreSlim _permissionDialogGate = new(1, 1);
     private bool _runtimeUpdateAvailable;
     private string? _downloadHistoryPath;
+    private string? _browserLibraryPath;
     private readonly List<DownloadEntry> _downloads = new();
+    private readonly List<BrowserHistoryEntry> _browserHistory = new();
+    private readonly List<BrowserBookmark> _browserBookmarks = new();
+    private bool _showingBookmarks;
+    private string _focusedSurfaceId = "";
     private int _downloadRefreshQueued;
     private int _downloadHistoryDirty;
 
@@ -81,8 +86,11 @@ public sealed partial class MainWindow : Window
                 "Nolane", "NativeWebView2", "UserData");
             Directory.CreateDirectory(userData);
             _downloadHistoryPath = Path.Combine(userData, "download-history.json");
+            _browserLibraryPath = Path.Combine(userData, "browser-library.json");
             LoadDownloadHistory();
+            LoadBrowserLibrary();
             RefreshDownloadsUi();
+            RefreshLibraryUi();
             _environment = await CoreWebView2Environment.CreateWithOptionsAsync(null, userData, new CoreWebView2EnvironmentOptions());
             _environment.NewBrowserVersionAvailable += (_, _) =>
             {
@@ -285,9 +293,11 @@ public sealed partial class MainWindow : Window
                 args.Cancel = true;
                 OpenExternal(args.Uri);
             };
+            view.GotFocus += (_, _) => _focusedSurfaceId = surface.Id;
             core.NavigationCompleted += (_, args) =>
             {
                 if (IsSafeWebUri(core.Source)) surface.Url = new Uri(core.Source).ToString();
+                if (args.IsSuccess) RecordBrowserHistory(surface);
                 PublishSurfaceState(surface,
                     args.IsSuccess ? "ready" : "error",
                     args.IsSuccess ? SafeHost(core.Source) : "Navigation failed: " + args.WebErrorStatus);
@@ -295,10 +305,19 @@ public sealed partial class MainWindow : Window
             core.SourceChanged += (_, _) =>
             {
                 if (IsSafeWebUri(core.Source)) surface.Url = new Uri(core.Source).ToString();
+                RecordBrowserHistory(surface);
                 PublishSurfaceState(surface, "ready", "Address changed");
             };
-            core.HistoryChanged += (_, _) => PublishSurfaceState(surface, "ready", "Navigation history updated");
-            core.DocumentTitleChanged += (_, _) => PublishSurfaceState(surface, "ready", "Page title updated");
+            core.HistoryChanged += (_, _) =>
+            {
+                RecordBrowserHistory(surface);
+                PublishSurfaceState(surface, "ready", "Navigation history updated");
+            };
+            core.DocumentTitleChanged += (_, _) =>
+            {
+                RecordBrowserHistory(surface);
+                PublishSurfaceState(surface, "ready", "Page title updated");
+            };
             core.IsMutedChanged += (_, _) => PublishSurfaceState(surface, "ready", "Audio setting updated");
             core.IsDocumentPlayingAudioChanged += (_, _) => PublishSurfaceState(surface, "ready", "Audio state updated");
             core.DownloadStarting += (_, args) => HandleDownloadStarting(surface, args);
@@ -700,6 +719,8 @@ public sealed partial class MainWindow : Window
 
     private void ToggleDownloads_Click(object sender, RoutedEventArgs e)
     {
+        if (DownloadsPanel.Visibility != Visibility.Visible)
+            LibraryPanel.Visibility = Visibility.Collapsed;
         DownloadsPanel.Visibility = DownloadsPanel.Visibility == Visibility.Visible
             ? Visibility.Collapsed : Visibility.Visible;
         RefreshDownloadsUi();
@@ -911,6 +932,10 @@ public sealed partial class MainWindow : Window
                     core.IsMuted = !core.IsMuted;
                     PublishSurfaceState(surface, "ready", core.IsMuted ? "Website audio muted" : "Website audio unmuted");
                     break;
+                case "toggle-bookmark":
+                    ToggleBookmark(surface);
+                    PublishSurfaceState(surface, "ready", IsBookmarked(core.Source) ? "Page saved to Library" : "Bookmark removed");
+                    break;
                 case "open-external":
                     OpenExternal(core.Source);
                     break;
@@ -969,6 +994,385 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private string SanitizeLibraryUrl(string value)
+    {
+        if (!IsSafeWebUri(value) || !Uri.TryCreate(value, UriKind.Absolute, out var uri)) return "";
+        try
+        {
+            var builder = new UriBuilder(uri) { Fragment = "" };
+            var query = builder.Query.TrimStart('?');
+            if (!string.IsNullOrEmpty(query))
+            {
+                var retained = new List<string>();
+                foreach (var part in query.Split('&', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var rawName = part.Split('=', 2)[0];
+                    string name;
+                    try { name = Uri.UnescapeDataString(rawName.Replace("+", " ")).ToLowerInvariant(); }
+                    catch { name = rawName.ToLowerInvariant(); }
+
+                    var sensitive = name.Contains("token", StringComparison.Ordinal) ||
+                        name.Contains("secret", StringComparison.Ordinal) ||
+                        name.Contains("password", StringComparison.Ordinal) ||
+                        name.Contains("signature", StringComparison.Ordinal) ||
+                        name.Contains("authorization", StringComparison.Ordinal) ||
+                        name.Contains("credential", StringComparison.Ordinal) ||
+                        name.Contains("csrf", StringComparison.Ordinal) ||
+                        name.Contains("xsrf", StringComparison.Ordinal) ||
+                        name is "code" or "auth" or "session" or "key" or "api_key" or "apikey" or "jwt" or "nonce" or "ticket";
+                    if (!sensitive) retained.Add(part);
+                }
+                builder.Query = string.Join("&", retained);
+            }
+            return builder.Uri.AbsoluteUri;
+        }
+        catch { return ""; }
+    }
+
+    private bool IsBookmarked(string rawUrl)
+    {
+        var safeUrl = SanitizeLibraryUrl(rawUrl);
+        return safeUrl.Length > 0 && _browserBookmarks.Any(item =>
+            StringComparer.Ordinal.Equals(item.Url, safeUrl));
+    }
+
+    private void RecordBrowserHistory(BrowserSurface surface)
+    {
+        if (!surface.Initialized) return;
+        string url;
+        string title;
+        try
+        {
+            var core = surface.View.CoreWebView2;
+            url = SanitizeLibraryUrl(core.Source);
+            title = StringRaw(core.DocumentTitle, 180);
+        }
+        catch { return; }
+
+        if (url.Length == 0) return;
+        if (string.IsNullOrWhiteSpace(title)) title = SafeHost(url);
+        var now = DateTimeOffset.UtcNow;
+        var recent = _browserHistory.FirstOrDefault(item =>
+            item.SurfaceId == surface.Id &&
+            StringComparer.Ordinal.Equals(item.Url, url) &&
+            now - item.VisitedAtUtc < TimeSpan.FromSeconds(4));
+        if (recent is not null)
+        {
+            recent.Title = title;
+            recent.VisitedAtUtc = now;
+        }
+        else
+        {
+            _browserHistory.Insert(0, new BrowserHistoryEntry
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                SurfaceId = surface.Id,
+                Url = url,
+                Title = title,
+                Host = SafeHost(url),
+                VisitedAtUtc = now
+            });
+        }
+        if (_browserHistory.Count > 500)
+            _browserHistory.RemoveRange(500, _browserHistory.Count - 500);
+
+        SaveBrowserLibrary();
+        if (LibraryPanel.Visibility == Visibility.Visible && !_showingBookmarks)
+            RefreshLibraryUi();
+    }
+
+    private void ToggleBookmark(BrowserSurface surface)
+    {
+        var core = surface.View.CoreWebView2;
+        ToggleBookmarkUrl(core.Source, core.DocumentTitle);
+    }
+
+    private void ToggleBookmarkUrl(string rawUrl, string rawTitle)
+    {
+        var url = SanitizeLibraryUrl(rawUrl);
+        if (url.Length == 0) return;
+
+        var existing = _browserBookmarks.FindIndex(item => StringComparer.Ordinal.Equals(item.Url, url));
+        if (existing >= 0)
+        {
+            _browserBookmarks.RemoveAt(existing);
+        }
+        else
+        {
+            if (_browserBookmarks.Count >= 200)
+                _browserBookmarks.RemoveAt(_browserBookmarks.Count - 1);
+            var title = StringRaw(rawTitle, 180);
+            _browserBookmarks.Insert(0, new BrowserBookmark
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Url = url,
+                Title = string.IsNullOrWhiteSpace(title) ? SafeHost(url) : title,
+                Host = SafeHost(url),
+                SavedAtUtc = DateTimeOffset.UtcNow
+            });
+        }
+
+        SaveBrowserLibrary();
+        RefreshLibraryUi();
+    }
+
+    private void LoadBrowserLibrary()
+    {
+        if (string.IsNullOrWhiteSpace(_browserLibraryPath) || !File.Exists(_browserLibraryPath)) return;
+        try
+        {
+            var document = JsonSerializer.Deserialize<BrowserLibraryDocument>(
+                File.ReadAllText(_browserLibraryPath), DownloadJsonOptions);
+            if (document is null) return;
+
+            foreach (var item in document.Bookmarks.OrderByDescending(entry => entry.SavedAtUtc).Take(200))
+            {
+                var url = SanitizeLibraryUrl(item.Url);
+                if (url.Length == 0 || _browserBookmarks.Any(saved => StringComparer.Ordinal.Equals(saved.Url, url))) continue;
+                item.Url = url;
+                item.Title = StringRaw(item.Title, 180);
+                item.Host = SafeHost(url);
+                _browserBookmarks.Add(item);
+            }
+
+            foreach (var item in document.History.OrderByDescending(entry => entry.VisitedAtUtc).Take(500))
+            {
+                var url = SanitizeLibraryUrl(item.Url);
+                if (url.Length == 0) continue;
+                item.Url = url;
+                item.Title = StringRaw(item.Title, 180);
+                item.Host = SafeHost(url);
+                item.SurfaceId = StringRaw(item.SurfaceId, 128);
+                _browserHistory.Add(item);
+            }
+        }
+        catch
+        {
+            // A damaged or stale Library file must never prevent the browser host from starting.
+            _browserHistory.Clear();
+            _browserBookmarks.Clear();
+        }
+    }
+
+    private void SaveBrowserLibrary()
+    {
+        if (string.IsNullOrWhiteSpace(_browserLibraryPath)) return;
+        string? temporaryPath = null;
+        try
+        {
+            var document = new BrowserLibraryDocument
+            {
+                History = _browserHistory.Take(500).ToList(),
+                Bookmarks = _browserBookmarks.Take(200).ToList()
+            };
+            temporaryPath = _browserLibraryPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            File.WriteAllText(temporaryPath, JsonSerializer.Serialize(document, DownloadJsonOptions));
+            File.Move(temporaryPath, _browserLibraryPath, true);
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = "Could not save browser Library: " + StringRaw(ex.Message, 100);
+        }
+        finally
+        {
+            if (!string.IsNullOrWhiteSpace(temporaryPath) && File.Exists(temporaryPath))
+            {
+                try { File.Delete(temporaryPath); } catch { }
+            }
+        }
+    }
+
+    private BrowserSurface? GetLibraryTargetSurface()
+    {
+        if (!string.IsNullOrWhiteSpace(_focusedSurfaceId) &&
+            _surfaces.TryGetValue(_focusedSurfaceId, out var focused) &&
+            focused.Initialized && focused.View.Visibility == Visibility.Visible)
+            return focused;
+
+        return _surfaces.Values
+            .Where(surface => surface.Initialized && surface.View.Visibility == Visibility.Visible)
+            .OrderByDescending(surface => surface.LastVisibleAt)
+            .FirstOrDefault();
+    }
+
+    private void OpenLibraryUrl(string rawUrl)
+    {
+        var safeUrl = SanitizeLibraryUrl(rawUrl);
+        if (safeUrl.Length == 0) return;
+        var target = GetLibraryTargetSurface();
+        if (target is null)
+        {
+            OpenExternal(safeUrl);
+            return;
+        }
+        try
+        {
+            target.View.Focus(FocusState.Programmatic);
+            target.View.CoreWebView2.Navigate(safeUrl);
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = "Could not open Library item: " + StringRaw(ex.Message, 100);
+        }
+    }
+
+    private static Button CreateLibraryAction(string label, Action action)
+    {
+        var button = new Button
+        {
+            Content = label,
+            Padding = new Thickness(8, 4, 8, 4),
+            FontSize = 10
+        };
+        button.Click += (_, _) => action();
+        return button;
+    }
+
+    private UIElement CreateLibraryCard(string title, string subtitle, string primaryLabel, Action primaryAction,
+        string? secondaryLabel = null, Action? secondaryAction = null)
+    {
+        var card = new Border
+        {
+            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 25, 34, 49)),
+            BorderBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 49, 62, 83)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(11)
+        };
+        var content = new StackPanel { Spacing = 6 };
+        content.Children.Add(new TextBlock
+        {
+            Text = title,
+            FontSize = 12,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 235, 241, 250)),
+            TextTrimming = TextTrimming.CharacterEllipsis
+        });
+        content.Children.Add(new TextBlock
+        {
+            Text = subtitle,
+            FontSize = 10,
+            Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 151, 164, 185)),
+            TextWrapping = TextWrapping.Wrap
+        });
+
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+        actions.Children.Add(CreateLibraryAction(primaryLabel, primaryAction));
+        if (secondaryLabel is not null && secondaryAction is not null)
+            actions.Children.Add(CreateLibraryAction(secondaryLabel, secondaryAction));
+        content.Children.Add(actions);
+        card.Child = content;
+        return card;
+    }
+
+    private void RefreshLibraryUi()
+    {
+        LibraryButton.Content = $"Library ({_browserBookmarks.Count})";
+        HistoryTabButton.IsEnabled = _showingBookmarks;
+        BookmarksTabButton.IsEnabled = !_showingBookmarks;
+        ClearHistoryButton.IsEnabled = !_showingBookmarks && _browserHistory.Count > 0;
+        LibrarySummaryText.Text = _showingBookmarks
+            ? $"{_browserBookmarks.Count} saved page(s) · stored on this device"
+            : $"{_browserHistory.Count} recent visits · sensitive query values are removed";
+
+        if (LibraryPanel.Visibility != Visibility.Visible) return;
+        LibraryItems.Children.Clear();
+
+        if (_showingBookmarks)
+        {
+            if (_browserBookmarks.Count == 0)
+            {
+                LibraryItems.Children.Add(new TextBlock
+                {
+                    Text = "No bookmarks yet. Use the star button on a native website card to save its current page.",
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 145, 158, 180)),
+                    Margin = new Thickness(8, 18, 8, 18)
+                });
+                return;
+            }
+
+            foreach (var item in _browserBookmarks.Take(200))
+            {
+                var saved = item;
+                LibraryItems.Children.Add(CreateLibraryCard(
+                    saved.Title,
+                    saved.Host + " · Saved " + saved.SavedAtUtc.ToLocalTime().ToString("g"),
+                    "Open in card",
+                    () => OpenLibraryUrl(saved.Url),
+                    "Remove",
+                    () =>
+                    {
+                        _browserBookmarks.RemoveAll(bookmark => bookmark.Id == saved.Id);
+                        SaveBrowserLibrary();
+                        RefreshLibraryUi();
+                    }));
+            }
+        }
+        else
+        {
+            if (_browserHistory.Count == 0)
+            {
+                LibraryItems.Children.Add(new TextBlock
+                {
+                    Text = "Pages you visit in native website cards will appear here.",
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 145, 158, 180)),
+                    Margin = new Thickness(8, 18, 8, 18)
+                });
+                return;
+            }
+
+            foreach (var item in _browserHistory.Take(100))
+            {
+                var visited = item;
+                var bookmarked = IsBookmarked(visited.Url);
+                LibraryItems.Children.Add(CreateLibraryCard(
+                    visited.Title,
+                    visited.Host + " · " + visited.VisitedAtUtc.ToLocalTime().ToString("g"),
+                    "Open in card",
+                    () => OpenLibraryUrl(visited.Url),
+                    bookmarked ? "Saved" : "Bookmark",
+                    () =>
+                    {
+                        if (!IsBookmarked(visited.Url))
+                            ToggleBookmarkUrl(visited.Url, visited.Title);
+                    }));
+            }
+        }
+    }
+
+    private void ToggleLibrary_Click(object sender, RoutedEventArgs e)
+    {
+        if (LibraryPanel.Visibility != Visibility.Visible)
+            DownloadsPanel.Visibility = Visibility.Collapsed;
+        LibraryPanel.Visibility = LibraryPanel.Visibility == Visibility.Visible
+            ? Visibility.Collapsed : Visibility.Visible;
+        RefreshLibraryUi();
+    }
+
+    private void ShowHistory_Click(object sender, RoutedEventArgs e)
+    {
+        _showingBookmarks = false;
+        RefreshLibraryUi();
+    }
+
+    private void ShowBookmarks_Click(object sender, RoutedEventArgs e)
+    {
+        _showingBookmarks = true;
+        RefreshLibraryUi();
+    }
+
+    private void ClearHistory_Click(object sender, RoutedEventArgs e)
+    {
+        _browserHistory.Clear();
+        SaveBrowserLibrary();
+        RefreshLibraryUi();
+    }
+
+    private void CloseLibrary_Click(object sender, RoutedEventArgs e) =>
+        LibraryPanel.Visibility = Visibility.Collapsed;
+
     private void PostWorkspaceMessage(object message)
     {
         try
@@ -995,7 +1399,8 @@ public sealed partial class MainWindow : Window
                 canGoBack = core.CanGoBack,
                 canGoForward = core.CanGoForward,
                 isMuted = core.IsMuted,
-                isPlayingAudio = core.IsDocumentPlayingAudio
+                isPlayingAudio = core.IsDocumentPlayingAudio,
+                isBookmarked = IsBookmarked(core.Source)
             });
         }
         catch
@@ -1100,6 +1505,31 @@ public sealed partial class MainWindow : Window
         public DateTimeOffset StartedAtUtc { get; set; }
         public DateTimeOffset UpdatedAtUtc { get; set; }
         public long LastPersistedTick;
+    }
+
+    private sealed class BrowserLibraryDocument
+    {
+        public List<BrowserHistoryEntry> History { get; set; } = new();
+        public List<BrowserBookmark> Bookmarks { get; set; } = new();
+    }
+
+    private sealed class BrowserHistoryEntry
+    {
+        public string Id { get; set; } = "";
+        public string SurfaceId { get; set; } = "";
+        public string Url { get; set; } = "";
+        public string Title { get; set; } = "";
+        public string Host { get; set; } = "";
+        public DateTimeOffset VisitedAtUtc { get; set; }
+    }
+
+    private sealed class BrowserBookmark
+    {
+        public string Id { get; set; } = "";
+        public string Url { get; set; } = "";
+        public string Title { get; set; } = "";
+        public string Host { get; set; } = "";
+        public DateTimeOffset SavedAtUtc { get; set; }
     }
 
     private sealed class DownloadHistoryRecord

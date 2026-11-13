@@ -45,3 +45,8 @@ The number of visible websites adapts to the runtime memory budget: at most 2 on
 The host tracks WebView2 downloads in the Downloads panel. It shows filename, source host, transfer progress, received bytes, and WebView2 interruption state; it can pause, resume when WebView2 reports `CanResume`, cancel, open a completed file, or reveal its containing folder. The normal WebView2 Save dialog remains enabled (`Handled` is left false), so the user chooses the destination and existing files are not silently overwritten by a host-selected path. Up to 100 recent download records are stored in `%LOCALAPPDATA%\\Nolane\\NativeWebView2\\UserData\\download-history.json`; the history stores only the source host, not the full URL/query string. A download in progress when Nolane closes is recorded as interrupted; the original WebView2 operation cannot be resumed after the host process exits.
 
 An active or resumable download pins its originating WebView2 surface while the card is off-screen or removed, preventing cache eviction or suspension from destroying the in-flight operation. The pinned surface is released once the operation reaches a terminal state.
+
+
+## Native history and bookmarks
+
+The Library panel stores up to 500 recent visits and 200 bookmarks in `browser-library.json` under the Native WebView2 profile. Use the star button on a native website card to save or remove the current page. History and bookmarks open in the currently focused visible native card. Fragments, embedded credentials and sensitive query keys (tokens, passwords, secrets, signatures, session/auth values, API keys and OAuth codes) are removed before persistence. Chrome history and bookmarks are not accessed.

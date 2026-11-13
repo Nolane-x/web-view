@@ -252,6 +252,14 @@ else pass("Native browser retains user-controlled downloads, blocks unsolicited 
 if (!nativeHost.includes("core.HistoryChanged") || !nativeHost.includes("core.IsMutedChanged") ||
     !nativeHost.includes("core.IsDocumentPlayingAudioChanged") || !nativeHost.includes("ExecuteSurfaceCommand")) fail("Native browser history/audio controls and state reporting are incomplete.");
 else pass("Native browser exposes per-surface navigation, audio controls and state telemetry.");
+if (!nativeHost.includes("RecordBrowserHistory") || !nativeHost.includes("SanitizeLibraryUrl") ||
+    !nativeHost.includes("browser-library.json") || !nativeHost.includes("ToggleBookmark") ||
+    !nativeHost.includes("TimeSpan.FromSeconds(4)") || !nativeHost.includes("Take(500)")) fail("Native browser history and bookmark persistence/privacy safeguards are incomplete.");
+else pass("Native browser records bounded history, deduplicates navigation events, redacts sensitive query parameters and persists bookmarks locally.");
+if (!nativeHost.includes("OpenLibraryUrl") || !nativeHost.includes("GetLibraryTargetSurface") ||
+    !nativeXaml.includes('x:Name="LibraryPanel"') || !nativeXaml.includes('x:Name="LibraryItems"') ||
+    !js.includes("native-bookmark") || !js.includes("toggle-bookmark")) fail("Native browser Library UI or per-card bookmark control is incomplete.");
+else pass("Native Library opens history/bookmarks in the focused website card and exposes per-card bookmark control.");
 if (!nativeHost.includes("HandleDownloadStarting") || !nativeHost.includes("BytesReceivedChanged") ||
     !nativeHost.includes("StateChanged") || !nativeHost.includes("operation?.Pause()") ||
     !nativeHost.includes("operation?.Resume()") || !nativeHost.includes("operation?.Cancel()") ||
@@ -268,8 +276,9 @@ if (!nativeHost.includes("website is hidden, but its download is active or resum
     !nativeHost.includes("surface.View.Visibility != Visibility.Visible && !HasRetainedDownload(surface.Id)")) fail("Off-screen or deleted website surfaces must not destroy active/resumable downloads.");
 else pass("Off-screen and removed cards retain their WebView2 operation until downloads complete or are canceled.");
 if (!nativeBridge.includes("createCommand") || !nativeBridge.includes("createNavigationCommand") ||
-    !nativeBridge.includes("normalizeSurfaceState") || !nativeBridgeTests.includes("allow-listed protocol") ||
-    !nativeBridgeTests.includes("rejects credentials") || !nativeBridgeTests.includes("native address bar")) fail("The native browser command/state/address contract is not independently testable.");
+    !nativeBridge.includes("normalizeSurfaceState") || !nativeBridge.includes("toggle-bookmark") ||
+    !nativeBridgeTests.includes("allow-listed protocol") || !nativeBridgeTests.includes("rejects credentials") ||
+    !nativeBridgeTests.includes("native address bar") || !nativeBridgeTests.includes("bookmark toggles")) fail("The native browser command/state/address/bookmark contract is not independently testable.");
 else pass("The native browser command/state/address contract is independently tested.");
 if (!js.includes("native-address-input") || !js.includes("navigateNativeSurface") ||
     !nativeHost.includes('case "navigate":') || !nativeHost.includes('!IsSafeWebUri(targetUrl ?? "")')) fail("Native website cards need a safe, editable per-card address bar.");

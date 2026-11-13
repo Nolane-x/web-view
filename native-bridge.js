@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const ACTIONS = new Set(["back", "forward", "reload", "stop", "toggle-mute", "open-external"]);
+  const ACTIONS = new Set(["back", "forward", "reload", "stop", "toggle-mute", "toggle-bookmark", "open-external"]);
   const STATES = new Set(["ready", "loading", "suspended", "limit", "error"]);
 
   function createCommand(surfaceId, action) {
@@ -57,7 +57,8 @@
       canGoBack: message.canGoBack === true,
       canGoForward: message.canGoForward === true,
       isMuted: message.isMuted === true,
-      isPlayingAudio: message.isPlayingAudio === true
+      isPlayingAudio: message.isPlayingAudio === true,
+      isBookmarked: message.isBookmarked === true
     });
   }
 

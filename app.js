@@ -543,6 +543,12 @@
         mute.dataset.muted = state.isMuted ? "true" : "false";
         mute.dataset.playing = state.isPlayingAudio ? "true" : "false";
       }
+      const bookmark = card.querySelector('[data-action="native-bookmark"]');
+      if (bookmark) {
+        bookmark.dataset.bookmarked = state.isBookmarked ? "true" : "false";
+        bookmark.title = state.isBookmarked ? "Remove bookmark" : "Bookmark this page";
+        bookmark.setAttribute("aria-label", bookmark.title);
+      }
       if (state.state === "limit") toast("This device's memory budget allows " + nativeMaxVisibleSurfaces + " visible native websites at once. Bring another card forward or hide one.", "error");
     }
   }
@@ -646,6 +652,7 @@
         '<button class="node-action native-node-action" data-action="native-forward" title="Go forward" aria-label="Go forward"' + (nativeState.canGoForward ? "" : " disabled") + '><svg class="icon"><use href="#i-arrow-right"/></svg></button>' +
         '<button class="node-action native-node-action" data-action="native-reload" title="Reload website" aria-label="Reload website"><svg class="icon"><use href="#i-refresh"/></svg></button>' +
         '<button class="node-action native-node-action" data-action="native-mute" title="' + (nativeState.isMuted ? "Unmute this website" : "Mute this website") + '" aria-label="' + (nativeState.isMuted ? "Unmute this website" : "Mute this website") + '"><svg class="icon"><use href="#' + (nativeState.isMuted ? "i-volume-x" : "i-volume-2") + '"/></svg></button>' +
+        '<button class="node-action native-node-action" data-action="native-bookmark" data-bookmarked="' + (nativeState.isBookmarked ? "true" : "false") + '" title="' + (nativeState.isBookmarked ? "Remove bookmark" : "Bookmark this page") + '" aria-label="' + (nativeState.isBookmarked ? "Remove bookmark" : "Bookmark this page") + '"><svg class="icon"><use href="#i-star"/></svg></button>' +
         '</span>'
       : "";
     header.innerHTML =
@@ -1552,6 +1559,7 @@
     if (action === "native-forward") postNativeSurfaceCommand(node.id, "forward");
     if (action === "native-reload") postNativeSurfaceCommand(node.id, "reload");
     if (action === "native-mute") postNativeSurfaceCommand(node.id, "toggle-mute");
+    if (action === "native-bookmark") postNativeSurfaceCommand(node.id, "toggle-bookmark");
     if (action === "open" && node.type === "website") openWebsite(node);
     if (action === "open-url" && node.type === "website") openWebsiteUrl(node);
     if (action === "delete") deleteNode(node.id);

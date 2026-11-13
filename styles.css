@@ -401,3 +401,6 @@ kbd { font-family: var(--sans); font-size: 9px; border: 1px solid rgba(255,255,2
 .native-address-input { display: block; width: 100%; min-width: 0; height: 17px; flex: 0 0 17px; padding: 1px 5px; border: 1px solid rgba(255,255,255,.075); border-radius: 4px; outline: 0; color: #aeb9cb; background: rgba(5,8,13,.42); font: 8px/14px var(--mono); text-overflow: ellipsis; user-select: text; cursor: text; }
 .native-address-input:hover { border-color: rgba(167,139,250,.24); color: #d6dff0; }
 .native-address-input:focus { border-color: rgba(167,139,250,.58); color: #edf2ff; background: rgba(5,8,13,.78); box-shadow: 0 0 0 2px rgba(167,139,250,.08); }
+
+.native-node-action[data-bookmarked="true"] { color: #f0c96c; }
+.native-node-action[data-bookmarked="true"] .icon { fill: rgba(240,201,108,.28); }

@@ -110,3 +110,6 @@ The Windows host reads the memory budget exposed by the .NET runtime and selects
 
 
 The Windows Native Host also includes a Downloads panel for active/recent WebView2 transfers. It exposes progress, pause/resume/cancel, open-file and show-folder actions, and saves up to 100 recent records locally. It keeps WebView2's native destination chooser active and does not persist full download URLs or query strings.
+
+
+The Native Host includes a private Library with browsing History and Bookmarks. History is capped at 500 visits and bookmarks at 200 pages. Before an address is persisted, fragments and sensitive query keys (tokens, secrets, passwords, signatures, auth/session values, API keys and OAuth codes) are removed. Library items open in the currently focused native website card, falling back to the system browser only when no native card is active. This Library is local to the Native WebView2 profile and does not read Chrome history or bookmarks.

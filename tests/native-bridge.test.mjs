@@ -65,3 +65,12 @@ test("native address bar rejects unsafe schemes, credentials and oversized URLs"
   }
   assert.equal(bridge.createNavigationCommand("node-7", "a".repeat(4097)), null);
 });
+
+
+test("native browser bridge allows bookmark toggles and normalizes saved state", () => {
+  assert.equal(bridge.createCommand("node-5", "toggle-bookmark").action, "toggle-bookmark");
+  const state = bridge.normalizeSurfaceState({
+    type: "nolane.native.surface", id: "node-5", state: "ready", isBookmarked: true
+  });
+  assert.equal(state.isBookmarked, true);
+});
