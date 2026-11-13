@@ -256,7 +256,7 @@ const selectionFunction = js.slice(js.indexOf("function selectNode"), js.indexOf
 const nativeSyncFunction = js.slice(js.indexOf("function scheduleNativeSurfaceSync"), js.indexOf("function handleNativeHostMessage"));
 const nativeEligibility = js.slice(js.indexOf("function isChromeOwnedNode"), js.indexOf("function postNativeSurfaceCommand"));
 if (!nativeSyncFunction.includes("canUseNativeSurface(node)") ||
-    !nativeEligibility.includes("bridgeConnected && node.browserTabId !== undefined") ||
+    !nativeEligibility.includes("bridgeConnected && node && node.browserTabId !== undefined") ||
     !nativeEligibility.includes("node.browserSessionId === bridgeSessionId") ||
     !nativeEligibility.includes("!liveSurfaces.has(node.id)") ||
     !nativeSyncFunction.includes("clipX:") || !nativeSyncFunction.includes("clipWidth:") ||
