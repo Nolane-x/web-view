@@ -8,9 +8,9 @@ The published website is a static HTML/CSS/JavaScript application. It stores wor
 
 A conventional iframe can be blocked by CSP frame-ancestors or X-Frame-Options. A restrictive opaque-origin sandbox can also break applications that require origin-bound storage, service workers, IndexedDB or authentication APIs. Compatibility sandboxing expands the trust boundary and still cannot override a host's anti-framing policy.
 
-The reliable immediate path is **Live Chrome Surface** in Browser Companion v0.2.9. It operates on the user's real Chrome tab rather than creating a second embedded browsing context.
+The reliable immediate path is **Live Chrome Surface** in Browser Companion v0.2.10. It operates on the user's real Chrome tab rather than creating a second embedded browsing context.
 
-## Live Chrome Surface (MV3 companion v0.2.9)
+## Live Chrome Surface (MV3 companion v0.2.10)
 
 The extension uses a tab-scoped capture/control pipeline:
 
@@ -21,7 +21,7 @@ The extension uses a tab-scoped capture/control pipeline:
 5. The workspace page consumes the token with getUserMedia using Chrome's chromeMediaSource: tab constraints, then acknowledges only after its video element has decoded a real frame.
 6. Pointer, wheel and keyboard events inside that card are sent to the workspace content script and service worker.
 7. When CDP is available, the service worker checks the active session ID, browser-profile ID, exact workspace sender origin and tab ID, source tab ID and source origin, then sends only fixed Input.dispatchMouseEvent, Input.dispatchKeyEvent or Input.insertText commands via CDP. In view-only mode the input route is disabled and the card tells the user to focus the original tab.
-8. Page.frameResized events trigger a debounced Page.getLayoutMetrics refresh; the new CSS viewport dimensions are sent back to the canvas so pointer mapping remains correct when Chrome is resized.
+8. Page.frameResized events trigger a debounced Page.getLayoutMetrics refresh; the new CSS viewport dimensions are sent back to the canvas so pointer mapping remains correct when Chrome is resized. The serialized input queue also coalesces consecutive pointer moves under backpressure and resolves superseded requests immediately, preventing per-frame waiter buildup while preserving discrete input order.
 
 The capture stream includes audio and video. The workspace routes audio through a local AudioContext and keeps it muted until the user explicitly enables sound, so tab audio is not captured and the source page's audio is not muted by the extension. There is no signaling server, WebRTC relay, external proxy, server-side browser or upload of frames. The source tab remains the actual page with its real cookies, storage and origin; the canvas is a live video/control mirror, not a DOM clone.
 

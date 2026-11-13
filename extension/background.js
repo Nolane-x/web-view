@@ -510,9 +510,13 @@ function enqueueLiveInput(message, sender) {
     const tail = queue.items[queue.items.length - 1];
     if (message.kind === "mouseMoved" && tail?.message.kind === "mouseMoved") {
       // Keep the latest pointer position while preserving click/key/wheel ordering.
+      // A newer pointer position supersedes the older one. Resolve the old
+      // request immediately instead of retaining one waiter per frame while
+      // Chrome's debugger command queue is under backpressure.
+      tail.waiters.forEach((pending) => pending.resolve({ ok: true, dropped: true }));
       tail.message = message;
       tail.sender = sender;
-      tail.waiters.push(waiter);
+      tail.waiters = [waiter];
       return;
     }
 

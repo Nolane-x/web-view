@@ -412,6 +412,72 @@ test("mouse and keyboard input are forwarded only from the registered workspace 
   assert.match(sameTabWrongOrigin.error, /no longer connected to this browser profile/i);
 });
 
+test("pointer-move coalescing releases superseded callers during debugger backpressure", async () => {
+  let releasePress;
+  let enteredResolve;
+  const pressEntered = new Promise((resolve) => { enteredResolve = resolve; });
+  const pressGate = new Promise((resolve) => { releasePress = resolve; });
+  const h = createHarness({
+    beforeDebugCommand: async (_target, method, params) => {
+      if (method === "Input.dispatchMouseEvent" && params.type === "mousePressed") {
+        enteredResolve();
+        await pressGate;
+      }
+    }
+  });
+  const registered = await h.send(
+    { type: "NOLANE_REGISTER_WORKSPACE" },
+    { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" }
+  );
+  const started = await h.send(
+    { type: "NOLANE_START_LIVE_SURFACE", tabId: 10 },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  const sender = { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" };
+  const pressPromise = h.send({
+    type: "NOLANE_LIVE_INPUT",
+    surfaceId: started.surfaceId,
+    browserSessionId: registered.profileId,
+    kind: "mousePressed",
+    x: 100,
+    y: 100,
+    button: "left",
+    buttons: 1
+  }, sender);
+
+  await pressEntered;
+  const moves = [];
+  for (let index = 0; index < 80; index += 1) {
+    moves.push(h.send({
+      type: "NOLANE_LIVE_INPUT",
+      surfaceId: started.surfaceId,
+      browserSessionId: registered.profileId,
+      kind: "mouseMoved",
+      x: 120 + index,
+      y: 140 + index,
+      buttons: 1
+    }, sender));
+  }
+
+  const superseded = await Promise.all(moves.slice(0, -1));
+  assert.equal(superseded.length, 79);
+  assert.ok(superseded.every((result) => result.ok && result.dropped === true),
+    "superseded pointer requests should be acknowledged as dropped immediately");
+
+  releasePress();
+  assert.equal((await pressPromise).ok, true);
+  const latest = await moves[moves.length - 1];
+  assert.equal(latest.ok, true);
+  assert.equal(latest.dropped, undefined);
+
+  const dispatchedMoves = h.debugCalls.filter((call) =>
+    call.method === "Input.dispatchMouseEvent" && call.params.type === "mouseMoved"
+  );
+  assert.equal(dispatchedMoves.length, 1, "only the newest queued pointer position should reach Chrome");
+  assert.equal(dispatchedMoves[0].params.x, 199);
+  assert.equal(dispatchedMoves[0].params.y, 219);
+});
+
 test("live input is rejected and the debugger is detached when the source changes origin", async () => {
   const h = createHarness();
   const registered = await h.send(
