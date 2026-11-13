@@ -38,7 +38,7 @@ public sealed partial class MainWindow : Window
             var userData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "Nolane", "NativeWebView2", "UserData");
             Directory.CreateDirectory(userData);
-            _environment = await CoreWebView2Environment.CreateAsync(null, userData, null);
+            _environment = await CoreWebView2Environment.CreateWithOptionsAsync(null, userData, new CoreWebView2EnvironmentOptions());
             await WorkspaceView.EnsureCoreWebView2Async(_environment);
             WorkspaceView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
             WorkspaceView.CoreWebView2.Settings.IsStatusBarEnabled = false;

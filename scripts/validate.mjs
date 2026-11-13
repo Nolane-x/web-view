@@ -212,7 +212,7 @@ else pass("Original-tab focus remains tied to its browser profile.");
 const nativeHost = read("desktop-host/MainWindow.xaml.cs");
 const nativeProject = read("desktop-host/Nolane.DesktopHost.csproj");
 const nativeWorkflow = read(".github/workflows/desktop-host.yml");
-if (!nativeHost.includes("nolane.surfaces.sync") || !nativeHost.includes("EnsureCoreWebView2Async") ||
+if (!nativeHost.includes("nolane.surfaces.sync") || !nativeHost.includes("EnsureCoreWebView2Async") || !nativeHost.includes("CreateWithOptionsAsync") ||
     !nativeHost.includes("TrySuspendAsync") || !nativeHost.includes("MaxVisibleSurfaces = 4")) fail("Native WebView2 host must create real browser surfaces and bound active renderers.");
 else pass("Native WebView2 host creates real browser surfaces and bounds active renderers.");
 if (!nativeProject.includes("Microsoft.WindowsAppSDK") || !nativeProject.includes("net8.0-windows10.0.19041.0") ||
