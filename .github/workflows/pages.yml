@@ -27,6 +27,7 @@ jobs:
         run: |
           node --check app.js
           node --check extension/background.js
+          node --check extension/compatibility.js
           node --check extension/content.js
           node --check extension/popup.js
           node --test tests/*.test.mjs
@@ -42,7 +43,7 @@ jobs:
         run: |
           mkdir -p _site/downloads
           cp index.html styles.css app.js manifest.webmanifest sw.js icon.svg _site/
-          zip -rq _site/downloads/nolane-browser-companion-0.2.7.zip extension/
+          zip -rq _site/downloads/nolane-browser-companion-0.2.8.zip extension/
           touch _site/.nojekyll
 
       - name: Upload Pages artifact
