@@ -1530,6 +1530,10 @@
       setBridgeConnected(!!message.browserSessionId, message.browserSessionId || "");
     } else if (message.type === "LIVE_SURFACE_START") {
       startLiveSurface(message).catch((error) => toast(error.message || "Could not start the live surface.", "error"));
+    } else if (message.type === "LIVE_SURFACE_REFRESH") {
+      const entry = [...liveSurfaces.entries()].find(([, surface]) => surface.surfaceId === message.surfaceId);
+      if (entry) void refreshLiveVideo(entry[0], null, false);
+      else toast("That live surface is no longer mounted. Analyze the website again.", "error");
     } else if (message.type === "LIVE_SURFACE_STOPPED") {
       if (typeof message.surfaceId === "string") {
         stoppedLiveSurfaceIds.add(message.surfaceId);
