@@ -253,8 +253,8 @@ if (!nativeHost.includes("core.HistoryChanged") || !nativeHost.includes("core.Is
     !nativeHost.includes("core.IsDocumentPlayingAudioChanged") || !nativeHost.includes("ExecuteSurfaceCommand")) fail("Native browser history/audio controls and state reporting are incomplete.");
 else pass("Native browser exposes per-surface navigation, audio controls and state telemetry.");
 if (!nativeHost.includes("HandleDownloadStarting") || !nativeHost.includes("BytesReceivedChanged") ||
-    !nativeHost.includes("StateChanged") || !nativeHost.includes("operation.Pause()") ||
-    !nativeHost.includes("operation.Resume()") || !nativeHost.includes("operation.Cancel()") ||
+    !nativeHost.includes("StateChanged") || !nativeHost.includes("operation?.Pause()") ||
+    !nativeHost.includes("operation?.Resume()") || !nativeHost.includes("operation?.Cancel()") ||
     !nativeHost.includes("DownloadHistoryRecord") || !nativeHost.includes("File.Move(temporaryPath, _downloadHistoryPath, true)") ||
     !nativeHost.includes("Keep Handled=false")) fail("Native download tracking, controls or atomic history persistence are incomplete.");
 else pass("Native download manager tracks progress, supports pause/resume/cancel and atomically persists a bounded local history.");
