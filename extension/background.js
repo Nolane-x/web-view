@@ -361,35 +361,63 @@ async function startLiveSurface(message, sender) {
     width: Math.max(1, Math.round(tab.width || 1280)),
     height: Math.max(1, Math.round(tab.height || 720))
   };
+  let viewportSource = "tab-bounds-fallback";
+  let viewportWarning = "";
 
   try {
-    // CDP is optional: Chromium may reject a tab containing another extension's
-    // chrome-extension:// iframe. Preserve the independent tabCapture video path.
+    // CDP attachment provides the Input domain used for mouse and keyboard events.
+    // Page.enable and Page.getLayoutMetrics are optional inspection/resize capabilities;
+    // their failure must not discard an otherwise working input controller.
+    let pageEventsEnabled = false;
     try {
       stage = "attaching Chrome's optional input controller";
       await chrome.debugger.attach(debuggee, "1.3");
       debuggerAttached = true;
-      stage = "reading the Chrome page viewport";
-      await chrome.debugger.sendCommand(debuggee, "Page.enable");
-      const metrics = await chrome.debugger.sendCommand(debuggee, "Page.getLayoutMetrics");
-      const visual = metrics.cssVisualViewport || {};
-      const layout = metrics.cssLayoutViewport || {};
-      viewport = {
-        width: Math.max(1, Math.round(visual.clientWidth || layout.clientWidth || tab.width || 1280)),
-        height: Math.max(1, Math.round(visual.clientHeight || layout.clientHeight || tab.height || 720))
-      };
       interactive = true;
+
+      try {
+        stage = "enabling optional page lifecycle events";
+        await chrome.debugger.sendCommand(debuggee, "Page.enable");
+        pageEventsEnabled = true;
+      } catch (_) {
+        // Input.dispatchMouseEvent / Input.dispatchKeyEvent do not depend on Page.enable.
+      }
+
+      try {
+        stage = "reading the Chrome page viewport";
+        const metrics = await chrome.debugger.sendCommand(debuggee, "Page.getLayoutMetrics");
+        const visual = metrics.cssVisualViewport || {};
+        const layout = metrics.cssLayoutViewport || {};
+        const width = Math.round(visual.clientWidth || layout.clientWidth || 0);
+        const height = Math.round(visual.clientHeight || layout.clientHeight || 0);
+        if (width > 0 && height > 0) {
+          viewport = { width, height };
+          viewportSource = "page-layout-metrics";
+        } else {
+          viewportSource = "tab-bounds-fallback";
+          viewportWarning = "Chrome returned empty page metrics; using browser tab dimensions for input alignment.";
+        }
+      } catch (_) {
+        viewportSource = "tab-bounds-fallback";
+        viewportWarning = "Chrome blocked page layout inspection; mouse and keyboard control remain enabled using browser tab dimensions.";
+      }
+
+      if (!pageEventsEnabled) {
+        viewportWarning = [viewportWarning, "Window resize monitoring will refresh pointer coordinates when the Chrome window changes size."]
+          .filter(Boolean).join(" ");
+      }
     } catch (debugError) {
       const raw = String(debugError?.message || debugError);
       const foreignExtensionFrame = /Cannot access a chrome-extension:\/\/ URL of different extension/i.test(raw);
       interactionReason = foreignExtensionFrame
-        ? "Chrome blocked its debugger because this page contains a frame or content injected by another extension. The real page video can still be shown. Use Focus source to interact, or try a clean Chrome profile / disable extensions that inject page UI."
+        ? "Chrome refused debugger attachment because this page contains a frame or content injected by another extension. Video can still be shown, but Chrome blocks remote input control for this tab. Set that extension's Site access to On click for this website, or use a clean Chrome profile."
         : "Chrome's debugger could not attach (" + raw.slice(0, 180) + "). The real page video can still be shown. Use Focus source to interact, or close DevTools and other page-debugging tools before reconnecting.";
       if (debuggerAttached) {
         try { await chrome.debugger.detach(debuggee); } catch (_) {}
         debuggerAttached = false;
       }
       interactive = false;
+      viewportWarning = "";
     }
 
     const session = {
@@ -399,6 +427,10 @@ async function startLiveSurface(message, sender) {
       profileId,
       expectedOrigin,
       viewport,
+      viewportSource,
+      viewportWarning,
+      pageEventsEnabled,
+      sourceWindowId: tab.windowId,
       sourceTitle: String(tab.title || new URL(safeUrl).hostname).slice(0, 120),
       sourceUrl: safeUrl,
       siteCategory: compatibilitySite.category,
@@ -542,6 +574,8 @@ async function startLiveSurface(message, sender) {
       title: session.sourceTitle,
       interactive,
       interactionReason,
+      viewportSource,
+      viewportWarning,
       keepSourceVisible: sourceKeptVisible,
       workspaceWindowId
     };
@@ -746,6 +780,63 @@ async function dispatchLiveInput(message, sender) {
   throw new Error("Unsupported live input type.");
 }
 
+async function refreshSessionViewport(tabId) {
+  const sessions = await getLiveSessions();
+  const session = Object.values(sessions).find((item) => item.sourceTabId === tabId);
+  if (!session) return;
+
+  let viewport = null;
+  let viewportSource = "tab-bounds-fallback";
+  try {
+    const metrics = await chrome.debugger.sendCommand({ tabId }, "Page.getLayoutMetrics");
+    const visual = metrics.cssVisualViewport || {};
+    const layout = metrics.cssLayoutViewport || {};
+    const width = Math.round(visual.clientWidth || layout.clientWidth || 0);
+    const height = Math.round(visual.clientHeight || layout.clientHeight || 0);
+    if (width > 0 && height > 0) {
+      viewport = { width, height };
+      viewportSource = "page-layout-metrics";
+    }
+  } catch (_) {}
+
+  if (!viewport) {
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      viewport = {
+        width: Math.max(1, Math.round(tab.width || session.viewport.width || 1280)),
+        height: Math.max(1, Math.round(tab.height || session.viewport.height || 720))
+      };
+    } catch (_) {
+      return;
+    }
+  }
+
+  if (viewport.width === session.viewport.width && viewport.height === session.viewport.height &&
+      viewportSource === (session.viewportSource || "page-layout-metrics")) return;
+
+  session.viewport = viewport;
+  session.viewportSource = viewportSource;
+  session.viewportWarning = viewportSource === "tab-bounds-fallback"
+    ? "Page layout metrics are unavailable; pointer alignment is using Chrome tab dimensions."
+    : (session.pageEventsEnabled ? "" : "Page resize events are unavailable; Chrome window resizing triggers coordinate refreshes.");
+  await saveLiveSessions(sessions);
+  await sendToWorkspace(session, {
+    type: "NOLANE_LIVE_VIEWPORT_UPDATE",
+    surfaceId: session.surfaceId,
+    viewport
+  });
+}
+
+function scheduleSessionViewportRefresh(tabId) {
+  const previous = pendingViewportRefreshes.get(tabId);
+  if (previous) clearTimeout(previous);
+  const timer = setTimeout(() => {
+    pendingViewportRefreshes.delete(tabId);
+    void refreshSessionViewport(tabId);
+  }, 120);
+  pendingViewportRefreshes.set(tabId, timer);
+}
+
 chrome.debugger.onEvent.addListener((source, method, params) => {
   if (!Number.isInteger(source.tabId)) return;
 
@@ -761,36 +852,21 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
   }
 
   if (method === "Page.frameResized") {
-    const previous = pendingViewportRefreshes.get(source.tabId);
-    if (previous) clearTimeout(previous);
-    const timer = setTimeout(() => {
-      pendingViewportRefreshes.delete(source.tabId);
-      void (async () => {
-        const sessions = await getLiveSessions();
-        const session = Object.values(sessions).find((item) => item.sourceTabId === source.tabId);
-        if (!session) return;
-        try {
-          const metrics = await chrome.debugger.sendCommand({ tabId: source.tabId }, "Page.getLayoutMetrics");
-          const visual = metrics.cssVisualViewport || {};
-          const layout = metrics.cssLayoutViewport || {};
-          const viewport = {
-            width: Math.max(1, Math.round(visual.clientWidth || layout.clientWidth || session.viewport.width)),
-            height: Math.max(1, Math.round(visual.clientHeight || layout.clientHeight || session.viewport.height))
-          };
-          if (viewport.width === session.viewport.width && viewport.height === session.viewport.height) return;
-          session.viewport = viewport;
-          await saveLiveSessions(sessions);
-          await sendToWorkspace(session, {
-            type: "NOLANE_LIVE_VIEWPORT_UPDATE",
-            surfaceId: session.surfaceId,
-            viewport
-          });
-        } catch (_) {}
-      })();
-    }, 120);
-    pendingViewportRefreshes.set(source.tabId, timer);
+    scheduleSessionViewportRefresh(source.tabId);
   }
 });
+
+if (chrome.windows.onBoundsChanged?.addListener) {
+  chrome.windows.onBoundsChanged.addListener((window) => {
+    if (!Number.isInteger(window?.id)) return;
+    void (async () => {
+      const sessions = await getLiveSessions();
+      for (const session of Object.values(sessions)) {
+        if (session.sourceWindowId === window.id) scheduleSessionViewportRefresh(session.sourceTabId);
+      }
+    })();
+  });
+}
 
 chrome.debugger.onDetach.addListener((source, reason) => {
   if (!Number.isInteger(source.tabId)) return;
@@ -933,6 +1009,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           healthState: normalizeHealthState(item.healthState),
           lastHealthAt: item.lastHealthAt || null,
           videoInfo: normalizeVideoInfo(item.videoInfo),
+          viewportSource: item.viewportSource || "unknown",
+          viewportWarning: item.viewportWarning || "",
           siteCategory: item.siteCategory || "general",
           siteCategoryLabel: item.siteCategoryLabel || "General website",
           recovery: NolaneCompatibility.assessSession(item)

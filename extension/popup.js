@@ -159,7 +159,8 @@
         ? " Source tab stays selected in its own Chrome window."
         : " Source tab may enter the background and some sites may pause.";
       if (result.interactive) {
-        status("Interactive live surface started for " + (result.title || safeHost(activeTab.url)) + "." + visibilityNote, "success");
+        status("Interactive live surface started for " + (result.title || safeHost(activeTab.url)) + "." +
+          (result.viewportWarning ? " " + result.viewportWarning : "") + visibilityNote, "success");
       } else {
         status("Live video connected in view-only mode. " + (result.interactionReason || "Use Focus source to interact with the tab.") + visibilityNote, "success");
       }

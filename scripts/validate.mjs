@@ -72,8 +72,8 @@ if (!html.includes('id="bridgeDialog"') || !html.includes("Companion not detecte
 else pass("Browser Companion status is explicit and does not imply a working extension.");
 
 const extensionManifest = JSON.parse(read("extension/manifest.json"));
-if (extensionManifest.version !== "0.2.11") fail("Browser Companion release metadata must be synchronized at version 0.2.11.");
-else pass("Browser Companion release metadata is synchronized at 0.2.11.");
+if (extensionManifest.version !== "0.2.12") fail("Browser Companion release metadata must be synchronized at version 0.2.12.");
+else pass("Browser Companion release metadata is synchronized at 0.2.12.");
 for (const file of ["extension/background.js", "extension/compatibility.js", "extension/content.js", "extension/popup.html", "extension/popup.css", "extension/popup.js", "extension/README.md"]) {
   if (!fs.existsSync(path.join(root, file))) fail("Browser Companion asset missing: " + file);
 }
@@ -138,6 +138,10 @@ else pass("Live input uses a bounded queue and preserves discrete input order.")
 if (!/tail\.waiters\.forEach\(\(pending\) => pending\.resolve\(\{ ok: true, dropped: true \}\)\)/.test(background) || !/tail\.waiters = \[waiter\]/.test(background)) fail("Superseded pointer moves must release their waiters instead of accumulating during debugger backpressure.");
 else pass("Superseded pointer moves release stale waiters immediately.");
 if (!/chrome\.tabs\.onUpdated/.test(background) || !/removeSessionsForWorkspaceTab/.test(background) || !/movedToAnotherOrigin/.test(background)) fail("Workspace lifecycle and source-origin changes must release live sessions without depending on CDP.");
+if (!/async function refreshSessionViewport/.test(background) || !/chrome\.windows\.onBoundsChanged/.test(background) || !/viewportSource/.test(background)) fail("Viewport fallback must keep coordinates synchronized when optional CDP Page events are unavailable.");
+else pass("Viewport coordinates have a tab-size fallback and a Chrome window-resize refresh path.");
+if (!/Page\.enable/.test(background) || !/Input\.dispatchMouseEvent/.test(background) || !/interactive = true/.test(background)) fail("Input attachment must remain independent from optional Page-domain inspection.");
+else pass("CDP Input remains active when optional Page-domain inspection fails.");
 else pass("Workspace lifecycle and source-origin changes release live sessions without depending on CDP.");
 const focusIndex = background.indexOf("chrome.windows.update(workspaceTab.windowId, { focused: true })");
 const streamIndex = background.indexOf("chrome.tabCapture.getMediaStreamId");

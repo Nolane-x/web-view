@@ -8,15 +8,15 @@ The published website is a static HTML/CSS/JavaScript application. It stores wor
 
 A conventional iframe can be blocked by CSP frame-ancestors or X-Frame-Options. A restrictive opaque-origin sandbox can also break applications that require origin-bound storage, service workers, IndexedDB or authentication APIs. Compatibility sandboxing expands the trust boundary and still cannot override a host's anti-framing policy.
 
-The reliable immediate path is **Live Chrome Surface** in Browser Companion v0.2.11. It operates on the user's real Chrome tab rather than creating a second embedded browsing context.
+The reliable immediate path is **Live Chrome Surface** in Browser Companion v0.2.12. It operates on the user's real Chrome tab rather than creating a second embedded browsing context.
 
-## Live Chrome Surface (MV3 companion v0.2.11)
+## Live Chrome Surface (MV3 companion v0.2.12)
 
 The extension uses a tab-scoped capture/control pipeline:
 
 1. The user opens a website in a normal Chrome tab, opens the Companion action from that active tab, and explicitly starts the stream.
 2. The service worker discovers an open workspace tab using the exact Nolane URL pattern and verifies the content-script bridge with a versioned ping before recording its tab ID. The verified ID is mirrored to local storage so an extension reload does not erase it; every use still revalidates the tab and bridge. If the page is open but the bridge did not survive an extension update, the popup offers an explicit page refresh instead of attempting a doomed stream.
-3. The service worker attempts chrome.debugger.attach as an optional input-control capability. When available, Page.getLayoutMetrics obtains the CSS viewport dimensions used for pointer coordinate mapping. A debugger failure (including Chromium's foreign-extension-frame restriction) does not abort capture; the surface continues in clearly labelled view-only mode.
+3. The service worker attempts chrome.debugger.attach as an optional input-control capability. When available, Page.getLayoutMetrics obtains the CSS viewport dimensions used for pointer coordinate mapping. A debugger-attach failure (including Chromium's foreign-extension-frame restriction) does not abort capture; the surface continues in clearly labelled view-only mode. After a successful attach, Page.enable and Page.getLayoutMetrics are best-effort inspection features: their failure does not detach the Input controller. The workspace falls back to Chrome tab dimensions and refreshes the viewport on Chrome window-boundary changes.
 4. Before creating a stream, the service worker checks chrome.tabCapture.getCapturedTabs() and reports an already-pending/active capture instead of attempting a duplicate. By default it moves the existing Nolane tab into a separate Chrome window with chrome.windows.create({tabId, focused: true}), leaving the source tab selected in its original window. The user can disable this behavior in the popup. It then calls chrome.tabCapture.getMediaStreamId with targetTabId set to the active website tab and consumerTabId bound to the workspace tab. The token is delivered immediately because it is one-use and short-lived.
 5. The workspace page consumes the token with getUserMedia using Chrome's chromeMediaSource: tab constraints, then acknowledges only after its video element has decoded a real frame.
 6. Pointer, wheel and keyboard events inside that card are sent to the workspace content script and service worker.

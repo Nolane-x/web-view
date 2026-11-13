@@ -48,7 +48,7 @@ The companion is source code in the repository; it is not installed automaticall
 4. Refresh the GitHub Pages workspace, open the extension popup, and grant the optional Tabs permission only if you want to import tabs.
 5. Select the tabs you want to add. Their sessions remain in Chrome; imported cards can switch back to the original tabs.
 
-See extension/README.md for exact steps and permission details. A packaged ZIP is also published at [downloads/nolane-browser-companion-0.2.11.zip](https://nolane-x.github.io/web-view/downloads/nolane-browser-companion-0.2.11.zip). The package is an unpacked-extension bundle: extract it and select its extension/ folder in chrome://extensions.
+See extension/README.md for exact steps and permission details. A packaged ZIP is also published at [downloads/nolane-browser-companion-0.2.12.zip](https://nolane-x.github.io/web-view/downloads/nolane-browser-companion-0.2.12.zip). The package is an unpacked-extension bundle: extract it and select its extension/ folder in chrome://extensions.
 
 ## Run locally
 

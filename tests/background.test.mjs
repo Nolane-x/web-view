@@ -37,6 +37,7 @@ function createHarness(options = {}) {
   const tabRemoved = makeEvent();
   const tabUpdated = makeEvent();
   const captureStatus = makeEvent();
+  const windowBoundsChanged = makeEvent();
 
   const tabs = new Map([
     [10, {
@@ -64,7 +65,7 @@ function createHarness(options = {}) {
     runtime: {
       onMessage: runtimeMessage,
       getURL(path) { return "chrome-extension://nolane-test/" + path; },
-      getManifest() { return { version: "0.2.11" }; }
+      getManifest() { return { version: "0.2.12" }; }
     },
     storage: {
       local: {
@@ -123,7 +124,7 @@ function createHarness(options = {}) {
         sentMessages.push({ tabId, message });
         if (message.type === "NOLANE_WORKSPACE_PING") {
           if (options.workspaceBridgeReady === false) throw new Error("Could not establish connection. Receiving end does not exist.");
-          return { ok: true, version: "0.2.11", url: "https://nolane-x.github.io/web-view/" };
+          return { ok: true, version: "0.2.12", url: "https://nolane-x.github.io/web-view/" };
         }
         if (message.type === "NOLANE_LIVE_SURFACE_START") {
           if (options.workspaceSendError) throw new Error(options.workspaceSendError);
@@ -163,6 +164,7 @@ function createHarness(options = {}) {
       onUpdated: tabUpdated
     },
     windows: {
+      onBoundsChanged: windowBoundsChanged,
       async update(windowId, changes) { eventOrder.push("windows.update:" + windowId); windowUpdates.push({ windowId, changes }); return {}; },
       async get(windowId) {
         return { id: windowId, state: "normal", left: 0, top: 0, width: 1365, height: 768 };
@@ -262,6 +264,7 @@ function createHarness(options = {}) {
     captureStatus,
     eventOrder,
     windowCreates,
+    windowBoundsChanged,
     setWorkspaceBridgeReady(value) { options.workspaceBridgeReady = value; }
   };
 }
@@ -827,15 +830,71 @@ test("foreign extension debugger restriction falls back to an available video-on
   assert.equal(h.debugCalls.some((call) => call.method === "Input.dispatchMouseEvent"), false);
 });
 
-test("CDP viewport error releases partial debugger and still captures source tab video", async () => {
+test("Page layout metrics failure preserves the attached input controller and falls back to tab dimensions", async () => {
   const h = createHarness({ commandErrors: ["Page.getLayoutMetrics"] });
   await h.send({ type: "NOLANE_REGISTER_WORKSPACE" }, { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" });
   const started = await h.send({ type: "NOLANE_START_LIVE_SURFACE", tabId: 10 }, { url: "chrome-extension://nolane-test/popup.html" });
   assert.equal(started.ok, true);
-  assert.equal(started.interactive, false);
+  assert.equal(started.interactive, true);
+  assert.equal(started.viewportSource, "tab-bounds-fallback");
+  assert.match(started.viewportWarning, /control remain enabled/i);
   assert.equal(h.streamRequests.length, 1);
-  assert.ok(h.detachedTabs.includes(10), "partial debugger attachment must be released");
-  assert.equal(Object.values(h.sessionStore.nolaneLiveSessions)[0].debuggerAttached, false);
+  assert.equal(h.detachedTabs.includes(10), false, "a Page-domain metrics error must not detach an attached debugger");
+  const session = Object.values(h.sessionStore.nolaneLiveSessions)[0];
+  assert.equal(session.debuggerAttached, true);
+  assert.equal(session.viewport.width, 1365);
+  const input = await h.send({
+    type: "NOLANE_LIVE_INPUT",
+    surfaceId: started.surfaceId,
+    browserSessionId: session.profileId,
+    kind: "mousePressed",
+    x: 120,
+    y: 90,
+    button: "left"
+  }, { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" });
+  assert.equal(input.ok, true);
+  assert.ok(h.debugCalls.some((call) => call.method === "Input.dispatchMouseEvent"));
+});
+
+test("Page.enable failure does not disable CDP mouse and keyboard input", async () => {
+  const h = createHarness({ commandErrors: ["Page.enable"] });
+  await h.send({ type: "NOLANE_REGISTER_WORKSPACE" }, { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" });
+  const started = await h.send({ type: "NOLANE_START_LIVE_SURFACE", tabId: 10 }, { url: "chrome-extension://nolane-test/popup.html" });
+  assert.equal(started.ok, true);
+  assert.equal(started.interactive, true);
+  assert.equal(started.viewportSource, "page-layout-metrics");
+  const session = Object.values(h.sessionStore.nolaneLiveSessions)[0];
+  assert.equal(session.pageEventsEnabled, false);
+  assert.equal(session.debuggerAttached, true);
+  assert.equal(h.detachedTabs.includes(10), false);
+  const input = await h.send({
+    type: "NOLANE_LIVE_INPUT",
+    surfaceId: started.surfaceId,
+    browserSessionId: session.profileId,
+    kind: "mousePressed",
+    x: 220,
+    y: 120,
+    button: "left"
+  }, { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" });
+  assert.equal(input.ok, true);
+  assert.ok(h.debugCalls.some((call) => call.method === "Input.dispatchMouseEvent"));
+});
+
+test("Chrome window resize refreshes fallback coordinates when Page events are unavailable", async () => {
+  const h = createHarness({ commandErrors: ["Page.enable", "Page.getLayoutMetrics"] });
+  await h.send({ type: "NOLANE_REGISTER_WORKSPACE" }, { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" });
+  const started = await h.send({ type: "NOLANE_START_LIVE_SURFACE", tabId: 10 }, { url: "chrome-extension://nolane-test/popup.html" });
+  assert.equal(started.ok, true);
+  assert.equal(started.interactive, true);
+  h.tabs.get(10).width = 1024;
+  h.tabs.get(10).height = 640;
+  h.windowBoundsChanged.fire({ id: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 160));
+  const update = h.sentMessages.find((item) => item.message.type === "NOLANE_LIVE_VIEWPORT_UPDATE");
+  assert.ok(update, "window resize sends an updated viewport to the canvas");
+  assert.deepEqual({ ...update.message.viewport }, { width: 1024, height: 640 });
+  const session = Object.values(h.sessionStore.nolaneLiveSessions)[0];
+  assert.deepEqual({ ...session.viewport }, { width: 1024, height: 640 });
 });
 
 
@@ -979,7 +1038,7 @@ test("popup diagnostics are scoped to the companion and omit raw page URLs", asy
     { url: "chrome-extension://nolane-test/popup.html" }
   );
   assert.equal(diagnostic.ok, true);
-  assert.equal(diagnostic.extensionVersion, "0.2.11");
+  assert.equal(diagnostic.extensionVersion, "0.2.12");
   assert.equal(JSON.stringify(diagnostic.capturedTabs), JSON.stringify([{ tabId: 10, status: "active", fullscreen: false }]));
   assert.ok(Array.isArray(diagnostic.liveSessions));
   const denied = await h.send(
