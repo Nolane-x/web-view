@@ -37,3 +37,17 @@ main{padding:15px 17px 17px}
 .compat-option strong{color:#d8d0ff;font-size:10px}
 .compat-option small{color:#929bb0;font-size:9px;line-height:1.5}
 #diagnosticsButton{margin-top:7px}
+
+.compat-result{display:grid;gap:7px;margin-top:10px;padding:11px;border:1px solid rgba(160,170,190,.16);border-radius:9px;background:#111722}
+.compat-result.success{border-color:rgba(91,214,160,.3)}
+.compat-result.warning{border-color:rgba(231,179,103,.3)}
+.compat-result.error{border-color:rgba(239,126,126,.35)}
+.compat-category{color:#9ba8bb;font-size:8px;font-weight:700;letter-spacing:.5px;text-transform:uppercase}
+.compat-title{color:#e4e9f2;font-size:12px}
+.compat-summary{margin:0;color:#9ca7ba;font-size:9px;line-height:1.55}
+.compat-result code{justify-self:start;padding:3px 5px;border-radius:4px;background:rgba(167,139,250,.1);color:#c7b8ff;font-size:8px}
+.compat-result ul{display:grid;gap:5px;margin:0;padding-left:16px;color:#c4ccda;font-size:9px;line-height:1.5}
+.compat-hints{display:grid;gap:4px}
+.compat-hints p{margin:0;color:#9babc0;font-size:8px;line-height:1.5}
+.compat-recovery{padding-top:6px;border-top:1px solid rgba(255,255,255,.07);color:#c8baff;font-size:9px;line-height:1.5}
+.compat-history{color:#7f8ba0;font-size:8px;line-height:1.4}
