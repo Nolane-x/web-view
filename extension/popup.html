@@ -28,7 +28,10 @@
         <span><strong>Keep source page visible</strong><small>Move Nolane into a separate Chrome window while keeping the website selected. Helpful for sites that pause when their tab is hidden.</small></span>
       </label>
       <p class="fineprint">Keep both windows unminimized. For best results, arrange them side by side so the source page is not fully covered.</p>
+      <button id="diagnoseButton" class="primary wide">Analyze this website</button>
+      <div id="compatibilityResult" class="compat-result" hidden></div>
       <button id="diagnosticsButton" class="quiet wide">Copy compatibility report</button>
+      <p class="fineprint">Analysis runs locally from tab metadata and capture state; it does not inspect page HTML or cookies.</p>
       <p class="fineprint">The report contains browser/runtime status and error stages, not cookies, page HTML or full website URLs.</p>
     </section>
 
