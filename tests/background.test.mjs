@@ -57,7 +57,7 @@ function createHarness(options = {}) {
     runtime: {
       onMessage: runtimeMessage,
       getURL(path) { return "chrome-extension://nolane-test/" + path; },
-      getManifest() { return { version: "0.2.6" }; }
+      getManifest() { return { version: "0.2.7" }; }
     },
     storage: {
       local: {
@@ -730,7 +730,7 @@ test("popup diagnostics are scoped to the companion and omit raw page URLs", asy
     { url: "chrome-extension://nolane-test/popup.html" }
   );
   assert.equal(diagnostic.ok, true);
-  assert.equal(diagnostic.extensionVersion, "0.2.6");
+  assert.equal(diagnostic.extensionVersion, "0.2.7");
   assert.equal(JSON.stringify(diagnostic.capturedTabs), JSON.stringify([{ tabId: 10, status: "active", fullscreen: false }]));
   assert.ok(Array.isArray(diagnostic.liveSessions));
   const denied = await h.send(
