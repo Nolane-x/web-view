@@ -206,7 +206,8 @@ public sealed partial class MainWindow : Window
                 }
             }
             await EvictHiddenSurfacesAsync();
-        StatusText.Text = $"Native browser connected · {activeCount}/{MaxVisibleSurfaces} visible website surfaces";
+        StatusText.Text = $"Native browser connected · {activeCount}/{MaxVisibleSurfaces} visible website surfaces" +
+            (_runtimeUpdateAvailable ? " · WebView2 update ready; restart Nolane to apply" : "");
     }
 
     private async Task<BrowserSurface?> GetOrCreateSurfaceAsync(SurfaceDescriptor item)
@@ -491,7 +492,7 @@ public sealed partial class MainWindow : Window
     {
         descriptor = default!;
         if (!TryGetString(element, "id", out var id) || !TryGetString(element, "url", out var url) ||
-            !IsSafeWebUri(url)) return false;
+            !Uri.TryCreate(url, UriKind.Absolute, out var uri) || !IsSafeWebUri(url)) return false;
         var x = ReadNumber(element, "x");
         var y = ReadNumber(element, "y");
         var width = ReadNumber(element, "width");
