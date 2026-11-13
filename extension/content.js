@@ -1,7 +1,7 @@
 (() => {
   "use strict";
   const WORKSPACE_ORIGIN = "https://nolane-x.github.io";
-  const PROFILE_VERSION = "0.2.5";
+  const PROFILE_VERSION = "0.2.6";
 
   function sendToPage(type, payload) {
     window.postMessage({ source: "nolane-companion", type, ...(payload || {}) }, WORKSPACE_ORIGIN);
