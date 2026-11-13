@@ -57,3 +57,5 @@ The Library panel can filter both History and Bookmarks instantly by title, doma
 ## Library backup and restore
 
 Use Export backup to save a versioned JSON copy, or Import backup to validate and merge a backup from another machine. The app uses the Windows App SDK 1.8+ file pickers. Import is limited to 5 MiB, schema version 1, at most 500 history entries and 200 bookmarks; URLs are sanitized again, duplicate entries are skipped, and the user must confirm the staged merge. It does not include cookies, passwords, the WebView2 profile, download history or Chrome data.
+
+The native host pins `Microsoft.Web.WebView2` as an explicit NuGet dependency rather than relying on a transitive browser reference from the Windows App SDK. The WebView2 SDK can therefore be reviewed and updated independently from the WinUI runtime.
