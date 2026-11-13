@@ -176,7 +176,8 @@
         activeTab: !!activeTab?.active,
         capturedTabs: result.capturedTabs || [],
         liveSessions: result.liveSessions || [],
-        lastLiveDiagnostic: result.lastLiveDiagnostic || null
+        lastLiveDiagnostic: result.lastLiveDiagnostic || null,
+        compatibilityProfiles: result.compatibilityProfiles || []
       };
       const output = JSON.stringify(report, null, 2);
       if (navigator.clipboard?.writeText) {
