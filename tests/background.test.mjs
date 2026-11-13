@@ -219,6 +219,7 @@ function createHarness(options = {}) {
     localStore,
     tabRemoved,
     tabUpdated,
+    captureStatus,
     eventOrder,
     windowCreates
   };
@@ -751,4 +752,75 @@ test("first decoded video frame metadata is retained in the local compatibility 
   assert.equal(diagnostic.lastLiveDiagnostic.videoInfo.frameRate, 30);
   assert.equal(diagnostic.liveSessions[0].videoInfo.presentedFrames, 1);
   assert.equal(diagnostic.liveSessions[0].videoInfo.trackReadyState, "live");
+});
+
+test("long-running stream health updates are authenticated and included in diagnostics", async () => {
+  const h = createHarness();
+  const registered = await h.send(
+    { type: "NOLANE_REGISTER_WORKSPACE" },
+    { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" }
+  );
+  const started = await h.send(
+    { type: "NOLANE_START_LIVE_SURFACE", tabId: 10 },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  const healthMessage = {
+    type: "NOLANE_LIVE_SURFACE_HEALTH",
+    surfaceId: started.surfaceId,
+    browserSessionId: registered.profileId,
+    healthState: "stalled",
+    videoInfo: {
+      width: 1280,
+      height: 720,
+      frameRate: 0,
+      presentedFrames: 1,
+      mediaTime: 0,
+      droppedFrames: 42,
+      totalVideoFrames: 43,
+      trackReadyState: "live",
+      trackMuted: false
+    }
+  };
+  const sender = { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" };
+  const updated = await h.send(healthMessage, sender);
+  assert.equal(updated.ok, true);
+  const diagnostic = await h.send({ type: "NOLANE_GET_DIAGNOSTICS" }, { url: "chrome-extension://nolane-test/popup.html" });
+  assert.equal(diagnostic.liveSessions[0].healthState, "stalled");
+  assert.equal(diagnostic.liveSessions[0].videoInfo.droppedFrames, 42);
+  assert.equal(diagnostic.lastLiveDiagnostic.healthState, "stalled");
+  assert.equal(typeof diagnostic.liveSessions[0].lastHealthAt, "number");
+
+  const denied = await h.send(healthMessage, { tab: { id: 999 }, url: "https://attacker.example/" });
+  assert.equal(denied.ok, false);
+});
+
+test("capture status transitions are tracked and stopped/error status tears down the live surface", async () => {
+  const h = createHarness();
+  await h.send(
+    { type: "NOLANE_REGISTER_WORKSPACE" },
+    { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" }
+  );
+  const started = await h.send(
+    { type: "NOLANE_START_LIVE_SURFACE", tabId: 10 },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  h.captureStatus.fire({ tabId: 10, status: "pending", fullscreen: false });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  let diagnostic = await h.send({ type: "NOLANE_GET_DIAGNOSTICS" }, { url: "chrome-extension://nolane-test/popup.html" });
+  assert.equal(diagnostic.liveSessions[0].captureStatus, "pending");
+
+  h.captureStatus.fire({ tabId: 10, status: "active", fullscreen: false });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  diagnostic = await h.send({ type: "NOLANE_GET_DIAGNOSTICS" }, { url: "chrome-extension://nolane-test/popup.html" });
+  assert.equal(diagnostic.liveSessions[0].captureStatus, "active");
+
+  h.captureStatus.fire({ tabId: 10, status: "error", fullscreen: false });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  diagnostic = await h.send({ type: "NOLANE_GET_DIAGNOSTICS" }, { url: "chrome-extension://nolane-test/popup.html" });
+  assert.equal(diagnostic.liveSessions.length, 0);
+  assert.ok(h.sentMessages.some((item) =>
+    item.message.type === "NOLANE_LIVE_SURFACE_STOPPED" &&
+    item.message.surfaceId === started.surfaceId &&
+    /capture error/i.test(item.message.reason)
+  ));
 });
