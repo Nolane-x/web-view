@@ -39,8 +39,19 @@ jobs:
         run: |
           dotnet restore desktop-host/Nolane.DesktopHost.csproj -r win-x64
           dotnet list desktop-host/Nolane.DesktopHost.csproj package --include-transitive
-          $webViewPackage = Join-Path $env:USERPROFILE ".nuget/packages/microsoft.web.webview2/1.0.3179.45"
-          if (-not (Test-Path $webViewPackage)) { throw "The pinned WebView2 SDK package 1.0.3179.45 was not restored." }
+          $reportPath = Join-Path "${{ runner.temp }}" "webview2-reference-diagnostic.txt"
+          $assetsPath = "desktop-host/obj/project.assets.json"
+          $assets = Get-Content $assetsPath -Raw | ConvertFrom-Json
+          "Resolved NuGet WebView2 libraries:" | Tee-Object -FilePath $reportPath
+          $assets.libraries.PSObject.Properties.Name | Where-Object { $_ -match "WebView2" } | Tee-Object -FilePath $reportPath -Append
+          Add-Content -Path $reportPath -Value "WebView2 assemblies and WinMDs in NuGet cache:"
+          Get-ChildItem (Join-Path $env:USERPROFILE ".nuget/packages") -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match "WebView2.*(dll|winmd)$" } |
+            Select-Object -ExpandProperty FullName | Tee-Object -FilePath $reportPath -Append
+          Add-Content -Path $reportPath -Value "MSBuild resolved ReferencePath items:"
+          $referenceJson = dotnet msbuild desktop-host/Nolane.DesktopHost.csproj -t:ResolveReferences -getItem:ReferencePath -p:Configuration=Release -p:RuntimeIdentifier=win-x64
+          $referenceJson | Tee-Object -FilePath $reportPath -Append
+          Write-Host "WebView2 reference diagnostic written to $reportPath"
           dotnet publish desktop-host/Nolane.DesktopHost.csproj -c Release -r win-x64 --self-contained true -p:WindowsAppSDKSelfContained=true -p:PublishSingleFile=false -o "${{ runner.temp }}/nolane-native-host"
       - name: Package native host
         shell: pwsh
@@ -71,3 +82,14 @@ jobs:
           path: ${{ runner.temp }}/nolane-native-webview2-host-win-x64.zip
           if-no-files-found: error
           retention-days: 30
+
+      - name: Upload native dependency diagnostics
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: nolane-native-webview2-diagnostics
+          path: |
+            desktop-host/obj/project.assets.json
+            ${{ runner.temp }}/webview2-reference-diagnostic.txt
+          if-no-files-found: warn
+          retention-days: 7
