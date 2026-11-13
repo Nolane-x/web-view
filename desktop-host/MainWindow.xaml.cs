@@ -17,8 +17,10 @@ public sealed partial class MainWindow : Window
 {
     private const string WorkspaceUrl = "https://nolane-x.github.io/web-view/";
     private const string WorkspaceHost = "nolane-x.github.io";
-    private const int MaxVisibleSurfaces = 4;
-    private const int MaxCachedSurfaces = 8;
+    private readonly int _maxVisibleSurfaces = DetermineVisibleSurfaceBudget();
+
+    private int MaxVisibleSurfaces => _maxVisibleSurfaces;
+    private int MaxCachedSurfaces => Math.Min(8, MaxVisibleSurfaces * 2);
 
     private CoreWebView2Environment? _environment;
     private readonly Dictionary<string, BrowserSurface> _surfaces = new(StringComparer.Ordinal);
@@ -28,6 +30,20 @@ public sealed partial class MainWindow : Window
     private bool _surfaceSyncRunning;
     private readonly SemaphoreSlim _permissionDialogGate = new(1, 1);
     private bool _runtimeUpdateAvailable;
+
+    private static int DetermineVisibleSurfaceBudget()
+    {
+        long availableBytes;
+        try { availableBytes = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes; }
+        catch { availableBytes = 0; }
+
+        // Leave headroom for Windows, the workspace shell and the shared WebView2 process group.
+        if (availableBytes <= 0) return 2;
+        var availableGiB = availableBytes / (1024d * 1024d * 1024d);
+        if (availableGiB <= 10) return 2;
+        if (availableGiB <= 16) return 3;
+        return 4;
+    }
 
     public MainWindow()
     {
@@ -63,7 +79,12 @@ public sealed partial class MainWindow : Window
             };
             _environment.BrowserProcessExited += (_, _) =>
             {
-                StatusText.Text = "WebView2 browser process exited. Reload the workspace if it does not recover.";
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    StatusText.Text = "WebView2 browser process exited. Restart Nolane to restore all browser surfaces.";
+                    foreach (var surface in _surfaces.Values.ToArray())
+                        PublishSurfaceStatus(surface.Id, "error", "The shared WebView2 browser process exited. Restart Nolane to restore this website.");
+                });
             };
             await WorkspaceView.EnsureCoreWebView2Async(_environment);
             WorkspaceView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
@@ -95,7 +116,7 @@ public sealed partial class MainWindow : Window
     {
         if (!e.IsSuccess) { StatusText.Text = "Workspace load failed: " + e.WebErrorStatus; return; }
         _workspaceReady = true;
-        StatusText.Text = "Native browser connected · up to four visible websites";
+        StatusText.Text = $"Native browser connected · adaptive budget {MaxVisibleSurfaces} visible / {MaxCachedSurfaces} cached";
         PostWorkspaceMessage(new { type = "nolane.native.ready", protocol = 1, engine = "WebView2", maxVisibleSurfaces = MaxVisibleSurfaces });
     }
 
@@ -193,7 +214,7 @@ public sealed partial class MainWindow : Window
                 if (activeCount >= MaxVisibleSurfaces)
                 {
                     if (_surfaces.TryGetValue(item.Id, out var limited)) await SetSurfaceVisibleAsync(limited, false);
-                    PublishSurfaceStatus(item.Id, "limit", "Only four website surfaces can be visible at once. Pan the canvas or hide another card.");
+                    PublishSurfaceStatus(item.Id, "limit", $"This device's adaptive memory budget allows {MaxVisibleSurfaces} visible website surfaces. Bring the card to the front or hide another card.");
                     continue;
                 }
 
@@ -211,8 +232,8 @@ public sealed partial class MainWindow : Window
                 }
             }
             await EvictHiddenSurfacesAsync();
-        StatusText.Text = $"Native browser connected · {activeCount}/{MaxVisibleSurfaces} visible website surfaces" +
-            (_runtimeUpdateAvailable ? " · WebView2 update ready; restart Nolane to apply" : "");
+        StatusText.Text = $"WebView2 · {activeCount}/{MaxVisibleSurfaces} active · {MaxCachedSurfaces} cached max · adaptive memory budget" +
+            (_runtimeUpdateAvailable ? " · Runtime update ready; restart Nolane to apply" : "");
     }
 
     private async Task<BrowserSurface?> GetOrCreateSurfaceAsync(SurfaceDescriptor item)
@@ -274,8 +295,7 @@ public sealed partial class MainWindow : Window
                 // Keep WebView2's native Save dialog. The user chooses the destination.
             };
             core.PermissionRequested += (_, args) => HandleSurfacePermissionAsync(surface, args);
-            core.ProcessFailed += (_, args) =>
-                PublishSurfaceState(surface, "error", "Browser process stopped: " + args.ProcessFailedKind + ". Use Reload to try again.");
+            core.ProcessFailed += (_, args) => HandleSurfaceProcessFailure(surface, args);
             surface.Url = item.Url;
             surface.Initialized = true;
             PublishSurfaceState(surface, "loading", "Starting native browser surface.");
@@ -290,6 +310,60 @@ public sealed partial class MainWindow : Window
             _surfaces.Remove(item.Id);
             return null;
         }
+    }
+
+    private void HandleSurfaceProcessFailure(BrowserSurface surface, CoreWebView2ProcessFailedEventArgs args)
+    {
+        var kind = args.ProcessFailedKind;
+        if (kind == CoreWebView2ProcessFailedKind.BrowserProcessExited)
+        {
+            PublishSurfaceState(surface, "error", "The shared WebView2 browser process exited. Restart Nolane to recreate the browser environment.");
+            return;
+        }
+
+        if (kind == CoreWebView2ProcessFailedKind.RenderProcessUnresponsive)
+        {
+            // WebView2 can raise this repeatedly while a page remains frozen; do not create a reload loop.
+            PublishSurfaceState(surface, "error", "This website is not responding. Use Reload once it is safe to interrupt the page.");
+            return;
+        }
+
+        if (kind == CoreWebView2ProcessFailedKind.RenderProcessExited)
+        {
+            var now = DateTimeOffset.UtcNow;
+            if (now - surface.LastRendererRecoveryAt > TimeSpan.FromMinutes(2))
+                surface.RendererRecoveryAttempts = 0;
+
+            if (surface.RendererRecoveryAttempts < 1)
+            {
+                surface.RendererRecoveryAttempts++;
+                surface.LastRendererRecoveryAt = now;
+                PublishSurfaceState(surface, "loading", "The website renderer crashed. Nolane is attempting one bounded page recovery.");
+                try
+                {
+                    surface.View.CoreWebView2.Reload();
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    PublishSurfaceState(surface, "error", "Automatic recovery failed: " + ex.Message + ". Use Reload manually.");
+                    return;
+                }
+            }
+
+            PublishSurfaceState(surface, "error", "The website renderer crashed repeatedly. Automatic recovery is paused; use Reload manually.");
+            return;
+        }
+
+        if (kind == CoreWebView2ProcessFailedKind.GpuProcessExited ||
+            kind == CoreWebView2ProcessFailedKind.UtilityProcessExited)
+        {
+            // WebView2 recreates these process types automatically; avoid reloading every website.
+            PublishSurfaceState(surface, "ready", "WebView2 reported " + kind + ". The browser runtime handles recovery automatically.");
+            return;
+        }
+
+        PublishSurfaceState(surface, "error", "WebView2 process event: " + kind + ". Reload this website if it remains unavailable.");
     }
 
     private async Task SetSurfaceVisibleAsync(BrowserSurface surface, bool visible)
@@ -576,6 +650,8 @@ public sealed partial class MainWindow : Window
         public bool Initialized { get; set; }
         public bool Suspended { get; set; }
         public DateTimeOffset LastVisibleAt { get; set; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset LastRendererRecoveryAt { get; set; } = DateTimeOffset.MinValue;
+        public int RendererRecoveryAttempts { get; set; }
     }
 
     private sealed record SurfaceDescriptor(

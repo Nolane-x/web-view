@@ -33,3 +33,8 @@ This is an initial native-surface integration, not a replacement for all Chrome 
 ## Browser controls, permissions and runtime
 
 Native cards expose per-site Back, Forward, Reload and Mute controls. Active page URLs and history/audio state are synced to the canvas. The host checks for the Evergreen WebView2 Runtime and reports updates that require a restart. Privileged WebView2 permissions use an explicit native Allow once/Block dialog and are not persisted. Downloads retain the WebView2 native save dialog. Unsolicited popups are blocked; user-initiated popups open externally.
+
+
+## Adaptive resource limits and renderer recovery
+
+The number of visible websites adapts to the runtime memory budget: at most 2 on systems reporting 10 GiB or less, 3 up to 16 GiB, and 4 above 16 GiB. Hidden surfaces are suspended and the cached-control limit is twice the active limit (up to 8). Renderer crashes trigger one bounded automatic reload per two-minute window; repeated crashes and unresponsive pages require an intentional manual Reload. GPU and utility process exits are left to WebView2's automatic recovery. A shared browser-process exit requires restarting the host.

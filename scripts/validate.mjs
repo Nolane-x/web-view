@@ -223,8 +223,9 @@ const nativeWorkflow = read(".github/workflows/desktop-host.yml");
 const nativeBridge = read("native-bridge.js");
 const nativeBridgeTests = read("tests/native-bridge.test.mjs");
 if (!nativeHost.includes("nolane.surfaces.sync") || !nativeHost.includes("EnsureCoreWebView2Async") || !nativeHost.includes("CreateWithOptionsAsync") ||
-    !nativeHost.includes("TrySuspendAsync") || !nativeHost.includes("MaxVisibleSurfaces = 4") ||
-    !nativeHost.includes("RectangleGeometry") || !nativeHost.includes("item.ClipWidth")) fail("Native WebView2 host must create real browser surfaces, bound renderers and clip child browsers to the canvas viewport.");
+    !nativeHost.includes("TrySuspendAsync") || !nativeHost.includes("DetermineVisibleSurfaceBudget") ||
+    !nativeHost.includes("TotalAvailableMemoryBytes") || !nativeHost.includes("MaxCachedSurfaces => Math.Min(8, MaxVisibleSurfaces * 2)") ||
+    !nativeHost.includes("RectangleGeometry") || !nativeHost.includes("item.ClipWidth")) fail("Native WebView2 host must create real browser surfaces, adapt its memory budget, bound the cache and clip child browsers to the canvas viewport.");
 else pass("Native WebView2 host creates real browser surfaces and bounds active renderers.");
 if (!nativeProject.includes("Microsoft.WindowsAppSDK") || !nativeProject.includes("net8.0-windows10.0.19041.0") ||
     !nativeProject.includes("WindowsAppSDKSelfContained")) fail("Native host project is missing its Windows App SDK target.");
@@ -233,6 +234,13 @@ if (!nativeHost.includes("WorkspaceView.Loaded += MainWindow_Loaded")) fail("Nat
 else pass("Native browser host starts initialization only after the WebView2 control is loaded.");
 if (!nativeHost.includes("GetAvailableBrowserVersionString") || !nativeHost.includes("NewBrowserVersionAvailable")) fail("Native host must detect the Evergreen WebView2 Runtime and newer runtime updates.");
 else pass("Native host checks runtime availability and detects browser-runtime updates.");
+if (!nativeHost.includes("HandleSurfaceProcessFailure") || !nativeHost.includes("RenderProcessExited") ||
+    !nativeHost.includes("RenderProcessUnresponsive") || !nativeHost.includes("BrowserProcessExited") ||
+    !nativeHost.includes("RendererRecoveryAttempts < 1") || !nativeHost.includes("TimeSpan.FromMinutes(2)")) fail("Native host process-failure handling must recover renderers with a bounded retry and distinguish shared browser crashes.");
+else pass("Native host diagnoses renderer failures, applies one bounded reload, and distinguishes unresponsive/shared-process failures.");
+if (!js.includes("nativeMaxVisibleSurfaces") || !js.includes("Number(message.maxVisibleSurfaces)") ||
+    !js.includes("memory budget allows")) fail("Workspace must consume and explain the adaptive native renderer budget.");
+else pass("Workspace reflects the actual adaptive renderer limit reported by the native host.");
 if (!nativeHost.includes("PermissionRequested") || !nativeHost.includes("Allow once") ||
     !nativeHost.includes("SavesInProfile = false") || !nativeHost.includes("CoreWebView2PermissionState.Deny")) fail("Native website permissions must require an explicit non-persistent user decision.");
 else pass("Native website permissions require an explicit Allow once/Block decision.");

@@ -38,6 +38,7 @@
   let spaces = [];
   let activeSpaceId = "personal";
   let nativeHostAvailable = false;
+  let nativeMaxVisibleSurfaces = 2;
   let nativeSyncFrame = 0;
   let nativeHostReadyNotified = false;
   let bridgeConnected = false;
@@ -490,10 +491,12 @@
     if (!message || typeof message !== "object") return;
     if (message.type === "nolane.native.ready") {
       nativeHostAvailable = true;
+      const reportedBudget = Number(message.maxVisibleSurfaces);
+      nativeMaxVisibleSurfaces = Number.isInteger(reportedBudget) ? clamp(reportedBudget, 1, 8) : 2;
       setBridgeConnected(bridgeConnected, bridgeSessionId);
       if (!nativeHostReadyNotified) {
         nativeHostReadyNotified = true;
-        toast("Native WebView2 is connected. Website cards now use real embedded browser surfaces.");
+        toast("Native WebView2 is connected. This device can keep up to " + nativeMaxVisibleSurfaces + " website surfaces active at once.");
       }
       renderNodes();
       return;
@@ -540,7 +543,7 @@
         mute.dataset.muted = state.isMuted ? "true" : "false";
         mute.dataset.playing = state.isPlayingAudio ? "true" : "false";
       }
-      if (state.state === "limit") toast("Only four native website surfaces are active at once. Pan the canvas or hide another card.", "error");
+      if (state.state === "limit") toast("This device's memory budget allows " + nativeMaxVisibleSurfaces + " visible native websites at once. Bring another card forward or hide one.", "error");
     }
   }
 
@@ -1666,7 +1669,7 @@
     if (detail) detail.textContent = bridgeConnected && nativeConnected
       ? "Chrome tabs keep their original sessions; standalone website cards use native WebView2 surfaces."
       : bridgeConnected ? "Import Chrome tabs or stream an authenticated Chrome page into a card."
-        : nativeConnected ? "Website cards are rendered as real embedded WebView2 browsers. Logins are stored in the native profile."
+        : nativeConnected ? "Website cards use real WebView2 browsers. This device's adaptive resource budget allows up to " + nativeMaxVisibleSurfaces + " active pages at once; logins are stored in the native profile."
           : "Install the Chrome Companion or open the Windows Native WebView2 Host.";
     if (pill) pill.textContent = bridgeConnected && nativeConnected ? "Both" :
       bridgeConnected ? "Chrome" : nativeConnected ? "Native" : "Not connected";
