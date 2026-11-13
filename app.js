@@ -741,10 +741,11 @@
 
 
   function liveVideoMetrics(video, track, metadata, previousFrame) {
+    const targetVideo = video || null;
     let settings = {};
     let quality = {};
     try { settings = track?.getSettings ? track.getSettings() : {}; } catch (_) {}
-    try { quality = video.getVideoPlaybackQuality ? video.getVideoPlaybackQuality() : {}; } catch (_) {}
+    try { quality = targetVideo?.getVideoPlaybackQuality ? targetVideo.getVideoPlaybackQuality() : {}; } catch (_) {}
     let frameRate = Number.isFinite(settings.frameRate) && settings.frameRate > 0 ? settings.frameRate : null;
     if ((!frameRate || frameRate < 0.1) && metadata && previousFrame &&
         Number.isFinite(metadata.presentedFrames) && Number.isFinite(previousFrame.presentedFrames) &&
@@ -754,13 +755,13 @@
       if (frames > 0 && seconds > 0) frameRate = Math.min(240, frames / seconds);
     }
     return {
-      width: video.videoWidth || 0,
-      height: video.videoHeight || 0,
+      width: targetVideo?.videoWidth || 0,
+      height: targetVideo?.videoHeight || 0,
       frameRate,
       presentedFrames: Number.isFinite(metadata?.presentedFrames) ? metadata.presentedFrames :
         (Number.isFinite(quality.totalVideoFrames) ? quality.totalVideoFrames : null),
       mediaTime: Number.isFinite(metadata?.mediaTime) ? metadata.mediaTime :
-        (Number.isFinite(video.currentTime) ? video.currentTime : null),
+        (Number.isFinite(targetVideo?.currentTime) ? targetVideo.currentTime : null),
       droppedFrames: Number.isFinite(quality.droppedVideoFrames) ? quality.droppedVideoFrames : null,
       totalVideoFrames: Number.isFinite(quality.totalVideoFrames) ? quality.totalVideoFrames : null,
       trackReadyState: track?.readyState || "unknown",
