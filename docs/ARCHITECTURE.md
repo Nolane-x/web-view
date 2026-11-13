@@ -74,3 +74,6 @@ The native child-layer has a workspace handshake and coalesces layout revisions 
 
 
 The canvas excludes nodes already bound to a Companion Chrome tab and nodes with an active Live Chrome Surface from the native child overlay. This preserves the actual Chrome session/video mirror for those cards and prevents the native WebView2 profile from silently replacing the authenticated Chrome surface.
+
+
+Workspace snapshots are profile-local too: moving from Chrome to the native host requires the app's JSON export/import flow because IndexedDB/localStorage is not shared between Chrome and WebView2 user-data folders. After import, old tab IDs are not treated as live Chrome bindings unless the Companion reports the exact same active browser-profile ID; otherwise those URL cards may use native WebView2 surfaces.

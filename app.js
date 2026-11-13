@@ -412,7 +412,9 @@
       const area = canvas.getBoundingClientRect();
       const items = [];
       for (const node of nodes) {
-        if (node.type !== "website" || node.browserTabId !== undefined ||
+        const linkedChromeTab = bridgeConnected && node.browserTabId !== undefined &&
+          node.browserSessionId === bridgeSessionId;
+        if (node.type !== "website" || linkedChromeTab ||
             liveSurfaces.has(node.id) || items.length >= 80) continue;
         const card = $('.node[data-id="' + CSS.escape(node.id) + '"]', world);
         const body = card?.querySelector(".node-body");
