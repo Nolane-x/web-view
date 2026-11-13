@@ -362,7 +362,7 @@ public sealed partial class MainWindow : Window
         {
             entry.BytesReceived = Math.Max(0, operation.BytesReceived);
             var total = operation.TotalBytesToReceive;
-            entry.TotalBytesToReceive = total.HasValue && total.Value > 0 ? total : null;
+            entry.TotalBytesToReceive = total > 0 ? total : null;
             var resultPath = operation.ResultFilePath;
             if (!string.IsNullOrWhiteSpace(resultPath) && Path.IsPathFullyQualified(resultPath))
             {
