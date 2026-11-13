@@ -784,8 +784,18 @@ test("long-running stream health updates are authenticated and included in diagn
   const sender = { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" };
   const updated = await h.send(healthMessage, sender);
   assert.equal(updated.ok, true);
+  const recovering = await h.send({
+    ...healthMessage,
+    healthState: "recovering"
+  }, sender);
+  assert.equal(recovering.ok, true);
   const diagnostic = await h.send({ type: "NOLANE_GET_DIAGNOSTICS" }, { url: "chrome-extension://nolane-test/popup.html" });
-  assert.equal(diagnostic.liveSessions[0].healthState, "stalled");
+  assert.equal(diagnostic.liveSessions[0].healthState, "recovering");
+  const healthy = await h.send({ ...healthMessage, healthState: "healthy" }, sender);
+  assert.equal(healthy.ok, true);
+  const recoveredDiagnostic = await h.send({ type: "NOLANE_GET_DIAGNOSTICS" }, { url: "chrome-extension://nolane-test/popup.html" });
+  assert.equal(recoveredDiagnostic.liveSessions[0].healthState, "healthy");
+  assert.equal(diagnostic.liveSessions[0].healthState, "recovering");
   assert.equal(diagnostic.liveSessions[0].videoInfo.droppedFrames, 42);
   assert.equal(diagnostic.lastLiveDiagnostic.healthState, "stalled");
   assert.equal(typeof diagnostic.liveSessions[0].lastHealthAt, "number");
