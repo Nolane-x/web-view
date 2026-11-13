@@ -528,7 +528,7 @@
     toolbar.innerHTML =
       '<span class="live-indicator"><i></i> ' + (surface.interactive ? "LIVE CHROME TAB" : "LIVE VIDEO · VIEW ONLY") + '</span>' +
       '<span class="live-health-status" data-health="' + (surface.healthState || "checking") + '">' +
-      (surface.healthState === "healthy" ? "VIDEO FLOWING" : surface.healthState === "stalled" ? "VIDEO STALLED" : surface.healthState === "muted" ? "SOURCE MUTED" : "CHECKING VIDEO") +
+      (surface.healthState === "healthy" ? "VIDEO FLOWING" : surface.healthState === "stalled" ? "NO NEW FRAMES" : surface.healthState === "muted" ? "VIDEO TRACK MUTED" : "CHECKING VIDEO") +
       '</span>' +
       '<span class="live-surface-actions">' +
       '<button class="live-tool" data-action="toggle-live-audio" title="Enable sound from this Chrome tab">Enable sound</button>' +
@@ -783,11 +783,11 @@
     if (badge) {
       badge.dataset.health = nextState;
       badge.textContent = nextState === "healthy" ? "VIDEO FLOWING" :
-        nextState === "stalled" ? "VIDEO STALLED" :
-        nextState === "muted" ? "SOURCE MUTED" :
+        nextState === "stalled" ? "NO NEW FRAMES" :
+        nextState === "muted" ? "VIDEO TRACK MUTED" :
         nextState === "paused" ? "VIEW PAUSED" : "CHECKING VIDEO";
       badge.title = nextState === "stalled"
-        ? "No new decoded frames have arrived recently. Check the source tab and compatibility report."
+        ? "No new decoded frame has reached the compositor for 12 seconds. The source may be paused, throttled or withholding frames; inspect the source tab and compatibility report."
         : nextState === "muted"
           ? "Chrome temporarily marked the captured video track as muted."
           : nextState === "paused" ? "Health monitoring pauses while this workspace or card is hidden." : "Live video frame monitoring.";
