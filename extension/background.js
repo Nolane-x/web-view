@@ -807,6 +807,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const savedDiagnostic = diagnosticStore[LAST_DIAGNOSTIC_KEY];
       const relevantDiagnostic = savedDiagnostic?.sourceOrigin === site.origin ? savedDiagnostic : null;
       const diagnosis = diagnoseLiveSession(site, session, relevantDiagnostic);
+      if (!session && captureInfo) {
+        diagnosis.code = "CAPTURE_ALREADY_ACTIVE";
+        diagnosis.severity = "warning";
+        diagnosis.title = "Another tool is already capturing this tab";
+        diagnosis.summary = "Chrome reports a " + captureInfo.status + " capture, but Nolane does not own that session.";
+        diagnosis.actions = ["Stop the other capture first.", "Then start a new Nolane stream from this tab."];
+      }
       const history = (profileStore[COMPATIBILITY_PROFILES_KEY] || {})[site.origin] || null;
       return {
         ok: true,
