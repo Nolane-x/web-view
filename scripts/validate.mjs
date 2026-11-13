@@ -231,6 +231,7 @@ else pass("Native WebView2 host creates real browser surfaces and bounds active 
 if (!nativeProject.includes("Microsoft.WindowsAppSDK") ||
     nativeProject.includes("Microsoft.Web.WebView2") ||
     !nativeProject.includes("net8.0-windows10.0.19041.0") || !nativeProject.includes("WindowsAppSDKSelfContained") ||
+    !nativeProject.includes("WebView2EnableCsWinRTProjection>true") ||
     !nativeHost.includes("private string? PickLibraryBackupPath(bool save)") ||
     !nativeHost.includes("Type.GetTypeFromCLSID(classId") ||
     !nativeHost.includes("IFileSaveDialog") || !nativeHost.includes("IFileOpenDialog") ||
