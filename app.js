@@ -530,6 +530,8 @@
       '<span class="live-health-status" data-health="' + (surface.healthState || "checking") + '">' +
       (surface.healthState === "healthy" ? "VIDEO FLOWING" : surface.healthState === "recovering" ? "RECOVERING VIDEO" : surface.healthState === "stalled" ? "NO NEW FRAMES" : surface.healthState === "muted" ? "VIDEO TRACK MUTED" : "CHECKING VIDEO") +
       '</span>' +
+      '<span class="live-input-status" data-input-state="' + (surface.interactive ? "untested" : "readonly") + '" title="' + (surface.interactive ? "Input controller attached; click inside the page to verify interaction." : "Chrome did not allow interactive control for this tab.") + '">' +
+      (surface.interactive ? "INPUT NOT TESTED" : "READ ONLY") + '</span>' +
       '<span class="live-surface-actions">' +
       '<button class="live-tool" data-action="refresh-live" title="Reconnect the local video presentation without restarting Chrome capture">Refresh video</button>' +
       '<button class="live-tool" data-action="toggle-live-audio" title="Enable sound from this Chrome tab">Enable sound</button>' +
@@ -1449,12 +1451,12 @@
     const panel = $(".bridge-status-large");
     const sidebar = $("#bridgeSidebarState");
     if (title) title.textContent = bridgeConnected ? "Browser Companion connected" : "Companion not detected";
-    if (detail) detail.textContent = bridgeConnected ? "Import selected tab links or stream a real Chrome tab directly into this canvas." : "Install Browser Companion 0.2.12, then refresh this page.";
+    if (detail) detail.textContent = bridgeConnected ? "Import selected tab links or stream a real Chrome tab directly into this canvas." : "Install Browser Companion 0.2.13, then refresh this page.";
     if (pill) pill.textContent = bridgeConnected ? "Connected" : "Not connected";
     if (panel) panel.classList.toggle("connected", bridgeConnected);
     if (sidebar) sidebar.innerHTML = '<i class="status-dot' + (bridgeConnected ? ' green' : '') + '"></i> ' + (bridgeConnected ? "Connected" : "Not connected");
     const footer = $("#bridgeFooterState");
-    if (footer) footer.textContent = bridgeConnected ? "Local companion · Connected · Live Surface 0.2.12" : "Optional local companion · Live Surface 0.2.12";
+    if (footer) footer.textContent = bridgeConnected ? "Local companion · Connected · Live Surface 0.2.13" : "Optional local companion · Live Surface 0.2.13";
   }
 
   function addBrowserTabsToWorkspace(tabs, sessionId) {
@@ -1544,6 +1546,25 @@
       const surface = [...liveSurfaces.values()].find((item) => item.surfaceId === message.surfaceId);
       if (surface && message.viewport && Number.isFinite(message.viewport.width) && Number.isFinite(message.viewport.height)) {
         surface.viewport = { width: Math.max(1, message.viewport.width), height: Math.max(1, message.viewport.height) };
+      }
+    } else if (message.type === "LIVE_INPUT_RESULT") {
+      const entry = [...liveSurfaces.entries()].find(([, surface]) => surface.surfaceId === message.surfaceId);
+      if (entry) {
+        const [nodeId, surface] = entry;
+        surface.inputStatus = message.ok ? "ready" : "blocked";
+        surface.inputError = message.ok ? "" : String(message.error || "Chrome rejected this input.");
+        const card = $$(".node", world).find((element) => element.dataset.id === nodeId);
+        const status = card?.querySelector(".live-input-status");
+        if (status) {
+          status.dataset.inputState = surface.inputStatus;
+          status.textContent = message.ok ? "INPUT OK" : "INPUT BLOCKED";
+          status.title = message.ok
+            ? "Chrome acknowledged this input command."
+            : surface.inputError + " Use Focus source if the browser blocks remote input.";
+        }
+        if (!message.ok) {
+          toast("Website input was not delivered: " + surface.inputError + " Use Focus source to continue.", "error");
+        }
       }
     } else if (message.type === "TABS_IMPORTED") {
       setBridgeConnected(!!message.browserSessionId, message.browserSessionId || "");

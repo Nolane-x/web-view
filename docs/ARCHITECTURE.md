@@ -8,9 +8,9 @@ The published website is a static HTML/CSS/JavaScript application. It stores wor
 
 A conventional iframe can be blocked by CSP frame-ancestors or X-Frame-Options. A restrictive opaque-origin sandbox can also break applications that require origin-bound storage, service workers, IndexedDB or authentication APIs. Compatibility sandboxing expands the trust boundary and still cannot override a host's anti-framing policy.
 
-The reliable immediate path is **Live Chrome Surface** in Browser Companion v0.2.12. It operates on the user's real Chrome tab rather than creating a second embedded browsing context.
+The reliable immediate path is **Live Chrome Surface** in Browser Companion v0.2.13. It operates on the user's real Chrome tab rather than creating a second embedded browsing context.
 
-## Live Chrome Surface (MV3 companion v0.2.12)
+## Live Chrome Surface (MV3 companion v0.2.13)
 
 The extension uses a tab-scoped capture/control pipeline:
 

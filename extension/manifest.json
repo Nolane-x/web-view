@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Nolane Browser Companion",
-  "version": "0.2.12",
+  "version": "0.2.13",
   "minimum_chrome_version": "116",
   "description": "Capture real Chrome tabs into Nolane, diagnose site compatibility and safely apply recommended video recovery actions.",
   "permissions": [
@@ -9,6 +9,9 @@
     "activeTab",
     "tabCapture",
     "debugger"
+  ],
+  "host_permissions": [
+    "https://nolane-x.github.io/*"
   ],
   "optional_permissions": [
     "tabs"

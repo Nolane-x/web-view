@@ -65,7 +65,7 @@ function createHarness(options = {}) {
     runtime: {
       onMessage: runtimeMessage,
       getURL(path) { return "chrome-extension://nolane-test/" + path; },
-      getManifest() { return { version: "0.2.12" }; }
+      getManifest() { return { version: "0.2.13" }; }
     },
     storage: {
       local: {
@@ -124,7 +124,7 @@ function createHarness(options = {}) {
         sentMessages.push({ tabId, message });
         if (message.type === "NOLANE_WORKSPACE_PING") {
           if (options.workspaceBridgeReady === false) throw new Error("Could not establish connection. Receiving end does not exist.");
-          return { ok: true, version: "0.2.12", url: "https://nolane-x.github.io/web-view/" };
+          return { ok: true, version: "0.2.13", url: "https://nolane-x.github.io/web-view/" };
         }
         if (message.type === "NOLANE_LIVE_SURFACE_START") {
           if (options.workspaceSendError) throw new Error(options.workspaceSendError);
@@ -1038,7 +1038,7 @@ test("popup diagnostics are scoped to the companion and omit raw page URLs", asy
     { url: "chrome-extension://nolane-test/popup.html" }
   );
   assert.equal(diagnostic.ok, true);
-  assert.equal(diagnostic.extensionVersion, "0.2.12");
+  assert.equal(diagnostic.extensionVersion, "0.2.13");
   assert.equal(JSON.stringify(diagnostic.capturedTabs), JSON.stringify([{ tabId: 10, status: "active", fullscreen: false }]));
   assert.ok(Array.isArray(diagnostic.liveSessions));
   const denied = await h.send(

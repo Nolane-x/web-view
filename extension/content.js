@@ -1,15 +1,17 @@
 (() => {
   "use strict";
   const WORKSPACE_ORIGIN = "https://nolane-x.github.io";
-  const PROFILE_VERSION = "0.2.11";
+  const PROFILE_VERSION = "0.2.13";
 
   function sendToPage(type, payload) {
     window.postMessage({ source: "nolane-companion", type, ...(payload || {}) }, WORKSPACE_ORIGIN);
   }
 
   function sendRuntime(message) {
-    chrome.runtime.sendMessage(message).catch(() => {});
+    return chrome.runtime.sendMessage(message);
   }
+
+  let lastMoveInputFailureAt = 0;
 
   function onPageMessage(event) {
     if (event.source !== window || event.origin !== WORKSPACE_ORIGIN) return;
@@ -60,7 +62,32 @@
         if (typeof message[key] === "string") payload[key] = message[key].slice(0, 2000);
       }
       for (const key of ["altKey", "ctrlKey", "metaKey", "shiftKey", "repeat"]) payload[key] = !!message[key];
-      sendRuntime(payload);
+      sendRuntime(payload).then((result) => {
+        const ok = result?.ok === true;
+        const dropped = result?.dropped === true;
+        // Pointer moves are high frequency. Report the first blocked move,
+        // then rate-limit repeated move failures while always acknowledging
+        // discrete clicks, wheel, keyboard and text-input operations.
+        const now = Date.now();
+        if (message.kind === "mouseMoved" && (ok || dropped) && message.reportSuccess !== true) return;
+        if (message.kind === "mouseMoved" && !ok && now - lastMoveInputFailureAt < 1200) return;
+        if (message.kind === "mouseMoved" && !ok) lastMoveInputFailureAt = now;
+        sendToPage("LIVE_INPUT_RESULT", {
+          surfaceId: message.surfaceId,
+          kind: String(message.kind || ""),
+          ok,
+          dropped,
+          error: String(result?.error || (ok ? "" : "Chrome did not acknowledge this input.")).slice(0, 220)
+        });
+      }).catch((error) => {
+        sendToPage("LIVE_INPUT_RESULT", {
+          surfaceId: message.surfaceId,
+          kind: String(message.kind || ""),
+          ok: false,
+          dropped: false,
+          error: String(error?.message || error || "The Companion input bridge is unavailable.").slice(0, 220)
+        });
+      });
       return;
     }
 
