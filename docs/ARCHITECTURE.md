@@ -8,9 +8,9 @@ The published website is a static HTML/CSS/JavaScript application. It stores wor
 
 A conventional iframe can be blocked by CSP frame-ancestors or X-Frame-Options. A restrictive opaque-origin sandbox can also break applications that require origin-bound storage, service workers, IndexedDB or authentication APIs. Compatibility sandboxing expands the trust boundary and still cannot override a host's anti-framing policy.
 
-The reliable immediate path is **Live Chrome Surface** in Browser Companion v0.2.7. It operates on the user's real Chrome tab rather than creating a second embedded browsing context.
+The reliable immediate path is **Live Chrome Surface** in Browser Companion v0.2.8. It operates on the user's real Chrome tab rather than creating a second embedded browsing context.
 
-## Live Chrome Surface (MV3 companion v0.2.7)
+## Live Chrome Surface (MV3 companion v0.2.8)
 
 The extension uses a tab-scoped capture/control pipeline:
 
@@ -28,7 +28,8 @@ The capture stream includes audio and video. The workspace routes audio through 
 On sufficiently wide normal source windows, the workspace window is positioned over the right portion of the source window to leave both surfaces partly visible without resizing the source page. Smaller/maximized windows use Chrome's default window placement.
 On the first 12-second no-frame timeout, the workspace performs one soft recovery: it detaches and reattaches the existing MediaStream to the local video element, awaits a decoded frame, then re-arms the frame callback monitor. The manual **Refresh video** action uses the same path, with a three-attempt/five-minute limit. A failed soft recovery reattaches the original stream before reporting the failure; it never creates another capture token or changes the source website's session.
 
-The popup also exposes a local compatibility report (Chrome/extension version, tab-capture states, decoded video dimensions, frame rate, presented/dropped frame counts, track mute/ready state, last frame-health state, active surface metadata and the last startup stage/error). A page-side requestVideoFrameCallback monitor flags a stream after 12 seconds without a new compositor-presented frame, reports recovery when frames resume, and pauses its stall timer when the workspace/card is hidden. The service worker persists only state transitions and a 15-second healthy heartbeat. The report never includes cookies, page HTML or full source URLs.
+The popup also exposes a local Website Compatibility Engine. It classifies the active tab from origin/path heuristics, diagnoses Chrome capture and media failures, and recommends an action based on track/capture state. A local origin-keyed history tracks attempts, successes, failures and health transitions, capped at 40 website origins. The analyzer never reads page DOM, cookies, response bodies, screenshots or URL query strings.
+The compatibility report also includes Chrome/extension version, tab-capture states, decoded video dimensions, frame rate, presented/dropped frame counts, track mute/ready state, last frame-health state, active surface metadata and the last startup stage/error. A page-side requestVideoFrameCallback monitor flags a stream after 12 seconds without a new compositor-presented frame, reports recovery when frames resume, and pauses its stall timer when the workspace/card is hidden. The service worker persists only state transitions and a 15-second healthy heartbeat. The report never includes cookies, page HTML or full source URLs.
 
 The service worker also watches chrome.tabCapture.onStatusChanged to persist pending/active capture state and tear down sessions on stopped/error events. It separately watches chrome.tabs.onUpdated for the source tab. A top-level origin change ends the stream even in view-only mode, where there is no CDP Page.frameNavigated event to rely on. Same-origin navigation can continue under the user's original capture approval.
 
