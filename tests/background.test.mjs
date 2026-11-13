@@ -184,6 +184,7 @@ function createHarness(options = {}) {
 
   vm.runInNewContext(backgroundSource, {
     NolaneCompatibility: compatibilityEngine,
+    importScripts() {},
     chrome,
     URL,
     setTimeout,
@@ -884,4 +885,61 @@ test("compatibility engine maps major Chrome capture failures to concrete next a
     videoInfo: { trackReadyState: "live", trackMuted: false }
   });
   assert.equal(stalled.action, "refresh-video");
+});
+
+
+test("current-tab analyzer combines live session state with origin-only compatibility history", async () => {
+  const h = createHarness();
+  await h.send(
+    { type: "NOLANE_REGISTER_WORKSPACE" },
+    { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" }
+  );
+  const started = await h.send(
+    { type: "NOLANE_START_LIVE_SURFACE", tabId: 10 },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  assert.equal(started.ok, true);
+  h.captureStatus.fire({ tabId: 10, status: "active", fullscreen: false });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+
+  const diagnosis = await h.send(
+    { type: "NOLANE_DIAGNOSE_TAB", tabId: 10 },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  assert.equal(diagnosis.ok, true);
+  assert.equal(diagnosis.site.category, "learning");
+  assert.equal(diagnosis.diagnosis.code, "READY");
+  assert.equal(diagnosis.diagnosis.recovery.action, "inspect");
+  assert.equal(diagnosis.profile.attempts, 1);
+  assert.equal(diagnosis.profile.successes, 1);
+  assert.equal(diagnosis.profile.failures, 0);
+  assert.equal(Object.keys(h.localStore.nolaneCompatibilityProfiles).length, 1);
+  assert.equal(Object.keys(h.localStore.nolaneCompatibilityProfiles)[0], "https://youpass.vn");
+});
+
+test("current-tab analyzer detects a capture owned by another recorder", async () => {
+  const h = createHarness({ capturedTabs: [{ tabId: 10, status: "active", fullscreen: false }] });
+  const diagnosis = await h.send(
+    { type: "NOLANE_DIAGNOSE_TAB", tabId: 10 },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  assert.equal(diagnosis.ok, true);
+  assert.equal(diagnosis.diagnosis.code, "CAPTURE_ALREADY_ACTIVE");
+  assert.equal(diagnosis.captureInfo.status, "active");
+});
+
+test("current-tab analyzer is restricted to the companion popup and normal web tabs", async () => {
+  const h = createHarness();
+  const denied = await h.send(
+    { type: "NOLANE_DIAGNOSE_TAB", tabId: 10 },
+    { url: "https://attacker.example/" }
+  );
+  assert.equal(denied.ok, false);
+  assert.match(denied.error, /Companion popup/i);
+
+  const noTab = await h.send(
+    { type: "NOLANE_DIAGNOSE_TAB", tabId: 404 },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  assert.equal(noTab.ok, false);
 });
