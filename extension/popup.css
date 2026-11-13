@@ -51,3 +51,7 @@ main{padding:15px 17px 17px}
 .compat-hints p{margin:0;color:#9babc0;font-size:8px;line-height:1.5}
 .compat-recovery{padding-top:6px;border-top:1px solid rgba(255,255,255,.07);color:#c8baff;font-size:9px;line-height:1.5}
 .compat-history{color:#7f8ba0;font-size:8px;line-height:1.4}
+
+.compat-apply{width:100%;min-height:31px;padding:7px 9px;border:1px solid rgba(167,139,250,.3);border-radius:6px;background:rgba(167,139,250,.11);color:#d6ccff;font-size:9px;font-weight:700;cursor:pointer}
+.compat-apply:hover:not(:disabled){background:rgba(167,139,250,.2);border-color:rgba(167,139,250,.5)}
+.compat-apply:disabled{opacity:.45;cursor:not-allowed}
