@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -23,7 +22,8 @@ public sealed partial class MainWindow : Window
     private readonly Dictionary<string, BrowserSurface> _surfaces = new(StringComparer.Ordinal);
     private bool _workspaceReady;
     private long _syncRevision;
-    private readonly SemaphoreSlim _syncGate = new(1, 1);
+    private List<SurfaceDescriptor>? _pendingSurfaceSync;
+    private bool _surfaceSyncRunning;
 
     public MainWindow()
     {
@@ -99,7 +99,13 @@ public sealed partial class MainWindow : Window
             var parsed = new List<SurfaceDescriptor>();
             foreach (var item in items.EnumerateArray())
                 if (TryParseDescriptor(item, out var descriptor)) parsed.Add(descriptor);
-            _ = SynchronizeSurfacesAsync(parsed, ++_syncRevision);
+            _pendingSurfaceSync = parsed;
+            _syncRevision++;
+            if (!_surfaceSyncRunning)
+            {
+                _surfaceSyncRunning = true;
+                _ = DrainSurfaceSyncQueueAsync();
+            }
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException)
         {
@@ -107,12 +113,33 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async Task SynchronizeSurfacesAsync(List<SurfaceDescriptor> items, long revision)
+    private async Task DrainSurfaceSyncQueueAsync()
     {
-        await _syncGate.WaitAsync();
         try
         {
-            if (revision != _syncRevision) return;
+            while (_pendingSurfaceSync is not null)
+            {
+                var items = _pendingSurfaceSync;
+                _pendingSurfaceSync = null;
+                var revision = _syncRevision;
+                try { await SynchronizeSurfacesAsync(items, revision); }
+                catch (Exception ex) { StatusText.Text = "Native surface sync failed: " + ex.Message; }
+            }
+        }
+        finally
+        {
+            _surfaceSyncRunning = false;
+            if (_pendingSurfaceSync is not null)
+            {
+                _surfaceSyncRunning = true;
+                _ = DrainSurfaceSyncQueueAsync();
+            }
+        }
+    }
+
+    private async Task SynchronizeSurfacesAsync(List<SurfaceDescriptor> items, long revision)
+    {
+        if (revision != _syncRevision) return;
             var present = items.Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
             foreach (var staleId in _surfaces.Keys.Where(id => !present.Contains(id)).ToArray())
                 await RemoveSurfaceAsync(staleId);
@@ -147,12 +174,7 @@ public sealed partial class MainWindow : Window
                 }
             }
             await EvictHiddenSurfacesAsync();
-            StatusText.Text = $"Native browser connected · {activeCount}/{MaxVisibleSurfaces} visible website surfaces";
-        }
-        finally
-        {
-            _syncGate.Release();
-        }
+        StatusText.Text = $"Native browser connected · {activeCount}/{MaxVisibleSurfaces} visible website surfaces";
     }
 
     private async Task<BrowserSurface?> GetOrCreateSurfaceAsync(SurfaceDescriptor item)

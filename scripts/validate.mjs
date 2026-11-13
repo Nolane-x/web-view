@@ -227,8 +227,8 @@ if (!js.includes("scheduleNativeSurfaceSync") || !js.includes("chrome.webview.po
     !js.includes("nolane.native.ready") || !js.includes("nolane.native.surface") ||
     !js.includes("dialog[open], #sidebar.open") || !js.includes("new MutationObserver(scheduleNativeSurfaceSync)")) fail("Static workspace/native browser bridge or native-overlay visibility guard is incomplete.");
 else pass("Static workspace syncs website-card geometry, receives native status and hides browser overlays for workspace dialogs.");
-if (!nativeHost.includes("SemaphoreSlim") || !nativeHost.includes("_syncGate.WaitAsync()") || !nativeHost.includes("nolane.host.hello")) fail("Native surface synchronization must be serialized and use a reliable workspace handshake.");
-else pass("Native surface synchronization is serialized and uses an explicit ready handshake.");
+if (!nativeHost.includes("_pendingSurfaceSync") || !nativeHost.includes("DrainSurfaceSyncQueueAsync") || !nativeHost.includes("nolane.host.hello")) fail("Native surface synchronization must coalesce layout updates and use a reliable workspace handshake.");
+else pass("Native surface synchronization coalesces stale layouts and uses an explicit ready handshake.");
 if (!nativeHost.includes('uri.AbsolutePath.Equals("/web-view"') || !nativeHost.includes('uri.AbsolutePath.StartsWith("/web-view/"')) fail("Native host workspace origin/path allowlist is too broad.");
 else pass("Native host accepts only the exact Nolane workspace path family.");
 
