@@ -1449,12 +1449,12 @@
     const panel = $(".bridge-status-large");
     const sidebar = $("#bridgeSidebarState");
     if (title) title.textContent = bridgeConnected ? "Browser Companion connected" : "Companion not detected";
-    if (detail) detail.textContent = bridgeConnected ? "Import selected tab links or stream a real Chrome tab directly into this canvas." : "Install Browser Companion 0.2.8, then refresh this page.";
+    if (detail) detail.textContent = bridgeConnected ? "Import selected tab links or stream a real Chrome tab directly into this canvas." : "Install Browser Companion 0.2.9, then refresh this page.";
     if (pill) pill.textContent = bridgeConnected ? "Connected" : "Not connected";
     if (panel) panel.classList.toggle("connected", bridgeConnected);
     if (sidebar) sidebar.innerHTML = '<i class="status-dot' + (bridgeConnected ? ' green' : '') + '"></i> ' + (bridgeConnected ? "Connected" : "Not connected");
     const footer = $("#bridgeFooterState");
-    if (footer) footer.textContent = bridgeConnected ? "Local companion · Connected · Live Surface 0.2.8" : "Optional local companion · Live Surface 0.2.8";
+    if (footer) footer.textContent = bridgeConnected ? "Local companion · Connected · Live Surface 0.2.9" : "Optional local companion · Live Surface 0.2.9";
   }
 
   function addBrowserTabsToWorkspace(tabs, sessionId) {
