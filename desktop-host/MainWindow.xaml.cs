@@ -335,16 +335,28 @@ public sealed partial class MainWindow : Window
             SourceHost = SafeHost(operation.Uri),
             MimeType = StringRaw(operation.MimeType, 120),
             StartedAtUtc = DateTimeOffset.UtcNow,
+            UpdatedAtUtc = DateTimeOffset.UtcNow,
+            LastPersistedTick = Environment.TickCount64,
             Status = "Starting download"
         };
         UpdateDownloadEntry(entry);
         _downloads.Insert(0, entry);
         TrimDownloadHistory();
 
-        operation.BytesReceivedChanged += (_, _) => QueueDownloadUiRefresh();
+        operation.BytesReceivedChanged += (_, _) =>
+        {
+            UpdateDownloadEntry(entry);
+            var now = Environment.TickCount64;
+            var last = Interlocked.Read(ref entry.LastPersistedTick);
+            if (now - last >= 3000 && Interlocked.CompareExchange(ref entry.LastPersistedTick, now, last) == last)
+                QueueDownloadUiRefresh(persist: true);
+            else
+                QueueDownloadUiRefresh();
+        };
         operation.StateChanged += (_, _) =>
         {
             UpdateDownloadEntry(entry);
+            Interlocked.Exchange(ref entry.LastPersistedTick, Environment.TickCount64);
             QueueDownloadUiRefresh(persist: true);
         };
 
@@ -1050,6 +1062,7 @@ public sealed partial class MainWindow : Window
         public string Status { get; set; } = "Starting";
         public DateTimeOffset StartedAtUtc { get; set; }
         public DateTimeOffset UpdatedAtUtc { get; set; }
+        public long LastPersistedTick;
     }
 
     private sealed class DownloadHistoryRecord

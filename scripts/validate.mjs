@@ -256,7 +256,8 @@ if (!nativeHost.includes("HandleDownloadStarting") || !nativeHost.includes("Byte
     !nativeHost.includes("StateChanged") || !nativeHost.includes("operation?.Pause()") ||
     !nativeHost.includes("operation?.Resume()") || !nativeHost.includes("operation?.Cancel()") ||
     !nativeHost.includes("DownloadHistoryRecord") || !nativeHost.includes("File.Move(temporaryPath, _downloadHistoryPath, true)") ||
-    !nativeHost.includes("Keep Handled=false")) fail("Native download tracking, controls or atomic history persistence are incomplete.");
+    !nativeHost.includes("Keep Handled=false") || !nativeHost.includes("Interlocked.CompareExchange(ref entry.LastPersistedTick") ||
+    !nativeHost.includes("now - last >= 3000")) fail("Native download tracking, controls or atomic history persistence are incomplete.");
 else pass("Native download manager tracks progress, supports pause/resume/cancel and atomically persists a bounded local history.");
 if (!nativeHost.includes("ToggleDownloads_Click") || !nativeHost.includes("ClearFinishedDownloads_Click") ||
     !nativeHost.includes("OpenDownloadedFile") || !nativeHost.includes("ShowDownloadedFile") ||
