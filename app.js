@@ -528,7 +528,7 @@
     toolbar.innerHTML =
       '<span class="live-indicator"><i></i> ' + (surface.interactive ? "LIVE CHROME TAB" : "LIVE VIDEO · VIEW ONLY") + '</span>' +
       '<span class="live-health-status" data-health="' + (surface.healthState || "checking") + '">' +
-      (surface.healthState === "healthy" ? "VIDEO FLOWING" : surface.healthState === "stalled" ? "NO NEW FRAMES" : surface.healthState === "muted" ? "VIDEO TRACK MUTED" : "CHECKING VIDEO") +
+      (surface.healthState === "healthy" ? "VIDEO FLOWING" : surface.healthState === "recovering" ? "RECOVERING VIDEO" : surface.healthState === "stalled" ? "NO NEW FRAMES" : surface.healthState === "muted" ? "VIDEO TRACK MUTED" : "CHECKING VIDEO") +
       '</span>' +
       '<span class="live-surface-actions">' +
       '<button class="live-tool" data-action="refresh-live" title="Reconnect the local video presentation without restarting Chrome capture">Refresh video</button>' +
@@ -883,6 +883,11 @@
         return true;
       } catch (error) {
         if (liveSurfaces.get(nodeId) === surface) {
+          // Keep the existing track attached even when the soft refresh fails.
+          try {
+            if (video.srcObject !== surface.stream) video.srcObject = surface.stream;
+            await video.play().catch(() => {});
+          } catch (_) {}
           setLiveSurfaceHealth(surface.surfaceId, "stalled", liveVideoMetrics(video, track));
         }
         if (!automatic) {
