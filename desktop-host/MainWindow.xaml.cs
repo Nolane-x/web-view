@@ -27,7 +27,7 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         Title = "Nolane Infinite — Native Browser Host";
-        Loaded += MainWindow_Loaded;
+        WorkspaceView.Loaded += MainWindow_Loaded;
         SizeChanged += (_, _) => BrowserSurfaceLayer.InvalidateArrange();
     }
 

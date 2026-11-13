@@ -218,6 +218,8 @@ else pass("Native WebView2 host creates real browser surfaces and bounds active 
 if (!/Microsoft\\.WindowsAppSDK/.test(nativeProject) || !/net8\\.0-windows10\\.0\\.19041\\.0/.test(nativeProject) ||
     !/WindowsAppSDKSelfContained/.test(nativeProject)) fail("Native host project is missing its Windows App SDK target.");
 else pass("Native host targets WinUI 3 on Windows 10 19041+ with self-contained Windows App SDK.");
+if (!/WorkspaceView\\.Loaded \\+= MainWindow_Loaded/.test(nativeHost)) fail("Native browser host must initialize WebView2 from its control Loaded event.");
+else pass("Native browser host starts initialization only after the WebView2 control is loaded.");
 if (!/runs-on: windows-latest/.test(nativeWorkflow) || !/dotnet publish/.test(nativeWorkflow) ||
     !/upload-artifact/.test(nativeWorkflow) || !/Nolane\\.DesktopHost\\.exe/.test(nativeWorkflow)) fail("Native Windows build workflow is incomplete.");
 else pass("Dedicated Windows CI builds and packages the native browser host.");
