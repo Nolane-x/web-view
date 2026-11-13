@@ -222,10 +222,10 @@ if (!nativeHost.includes("WorkspaceView.Loaded += MainWindow_Loaded")) fail("Nat
 else pass("Native browser host starts initialization only after the WebView2 control is loaded.");
 if (!nativeWorkflow.includes("runs-on: windows-latest") || !nativeWorkflow.includes("dotnet publish") ||
     !nativeWorkflow.includes("upload-artifact") || !nativeWorkflow.includes("Nolane.DesktopHost.exe")) fail("Native Windows build workflow is incomplete.");
+else pass("Dedicated Windows CI builds and packages the native browser host.");
 if (!nativeWorkflow.includes("contents: write") || !nativeWorkflow.includes("gh release upload native-latest") ||
     !read("README.md").includes("/releases/download/native-latest/nolane-native-webview2-host-win-x64.zip")) fail("Stable Windows host download release is not configured.");
 else pass("Successful main-branch builds publish a stable, rolling Windows host download.");
-else pass("Dedicated Windows CI builds and packages the native browser host.");
 if (!js.includes("scheduleNativeSurfaceSync") || !js.includes("chrome.webview.postMessage") ||
     !js.includes("nolane.native.ready") || !js.includes("nolane.native.surface") ||
     !js.includes("dialog[open], #sidebar.open") || !js.includes("new MutationObserver(scheduleNativeSurfaceSync)")) fail("Static workspace/native browser bridge or native-overlay visibility guard is incomplete.");
