@@ -32,7 +32,7 @@
       hints: []
     };
     if (authFlow) result.hints.push("This tab appears to be on an authentication route. Do not share page URLs or credentials in diagnostic reports.");
-    if (result.category === "media") result.hints.push("Some services protect video output or render playback in a separate restricted surface; a black captured video may be a platform restriction, not a broken canvas.");
+    if (result.category === "media") result.hints.push("Some services use protected video output or render playback in a separate restricted surface; a black captured video may be a platform restriction, not a broken canvas.");
     if (result.category === "meeting") result.hints.push("Browser permission dialogs, device pickers and some meeting overlays belong to Chrome or the operating system and are not part of the captured webpage.");
     if (result.category === "learning") result.hints.push("Keep the source tab visible. For keyboard-heavy exercises, use Focus source when a page requires direct browser focus.");
     if (result.category === "collaboration" || result.category === "web-app" || result.category === "dashboard") result.hints.push("Keep the source window unminimized and avoid automatic reloads; some apps pause network or rendering when hidden.");
