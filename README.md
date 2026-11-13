@@ -76,3 +76,12 @@ One-time repository setup is required: open Settings → Pages → Build and dep
 ## Project status
 
 This is the first working static workspace release. It establishes the canvas, local data model and website-card experience. It is not yet a native multi-WebContents browser, and it does not claim universal embedding or Chrome-session transfer.
+
+
+## Native Windows browser surfaces
+
+For websites that cannot be reliably controlled through the Chrome video mirror, the repository now includes an optional Windows WebView2 host in desktop-host/. Open Nolane inside that desktop app. It overlays a real WebView2 browser control on each website card, aligned to the card's live canvas position. Mouse, keyboard, touch/scroll and page focus are handled by the embedded browser control itself; interaction is not sent through a video mirror.
+
+The native host uses a dedicated shared WebView2 profile under the user's Local AppData folder. It does not import or reuse Chrome cookies. Sign in to sites once inside the native host. It keeps at most four visible website surfaces active at once and suspends off-screen surfaces to reduce resource use. Windows 11 normally includes the Evergreen WebView2 Runtime; the app reports a clear runtime error if it is missing. The Chrome Companion remains available for normal Chrome tabs and sessions.
+
+Build/download the optional Windows host from the Build Native WebView2 Host GitHub Actions workflow. This is a separate Windows application; a static GitHub Pages page in normal Chrome cannot create native WebView2 child controls by itself.

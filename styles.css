@@ -386,3 +386,7 @@ kbd { font-family: var(--sans); font-size: 9px; border: 1px solid rgba(255,255,2
 .live-input-status[data-input-state="ready"] { border-color: rgba(91,214,160,.3); color: #8ce1b6; }
 .live-input-status[data-input-state="blocked"] { border-color: rgba(239,119,119,.35); color: #ff9b9b; }
 .live-input-status[data-input-state="readonly"] { color: #e9b978; }
+
+.native-surface-status { display: inline-flex; align-items: center; flex: 0 0 auto; max-width: 76px; padding: 2px 5px; border: 1px solid rgba(113,191,255,.25); border-radius: 4px; color: #98d2ff; background: rgba(62,145,220,.08); font-size: 6px; font-weight: 800; letter-spacing: .35px; white-space: nowrap; }
+.native-surface-status[data-state="error"], .native-surface-status[data-state="limit"] { color: #ffadad; border-color: rgba(255,130,130,.3); }
+.native-surface-status[data-state="suspended"] { color: #b6c0d1; }

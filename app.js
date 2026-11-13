@@ -37,6 +37,9 @@
   let view = { x: 25, y: 0, scale: 0.88 };
   let spaces = [];
   let activeSpaceId = "personal";
+  let nativeHostAvailable = false;
+  let nativeSyncFrame = 0;
+  let nativeHostReadyNotified = false;
   let bridgeConnected = false;
   let bridgeSessionId = "";
   const liveSurfaces = new Map();
@@ -399,6 +402,71 @@
     grid.style.backgroundPosition = (view.x % (24 * view.scale)) + "px " + (view.y % (24 * view.scale)) + "px";
     $("#zoomValue").textContent = Math.round(view.scale * 100) + "%";
     updateMinimap();
+    scheduleNativeSurfaceSync();
+  }
+
+  function scheduleNativeSurfaceSync() {
+    if (!nativeHostAvailable || !window.chrome?.webview?.postMessage || nativeSyncFrame) return;
+    nativeSyncFrame = requestAnimationFrame(() => {
+      nativeSyncFrame = 0;
+      const area = canvas.getBoundingClientRect();
+      const items = [];
+      for (const node of nodes) {
+        if (node.type !== "website" || items.length >= 80) continue;
+        const card = $('.node[data-id="' + CSS.escape(node.id) + '"]', world);
+        const body = card?.querySelector(".node-body");
+        if (!body) continue;
+        const rect = body.getBoundingClientRect();
+        const style = getComputedStyle(body);
+        const visible = style.display !== "none" && style.visibility !== "hidden" &&
+          rect.width >= 80 && rect.height >= 60 &&
+          rect.right > area.left && rect.bottom > area.top &&
+          rect.left < area.right && rect.top < area.bottom;
+        items.push({
+          id: node.id, url: node.url, title: node.title,
+          x: Math.round(rect.left * 100) / 100,
+          y: Math.round(rect.top * 100) / 100,
+          width: Math.round(rect.width * 100) / 100,
+          height: Math.round(rect.height * 100) / 100,
+          zIndex: Number(node.z) || 1, visible
+        });
+      }
+      try { window.chrome.webview.postMessage({ type: "nolane.surfaces.sync", protocol: 1, items }); } catch (_) {}
+    });
+  }
+
+  function handleNativeHostMessage(event) {
+    const message = event?.data;
+    if (!message || typeof message !== "object") return;
+    if (message.type === "nolane.native.ready") {
+      nativeHostAvailable = true;
+      if (!nativeHostReadyNotified) {
+        nativeHostReadyNotified = true;
+        toast("Native WebView2 is connected. Website cards now use real embedded browser surfaces.");
+      }
+      scheduleNativeSurfaceSync();
+      return;
+    }
+    if (message.type === "nolane.native.surface") {
+      const card = $('.node[data-id="' + CSS.escape(String(message.id || "")) + '"]', world);
+      if (!card) return;
+      let status = card.querySelector(".native-surface-status");
+      if (!status) {
+        status = document.createElement("span");
+        status.className = "native-surface-status";
+        card.querySelector(".node-title-wrap")?.appendChild(status);
+      }
+      const states = { ready: "NATIVE WEB", loading: "LOADING WEB", suspended: "PAUSED", limit: "LIMIT", error: "WEB ERROR" };
+      status.dataset.state = String(message.state || "loading");
+      status.textContent = states[message.state] || "NATIVE WEB";
+      status.title = String(message.detail || "Native WebView2 browser surface");
+      if (message.state === "limit") toast("Only four native website surfaces are active at once. Pan the canvas or hide another card.", "error");
+    }
+  }
+
+  if (window.chrome?.webview?.addEventListener) {
+    window.chrome.webview.addEventListener("message", handleNativeHostMessage);
+    window.addEventListener("resize", scheduleNativeSurfaceSync, { passive: true });
   }
 
   function worldPoint(clientX, clientY) {
@@ -449,6 +517,7 @@
     updateCounts();
     renderSpaces();
     updateMinimap();
+    scheduleNativeSurfaceSync();
   }
 
   function createNodeElement(node) {
@@ -1631,6 +1700,7 @@
       const element = $('.node[data-id="' + CSS.escape(node.id) + '"]', world);
       if (element) { element.style.left = node.x + "px"; element.style.top = node.y + "px"; }
       updateMinimap();
+      scheduleNativeSurfaceSync();
       return;
     }
     if (resizeState) {
@@ -1641,6 +1711,7 @@
       const element = $('.node[data-id="' + CSS.escape(node.id) + '"]', world);
       if (element) { element.style.width = node.w + "px"; element.style.height = node.h + "px"; }
       updateMinimap();
+      scheduleNativeSurfaceSync();
       return;
     }
     if (panState) {

@@ -1,0 +1,54 @@
+name: Build Native WebView2 Host
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "desktop-host/**"
+      - "app.js"
+      - "styles.css"
+      - ".github/workflows/desktop-host.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "desktop-host/**"
+      - "app.js"
+      - "styles.css"
+      - ".github/workflows/desktop-host.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "native-webview2-host-\${{ github.event_name }}"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.x"
+      - name: Restore and publish native host
+        shell: pwsh
+        run: |
+          dotnet restore desktop-host/Nolane.DesktopHost.csproj -r win-x64
+          dotnet publish desktop-host/Nolane.DesktopHost.csproj -c Release -r win-x64 --self-contained true -p:WindowsAppSDKSelfContained=true -p:PublishSingleFile=false -o "\${{ runner.temp }}/nolane-native-host"
+      - name: Package native host
+        shell: pwsh
+        run: |
+          $output = "\${{ runner.temp }}/nolane-native-host"
+          if (-not (Test-Path (Join-Path $output "Nolane.DesktopHost.exe"))) { throw "The native host executable was not produced." }
+          Compress-Archive -Path (Join-Path $output "*") -DestinationPath "\${{ runner.temp }}/nolane-native-webview2-host-win-x64.zip" -CompressionLevel Optimal
+      - name: Upload native host bundle
+        uses: actions/upload-artifact@v5
+        with:
+          name: nolane-native-webview2-host-win-x64
+          path: \${{ runner.temp }}/nolane-native-webview2-host-win-x64.zip
+          if-no-files-found: error
+          retention-days: 30

@@ -59,3 +59,12 @@ For a true composited browser child, the strongest documented Windows route is W
 - Proxying arbitrary websites through an external service.
 - Claiming universal support for site-specific passkey, DRM or browser-owned UI flows.
 - Uploading the user's workspace, notes or captured page frames to remote services.
+
+
+## Native WebView2 host integration (desktop-host v0.1.0)
+
+The optional Windows host opens the existing GitHub Pages workspace as its parent WebView2 document and places child WebView2 controls in a transparent WinUI 3 Canvas above it. The workspace sends a versioned nolane.surfaces.sync message containing each website card's measured viewport rectangle, URL, visibility and stacking order. The host validates that messages come only from the exact Nolane GitHub Pages origin/path, then creates or repositions a child WebView2 control using a single shared CoreWebView2Environment and user-data folder. All child surfaces share a native-host login profile, but do not inherit Chrome profile cookies.
+
+Because the child controls are native browser controls in the XAML visual tree, the actual site receives browser-native mouse, keyboard, pointer, focus and scrolling input. There is no frame screenshot, tabCapture stream or CDP Input command in this path. The workspace keeps its normal HTML canvas, node persistence, pan/zoom and toolbar; native controls cover only the website-card body. Their bounds are resynchronized after canvas transforms, pan, drag, resize and window changes.
+
+Resource policy: at most four visible child browsers are active concurrently. Hidden/off-screen surfaces are collapsed and suspended with WebView2's suspension API, and stale controls are evicted when the bounded cache grows beyond eight. This keeps renderer count bounded on modest machines. Popup/window flows and browser-owned OS surfaces remain WebView2-runtime behaviors and are not made identical to Chrome. Chrome sessions remain separate; use the existing Companion when a site must use an already-authenticated Chrome tab.
