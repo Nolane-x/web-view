@@ -50,3 +50,5 @@ An active or resumable download pins its originating WebView2 surface while the 
 ## Native history and bookmarks
 
 The Library panel stores up to 500 recent visits and 200 bookmarks in `browser-library.json` under the Native WebView2 profile. Use the star button on a native website card to save or remove the current page. History and bookmarks open in the currently focused visible native card. Fragments, embedded credentials and sensitive query keys (tokens, passwords, secrets, signatures, session/auth values, API keys and OAuth codes) are removed before persistence. Chrome history and bookmarks are not accessed.
+
+The Library panel can filter both History and Bookmarks instantly by title, domain or stored address.

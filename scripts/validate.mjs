@@ -257,9 +257,11 @@ if (!nativeHost.includes("RecordBrowserHistory") || !nativeHost.includes("Saniti
     !nativeHost.includes("TimeSpan.FromSeconds(4)") || !nativeHost.includes("Take(500)")) fail("Native browser history and bookmark persistence/privacy safeguards are incomplete.");
 else pass("Native browser records bounded history, deduplicates navigation events, redacts sensitive query parameters and persists bookmarks locally.");
 if (!nativeHost.includes("OpenLibraryUrl") || !nativeHost.includes("GetLibraryTargetSurface") ||
+    !nativeHost.includes("MatchesLibraryQuery") || !nativeHost.includes("LibrarySearch_TextChanged") ||
     !nativeXaml.includes('x:Name="LibraryPanel"') || !nativeXaml.includes('x:Name="LibraryItems"') ||
-    !js.includes("native-bookmark") || !js.includes("toggle-bookmark")) fail("Native browser Library UI or per-card bookmark control is incomplete.");
-else pass("Native Library opens history/bookmarks in the focused website card and exposes per-card bookmark control.");
+    !nativeXaml.includes('x:Name="LibrarySearchBox"') ||
+    !js.includes("native-bookmark") || !js.includes("toggle-bookmark")) fail("Native browser Library UI, per-card bookmark control or instant search is incomplete.");
+else pass("Native Library opens history/bookmarks in the focused website card, supports per-card bookmarks and filters title/domain/address instantly.");
 if (!nativeHost.includes("HandleDownloadStarting") || !nativeHost.includes("BytesReceivedChanged") ||
     !nativeHost.includes("StateChanged") || !nativeHost.includes("operation?.Pause()") ||
     !nativeHost.includes("operation?.Resume()") || !nativeHost.includes("operation?.Cancel()") ||

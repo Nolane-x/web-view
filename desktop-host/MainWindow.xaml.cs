@@ -1216,6 +1216,12 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private static bool MatchesLibraryQuery(string title, string host, string url, string query)
+    {
+        if (string.IsNullOrWhiteSpace(query)) return true;
+        return (title + " " + host + " " + url).Contains(query.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
     private static Button CreateLibraryAction(string label, Action action)
     {
         var button = new Button
@@ -1267,24 +1273,34 @@ public sealed partial class MainWindow : Window
 
     private void RefreshLibraryUi()
     {
-        LibraryButton.Content = $"Library ({_browserBookmarks.Count})";
+        var query = LibrarySearchBox.Text?.Trim() ?? "";
+        LibraryButton.Content = $"Library ({_browserHistory.Count + _browserBookmarks.Count})";
         HistoryTabButton.IsEnabled = _showingBookmarks;
         BookmarksTabButton.IsEnabled = !_showingBookmarks;
         ClearHistoryButton.IsEnabled = !_showingBookmarks && _browserHistory.Count > 0;
+
+        var bookmarkMatches = _browserBookmarks
+            .Where(item => MatchesLibraryQuery(item.Title, item.Host, item.Url, query))
+            .ToList();
+        var historyMatches = _browserHistory
+            .Where(item => MatchesLibraryQuery(item.Title, item.Host, item.Url, query))
+            .ToList();
         LibrarySummaryText.Text = _showingBookmarks
-            ? $"{_browserBookmarks.Count} saved page(s) · stored on this device"
-            : $"{_browserHistory.Count} recent visits · sensitive query values are removed";
+            ? $"{bookmarkMatches.Count} of {_browserBookmarks.Count} saved page(s)"
+            : $"{historyMatches.Count} of {_browserHistory.Count} visits · sensitive query values are removed";
 
         if (LibraryPanel.Visibility != Visibility.Visible) return;
         LibraryItems.Children.Clear();
 
         if (_showingBookmarks)
         {
-            if (_browserBookmarks.Count == 0)
+            if (bookmarkMatches.Count == 0)
             {
                 LibraryItems.Children.Add(new TextBlock
                 {
-                    Text = "No bookmarks yet. Use the star button on a native website card to save its current page.",
+                    Text = _browserBookmarks.Count == 0
+                        ? "No bookmarks yet. Use the star button on a native website card to save its current page."
+                        : "No bookmarks match this search.",
                     TextWrapping = TextWrapping.Wrap,
                     Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 145, 158, 180)),
                     Margin = new Thickness(8, 18, 8, 18)
@@ -1292,7 +1308,7 @@ public sealed partial class MainWindow : Window
                 return;
             }
 
-            foreach (var item in _browserBookmarks.Take(200))
+            foreach (var item in bookmarkMatches.Take(200))
             {
                 var saved = item;
                 LibraryItems.Children.Add(CreateLibraryCard(
@@ -1311,11 +1327,13 @@ public sealed partial class MainWindow : Window
         }
         else
         {
-            if (_browserHistory.Count == 0)
+            if (historyMatches.Count == 0)
             {
                 LibraryItems.Children.Add(new TextBlock
                 {
-                    Text = "Pages you visit in native website cards will appear here.",
+                    Text = _browserHistory.Count == 0
+                        ? "Pages you visit in native website cards will appear here."
+                        : "No history entries match this search.",
                     TextWrapping = TextWrapping.Wrap,
                     Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 145, 158, 180)),
                     Margin = new Thickness(8, 18, 8, 18)
@@ -1323,7 +1341,7 @@ public sealed partial class MainWindow : Window
                 return;
             }
 
-            foreach (var item in _browserHistory.Take(100))
+            foreach (var item in historyMatches.Take(100))
             {
                 var visited = item;
                 var bookmarked = IsBookmarked(visited.Url);
@@ -1350,6 +1368,9 @@ public sealed partial class MainWindow : Window
             ? Visibility.Collapsed : Visibility.Visible;
         RefreshLibraryUi();
     }
+
+    private void LibrarySearch_TextChanged(object sender, TextChangedEventArgs e) =>
+        RefreshLibraryUi();
 
     private void ShowHistory_Click(object sender, RoutedEventArgs e)
     {
