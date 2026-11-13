@@ -1,7 +1,7 @@
 (() => {
   "use strict";
   const WORKSPACE_ORIGIN = "https://nolane-x.github.io";
-  const PROFILE_VERSION = "0.2.10";
+  const PROFILE_VERSION = "0.2.11";
 
   function sendToPage(type, payload) {
     window.postMessage({ source: "nolane-companion", type, ...(payload || {}) }, WORKSPACE_ORIGIN);
@@ -125,6 +125,15 @@
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (!message || typeof message.type !== "string") return;
+
+    if (message.type === "NOLANE_WORKSPACE_PING") {
+      if (sender.id !== chrome.runtime.id) {
+        sendResponse({ ok: false, error: "Untrusted workspace ping sender." });
+        return;
+      }
+      sendResponse({ ok: true, version: PROFILE_VERSION, url: location.href });
+      return false;
+    }
 
     if (message.type === "NOLANE_IMPORT_TABS" && Array.isArray(message.tabs)) {
       const selected = message.tabs.slice(0, 150).filter((tab) =>

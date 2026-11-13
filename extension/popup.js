@@ -5,6 +5,7 @@
   const $ = (selector) => document.querySelector(selector);
   let availableTabs = [];
   let activeTab = null;
+  let workspaceStatus = { state: "checking", reason: "Checking for an open Nolane workspace…" };
 
   function status(message, kind) {
     const element = $("#status");
@@ -36,30 +37,108 @@
     try { return new URL(url).hostname.replace(/^www\./, ""); } catch (_) { return "Website"; }
   }
 
+  function updateWorkspaceButton() {
+    const button = $("#openWorkspaceButton");
+    const title = $("#workspaceStatusTitle");
+    const details = $("#workspaceStatusText");
+    const pill = $("#workspaceStatusPill");
+    if (workspaceStatus.state === "connected") {
+      button.textContent = "Focus Nolane Infinite";
+      title.textContent = "Nolane Infinite is connected";
+      details.textContent = "The workspace tab and current Browser Companion bridge were both verified.";
+      pill.textContent = "Connected";
+      pill.dataset.state = "connected";
+    } else if (workspaceStatus.state === "refresh-required") {
+      button.textContent = "Reconnect Nolane Infinite";
+      title.textContent = "Nolane was found, but needs reconnecting";
+      details.textContent = workspaceStatus.reason || "Refresh the existing Nolane tab to reload its Companion bridge.";
+      pill.textContent = "Refresh needed";
+      pill.dataset.state = "warning";
+    } else if (workspaceStatus.state === "loading") {
+      button.textContent = "Focus loading Nolane";
+      title.textContent = "Nolane Infinite is still loading";
+      details.textContent = workspaceStatus.reason || "Wait for the page to finish loading, then reopen the Companion.";
+      pill.textContent = "Loading";
+      pill.dataset.state = "loading";
+    } else if (workspaceStatus.state === "lookup-unavailable") {
+      button.textContent = "Retry workspace check";
+      title.textContent = "Chrome could not verify Nolane";
+      details.textContent = workspaceStatus.reason || "Retry the workspace check.";
+      pill.textContent = "Check failed";
+      pill.dataset.state = "warning";
+    } else if (workspaceStatus.state === "checking") {
+      button.textContent = "Checking Nolane Infinite…";
+      title.textContent = "Checking workspace connection";
+      details.textContent = workspaceStatus.reason || "Searching open Chrome tabs and checking the Companion bridge.";
+      pill.textContent = "Checking";
+      pill.dataset.state = "loading";
+    } else {
+      button.textContent = "Open Nolane Infinite";
+      title.textContent = "Nolane Infinite is not open";
+      details.textContent = workspaceStatus.reason || "Open Nolane Infinite in a Chrome tab before starting a live stream.";
+      pill.textContent = "Not open";
+      pill.dataset.state = "missing";
+    }
+  }
+
+  function updateActiveTabPresentation() {
+    const title = $("#activeTabTitle");
+    const details = $("#activeTabDescription");
+    const button = $("#liveButton");
+    if (!activeTab) {
+      title.textContent = "No active tab found";
+      details.textContent = "Open a normal website tab first.";
+      button.disabled = true;
+      return;
+    }
+    title.textContent = activeTab.title || safeHost(activeTab.url || "");
+    if (isWorkspaceTab(activeTab)) {
+      details.textContent = "This is the workspace tab. Switch to the website you want to stream, then open the Companion there.";
+      button.disabled = true;
+      return;
+    }
+    if (!sanitizeTabUrl(activeTab.url || "")) {
+      details.textContent = "This page cannot be streamed. Open a normal http:// or https:// website.";
+      button.disabled = true;
+      return;
+    }
+    const host = safeHost(activeTab.url);
+    if (workspaceStatus.state === "connected") {
+      details.textContent = host + " is ready. Nolane Infinite is connected in another tab.";
+      button.disabled = false;
+    } else if (workspaceStatus.state === "refresh-required") {
+      details.textContent = host + " is ready, but Nolane was found in another tab and its Companion bridge needs a refresh. Use Reconnect Nolane Infinite below.";
+      button.disabled = true;
+    } else if (workspaceStatus.state === "loading") {
+      details.textContent = host + " is ready, but Nolane Infinite is still loading. Wait for it to finish, then reopen the Companion.";
+      button.disabled = true;
+    } else if (workspaceStatus.state === "lookup-unavailable") {
+      details.textContent = host + " is ready, but Chrome could not verify the Nolane workspace. Retry the workspace check below.";
+      button.disabled = true;
+    } else {
+      details.textContent = host + " is ready, but Nolane Infinite is not open. Open it below before streaming.";
+      button.disabled = true;
+    }
+  }
+
+  async function refreshWorkspaceStatus() {
+    try {
+      const result = await chrome.runtime.sendMessage({ type: "NOLANE_GET_WORKSPACE_STATUS" });
+      if (!result?.ok) throw new Error(result?.error || "Could not check the Nolane workspace.");
+      workspaceStatus = result;
+    } catch (error) {
+      workspaceStatus = { state: "lookup-unavailable", reason: String(error?.message || error) };
+    }
+    updateWorkspaceButton();
+    updateActiveTabPresentation();
+    return workspaceStatus;
+  }
+
   async function refreshActiveTab() {
     try {
       const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
       activeTab = tab || null;
-      const title = $("#activeTabTitle");
-      const details = $("#activeTabDescription");
-      const button = $("#liveButton");
-      if (!activeTab) {
-        title.textContent = "No active tab found";
-        details.textContent = "Open a normal website tab first.";
-        button.disabled = true;
-        return;
-      }
-      title.textContent = activeTab.title || safeHost(activeTab.url || "");
-      if (isWorkspaceTab(activeTab)) {
-        details.textContent = "This is the workspace tab. Switch to the website you want to stream, then open the Companion there.";
-        button.disabled = true;
-      } else if (!sanitizeTabUrl(activeTab.url || "")) {
-        details.textContent = "This page cannot be streamed. Open a normal http:// or https:// website.";
-        button.disabled = true;
-      } else {
-        details.textContent = safeHost(activeTab.url) + " is ready. Nolane must already be open in another tab.";
-        button.disabled = false;
-      }
+      updateActiveTabPresentation();
     } catch (error) {
       status("Could not inspect the active tab: " + (error.message || error), "error");
     }
@@ -88,6 +167,7 @@
     } catch (error) {
       status("Could not start live surface: " + (error.message || error), "error");
     } finally {
+      await refreshWorkspaceStatus();
       await refreshActiveTab();
     }
   }
@@ -150,15 +230,24 @@
     if (!activeTab || !Number.isInteger(activeTab.id)) return;
     const button = $("#compatibilityResult .compat-apply");
     if (button) button.disabled = true;
+    if (action === "refresh-workspace" &&
+        !window.confirm("Nolane Infinite is open but its Companion bridge is not active. Refresh that page now? Any unsaved text currently being edited on the page may be lost.")) {
+      if (button) button.disabled = false;
+      return;
+    }
     try {
       const result = await chrome.runtime.sendMessage({
         type: "NOLANE_APPLY_COMPATIBILITY_ACTION",
         tabId: activeTab.id,
         action,
+        confirmed: action === "refresh-workspace",
         keepSourceVisible: $("#keepSourceVisible").checked
       });
       if (!result?.ok) throw new Error(result?.error || "The compatibility action could not be applied.");
       status(result.message || "Recommended action applied.", "success");
+      if (["open-workspace", "refresh-workspace", "focus-workspace"].includes(result.action)) {
+        await refreshWorkspaceStatus();
+      }
       if (result.action === "refresh-video") await diagnoseActiveTab();
     } catch (error) {
       status("Could not apply the recommendation: " + (error.message || error), "error");
@@ -171,6 +260,7 @@
     button.disabled = true;
     button.textContent = "Analyzing…";
     try {
+      await refreshWorkspaceStatus();
       await refreshActiveTab();
       if (!activeTab || !Number.isInteger(activeTab.id)) throw new Error("No active website tab was found.");
       const result = await chrome.runtime.sendMessage({
@@ -204,7 +294,8 @@
         capturedTabs: result.capturedTabs || [],
         liveSessions: result.liveSessions || [],
         lastLiveDiagnostic: result.lastLiveDiagnostic || null,
-        compatibilityProfiles: result.compatibilityProfiles || []
+        compatibilityProfiles: result.compatibilityProfiles || [],
+        workspace: result.workspace || workspaceStatus
       };
       const output = JSON.stringify(report, null, 2);
       if (navigator.clipboard?.writeText) {
@@ -309,12 +400,6 @@
     }
   }
 
-  async function findWorkspaceTab() {
-    const tabs = await chrome.tabs.query({ url: WORKSPACE_MATCH });
-    const active = tabs.find((tab) => tab.active);
-    return active || tabs[0] || null;
-  }
-
   async function importSelected() {
     const selectedIds = new Set(
       [...$("#tabList").querySelectorAll("input:checked")].map((input) => Number(input.dataset.tabId))
@@ -330,13 +415,17 @@
     try {
       const profile = await chrome.runtime.sendMessage({ type: "NOLANE_GET_PROFILE_ID" });
       if (!profile || !profile.ok || !profile.profileId) throw new Error("Could not identify this Chrome profile.");
-      const workspaceTab = await findWorkspaceTab();
-      if (!workspaceTab) {
+      const workspace = await chrome.runtime.sendMessage({ type: "NOLANE_GET_WORKSPACE_STATUS" });
+      if (!workspace?.ok) throw new Error(workspace?.error || "Could not check the Nolane workspace.");
+      if (workspace.state === "missing") {
         await chrome.tabs.create({ url: WORKSPACE_URL });
-        status("Opened Nolane Infinite. Reopen the extension and import the selected tabs.", "success");
+        status("Opened Nolane Infinite. Wait for it to load, then reopen the Companion and import the selected tabs.", "success");
         return;
       }
-      const result = await chrome.tabs.sendMessage(workspaceTab.id, {
+      if (workspace.state !== "connected") {
+        throw new Error(workspace.reason || "Reconnect the Nolane workspace before importing tabs.");
+      }
+      const result = await chrome.tabs.sendMessage(workspace.tabId, {
         type: "NOLANE_IMPORT_TABS",
         tabs: selected,
         browserSessionId: profile.profileId
@@ -344,7 +433,7 @@
       if (!result || !result.ok) throw new Error("The workspace did not accept the selected tabs.");
       status("Imported " + result.count + " tab(s) into Nolane.", "success");
     } catch (error) {
-      status("Could not reach Nolane. Refresh the workspace page and try again. " + (error.message || ""), "error");
+      status("Could not reach Nolane: " + (error.message || "Refresh the workspace tab and try again."), "error");
     }
   }
 
@@ -360,7 +449,27 @@
   });
   $("#tabList").addEventListener("change", updateImportButton);
   $("#importButton").addEventListener("click", importSelected);
-  $("#openWorkspaceButton").addEventListener("click", () => chrome.tabs.create({ url: WORKSPACE_URL }));
-  refreshActiveTab().catch((error) => status(error.message || String(error), "error"));
+  $("#openWorkspaceButton").addEventListener("click", async () => {
+    const button = $("#openWorkspaceButton");
+    button.disabled = true;
+    try {
+      if (workspaceStatus.state === "refresh-required" &&
+          !window.confirm("Reconnect the existing Nolane tab by refreshing it? Any unsaved text currently being edited on that page may be lost.")) return;
+      const result = await chrome.runtime.sendMessage({
+        type: "NOLANE_RECONNECT_WORKSPACE",
+        confirmed: workspaceStatus.state === "refresh-required"
+      });
+      if (!result?.ok) throw new Error(result?.error || "Could not reconnect Nolane Infinite.");
+      status(result.message || "Nolane workspace action completed.", "success");
+      if (["refresh-workspace", "open-workspace"].includes(result.action)) workspaceStatus = { state: "checking", reason: result.message || "Opening Nolane Infinite…" };
+      await refreshWorkspaceStatus();
+    } catch (error) {
+      status(error.message || String(error), "error");
+    } finally {
+      button.disabled = false;
+      updateWorkspaceButton();
+    }
+  });
+  refreshWorkspaceStatus().then(refreshActiveTab).catch((error) => status(error.message || String(error), "error"));
   checkPermission().catch((error) => status(error.message || String(error), "error"));
 })();

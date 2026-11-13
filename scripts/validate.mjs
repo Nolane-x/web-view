@@ -72,8 +72,8 @@ if (!html.includes('id="bridgeDialog"') || !html.includes("Companion not detecte
 else pass("Browser Companion status is explicit and does not imply a working extension.");
 
 const extensionManifest = JSON.parse(read("extension/manifest.json"));
-if (extensionManifest.version !== "0.2.10") fail("Browser Companion release metadata must be synchronized at version 0.2.10.");
-else pass("Browser Companion release metadata is synchronized at 0.2.10.");
+if (extensionManifest.version !== "0.2.11") fail("Browser Companion release metadata must be synchronized at version 0.2.11.");
+else pass("Browser Companion release metadata is synchronized at 0.2.11.");
 for (const file of ["extension/background.js", "extension/compatibility.js", "extension/content.js", "extension/popup.html", "extension/popup.css", "extension/popup.js", "extension/README.md"]) {
   if (!fs.existsSync(path.join(root, file))) fail("Browser Companion asset missing: " + file);
 }
@@ -113,6 +113,12 @@ if (!/manualCardMatch/.test(js) || !/existing\.browserTabId = tab\.id/.test(js))
 else pass("Existing manual website cards can attach to the live Chrome tab without duplicates.");
 if (!/NOLANE_REGISTER_WORKSPACE/.test(bridge) || !/NOLANE_LIVE_INPUT/.test(bridge)) fail("Workspace content-script registration/input bridge is incomplete.");
 else pass("Content script registers the workspace and forwards input.");
+if (!/NOLANE_WORKSPACE_PING/.test(bridge) || !/getWorkspaceConnectionStatus/.test(background) || !/chrome\.tabs\.query\(\{ url: WORKSPACE_MATCH \}\)/.test(background)) fail("Workspace reconnection must discover open tabs and verify the content-script bridge.");
+else pass("Workspace discovery verifies an open Nolane tab and reconnects after extension reload.");
+if (!/chrome\.storage\.local\.set\(\{ \[WORKSPACE_KEY\]/.test(background) || !/NOLANE_GET_WORKSPACE_STATUS/.test(background)) fail("Workspace tab identity must survive extension storage.session resets and be checked on demand.");
+else pass("Workspace registration is persisted locally and exposed as a verified connection state.");
+if (!/refresh-workspace/.test(background) || !/open-workspace/.test(background) || !/workspace\.state !== "connected"/.test(background)) fail("Compatibility analysis must not recommend capture before the workspace bridge is ready.");
+else pass("Compatibility recovery opens or reconnects Nolane before starting capture.");
 if (!/LIVE_SURFACE_ACK/.test(js) || !/pendingLiveStarts/.test(background)) fail("Live capture start must wait for workspace stream acknowledgement.");
 else pass("Live capture start waits for the workspace stream acknowledgement.");
 if (!/waitForLiveVideoFrame/.test(js) || !/requestVideoFrameCallback/.test(js)) fail("Live capture must verify a decoded video frame before acknowledging success.");
@@ -141,6 +147,10 @@ if (!/audio:\s*\{\s*mandatory:\s*\{\s*chromeMediaSource:\s*"tab"/.test(js) || !/
 else pass("Live surface audio is routed locally with explicit mute control.");
 if (!/NOLANE_START_LIVE_SURFACE/.test(popup) || !/Stream this tab to Nolane/.test(popupHTML)) fail("Popup must expose explicit active-tab capture.");
 else pass("Popup exposes explicit current-tab capture.");
+if (!/workspaceStatusPanel/.test(popupHTML) || !/workspaceStatusTitle/.test(popup) || !/NOLANE_GET_WORKSPACE_STATUS/.test(popup)) fail("Popup must show verified workspace readiness before enabling live capture.");
+else pass("Popup displays an explicit verified workspace connection state.");
+if (!/getWorkspaceConnectionStatus/.test(background) || /Open Nolane Infinite in another Chrome tab first, then refresh it/.test(background)) fail("Legacy transient-only workspace registration must not remain in the live capture path.");
+else pass("Live capture no longer depends on a storage.session-only workspace tab ID.");
 if (!/keepSourceVisible/.test(popup) || !/chrome\.windows\.create/.test(background) || !/focused:\s*true/.test(background)) fail("Keep-source-visible compatibility mode must move Nolane into a separate Chrome window.");
 else pass("Keep-source-visible mode preserves the source tab in its original window.");
 if (!/chrome\.tabCapture\.getCapturedTabs/.test(background) || !/already reports an active capture/.test(background)) fail("Existing tab capture must be detected before attempting a duplicate stream.");

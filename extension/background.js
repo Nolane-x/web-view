@@ -4,6 +4,7 @@ importScripts("compatibility.js");
 
 const WORKSPACE_ORIGIN = "https://nolane-x.github.io";
 const WORKSPACE_URL_PREFIX = WORKSPACE_ORIGIN + "/web-view/";
+const WORKSPACE_MATCH = WORKSPACE_URL_PREFIX + "*";
 const PROFILE_KEY = "nolaneProfileId";
 const LAST_DIAGNOSTIC_KEY = "nolaneLastLiveDiagnostic";
 const COMPATIBILITY_PROFILES_KEY = "nolaneCompatibilityProfiles";
@@ -24,16 +25,125 @@ const profileIdPromise = chrome.storage.local.get([PROFILE_KEY]).then(async (sto
   return profileId;
 });
 
-async function getWorkspaceTabId() {
-  const stored = await chrome.storage.session.get(WORKSPACE_KEY);
-  const tabId = stored[WORKSPACE_KEY]?.tabId;
-  if (!Number.isInteger(tabId)) throw new Error("Open Nolane Infinite in another Chrome tab first, then refresh it.");
-  const tab = await chrome.tabs.get(tabId);
-  if (typeof tab.url !== "string" || !tab.url.startsWith(WORKSPACE_URL_PREFIX)) {
-    await chrome.storage.session.remove(WORKSPACE_KEY);
-    throw new Error("The Nolane workspace tab is no longer available. Refresh Nolane and try again.");
+async function rememberWorkspaceTab(tab) {
+  if (!Number.isInteger(tab?.id) || typeof tab.url !== "string" || !tab.url.startsWith(WORKSPACE_URL_PREFIX)) {
+    throw new Error("Only an open Nolane Infinite tab can register the workspace bridge.");
   }
-  return tabId;
+  const record = { tabId: tab.id, url: tab.url, updatedAt: Date.now() };
+  await Promise.all([
+    chrome.storage.local.set({ [WORKSPACE_KEY]: record }),
+    chrome.storage.session.set({ [WORKSPACE_KEY]: record })
+  ]);
+}
+
+async function getWorkspaceConnectionStatus() {
+  const [persistent, session] = await Promise.all([
+    chrome.storage.local.get(WORKSPACE_KEY),
+    chrome.storage.session.get(WORKSPACE_KEY)
+  ]);
+  const candidateIds = [];
+  const addId = (id) => {
+    if (Number.isInteger(id) && !candidateIds.includes(id)) candidateIds.push(id);
+  };
+  addId(persistent[WORKSPACE_KEY]?.tabId);
+  addId(session[WORKSPACE_KEY]?.tabId);
+
+  let listedTabs = [];
+  let lookupError = "";
+  try {
+    listedTabs = await chrome.tabs.query({ url: WORKSPACE_MATCH });
+  } catch (error) {
+    lookupError = String(error?.message || error);
+  }
+
+  const byId = new Map();
+  for (const tab of listedTabs || []) {
+    if (Number.isInteger(tab?.id) && typeof tab.url === "string" && tab.url.startsWith(WORKSPACE_URL_PREFIX)) {
+      byId.set(tab.id, tab);
+    }
+  }
+  for (const id of candidateIds) {
+    if (byId.has(id)) continue;
+    try {
+      const tab = await chrome.tabs.get(id);
+      if (typeof tab.url === "string" && tab.url.startsWith(WORKSPACE_URL_PREFIX)) byId.set(id, tab);
+    } catch (_) {}
+  }
+
+  const candidates = [...byId.values()].sort((a, b) => {
+    const aSaved = candidateIds.includes(a.id) ? candidateIds.indexOf(a.id) : Number.MAX_SAFE_INTEGER;
+    const bSaved = candidateIds.includes(b.id) ? candidateIds.indexOf(b.id) : Number.MAX_SAFE_INTEGER;
+    if (aSaved !== bSaved) return aSaved - bSaved;
+    return Number(!!b.active) - Number(!!a.active);
+  });
+
+  let needsRefresh = null;
+  let loadingWorkspace = null;
+  for (const tab of candidates) {
+    if (tab.status === "loading") {
+      loadingWorkspace ||= {
+        state: "loading",
+        tabId: tab.id,
+        title: String(tab.title || "Nolane Infinite").slice(0, 120),
+        version: "loading",
+        reason: "Nolane Infinite is still loading. Keep this tab open, wait for the page to finish, then reopen the Companion."
+      };
+      continue;
+    }
+    try {
+      const bridge = await chrome.tabs.sendMessage(tab.id, { type: "NOLANE_WORKSPACE_PING" });
+      const currentVersion = chrome.runtime.getManifest().version;
+      if (bridge?.ok && bridge.version === currentVersion) {
+        await rememberWorkspaceTab(tab);
+        return {
+          state: "connected",
+          tabId: tab.id,
+          title: String(tab.title || "Nolane Infinite").slice(0, 120),
+          version: bridge.version,
+          url: tab.url
+        };
+      }
+      needsRefresh ||= {
+        state: "refresh-required",
+        tabId: tab.id,
+        title: String(tab.title || "Nolane Infinite").slice(0, 120),
+        version: bridge?.version || "unknown",
+        reason: "Nolane Infinite is open, but its Browser Companion bridge is missing or outdated. Refresh that Nolane tab once to load the current bridge."
+      };
+    } catch (_) {
+      needsRefresh ||= {
+        state: "refresh-required",
+        tabId: tab.id,
+        title: String(tab.title || "Nolane Infinite").slice(0, 120),
+        version: "unknown",
+        reason: "Nolane Infinite is open, but its Browser Companion bridge is not running. Refresh that Nolane tab once, then retry."
+      };
+    }
+  }
+
+  if (needsRefresh) {
+    await chrome.storage.session.remove(WORKSPACE_KEY);
+    return needsRefresh;
+  }
+  if (loadingWorkspace) return loadingWorkspace;
+
+  await chrome.storage.session.remove(WORKSPACE_KEY);
+  await chrome.storage.local.remove(WORKSPACE_KEY);
+  return {
+    state: lookupError ? "lookup-unavailable" : "missing",
+    tabId: null,
+    title: "",
+    version: "",
+    reason: lookupError
+      ? "Chrome could not locate the Nolane workspace tab: " + lookupError.slice(0, 180)
+      : "Nolane Infinite is not open in a Chrome tab. Open it first, wait for it to finish loading, then retry."
+  };
+}
+
+async function getWorkspaceTabId() {
+  const status = await getWorkspaceConnectionStatus();
+  if (status.state === "connected") return status.tabId;
+  throw new Error(status.reason || "Connect Nolane Infinite before starting a live surface.");
 }
 
 async function getLiveSessions() {
@@ -752,6 +862,47 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return respond(profileIdPromise.then((profileId) => ({ ok: true, profileId })));
   }
 
+  if (message.type === "NOLANE_GET_WORKSPACE_STATUS") {
+    return respond((async () => {
+      const popupUrl = chrome.runtime.getURL("popup.html");
+      if (!sender.url || !sender.url.startsWith(popupUrl)) throw new Error("Workspace status is available only from the Companion popup.");
+      return { ok: true, ...(await getWorkspaceConnectionStatus()) };
+    })());
+  }
+
+  if (message.type === "NOLANE_RECONNECT_WORKSPACE") {
+    return respond((async () => {
+      const popupUrl = chrome.runtime.getURL("popup.html");
+      if (!sender.url || !sender.url.startsWith(popupUrl)) throw new Error("Workspace reconnection is available only from the Companion popup.");
+      const workspace = await getWorkspaceConnectionStatus();
+      if (workspace.state === "connected") {
+        const tab = await chrome.tabs.get(workspace.tabId);
+        await chrome.tabs.update(tab.id, { active: true });
+        await chrome.windows.update(tab.windowId, { focused: true });
+        return { ok: true, action: "focus-workspace", message: "Nolane Infinite is connected and has been focused." };
+      }
+      if (workspace.state === "refresh-required") {
+        if (message.confirmed !== true) throw new Error("Nolane is already open but needs a refresh. Confirm the refresh first; unsaved text on that page may be lost.");
+        const tab = await chrome.tabs.get(workspace.tabId);
+        await chrome.tabs.reload(tab.id);
+        await chrome.tabs.update(tab.id, { active: true });
+        await chrome.windows.update(tab.windowId, { focused: true });
+        return { ok: true, action: "refresh-workspace", message: "Refreshing the existing Nolane tab. Wait until it finishes loading, then open the Companion again." };
+      }
+      if (workspace.state === "loading") {
+        const tab = await chrome.tabs.get(workspace.tabId);
+        await chrome.tabs.update(tab.id, { active: true });
+        await chrome.windows.update(tab.windowId, { focused: true });
+        return { ok: true, action: "focus-workspace", message: "Nolane Infinite is still loading. Wait for it to finish, then reopen the Companion." };
+      }
+      if (workspace.state === "missing") {
+        const tab = await chrome.tabs.create({ url: WORKSPACE_URL_PREFIX });
+        return { ok: true, action: "open-workspace", tabId: tab.id, message: "Opened Nolane Infinite. Wait for it to finish loading, then open the Companion again." };
+      }
+      throw new Error(workspace.reason || "Chrome could not verify a Nolane workspace tab.");
+    })());
+  }
+
   if (message.type === "NOLANE_GET_DIAGNOSTICS") {
     return respond((async () => {
       const popupUrl = chrome.runtime.getURL("popup.html");
@@ -764,6 +915,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return {
         ok: true,
         extensionVersion: chrome.runtime.getManifest().version,
+        workspace: await getWorkspaceConnectionStatus(),
         capturedTabs: (captureInfo || []).map((item) => ({
           tabId: item.tabId,
           status: item.status,
@@ -800,17 +952,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const cleanUrl = cleanShareUrl(tab.url || "");
       if (!cleanUrl) throw new Error("Only normal HTTP/HTTPS website tabs can be analyzed.");
       const site = NolaneCompatibility.classifyUrl(cleanUrl);
-      const [sessions, captured, profileStore, diagnosticStore] = await Promise.all([
+      const [sessions, captured, profileStore, diagnosticStore, workspace] = await Promise.all([
         getLiveSessions(),
         chrome.tabCapture.getCapturedTabs().catch(() => []),
         chrome.storage.local.get(COMPATIBILITY_PROFILES_KEY),
-        chrome.storage.session.get(LAST_DIAGNOSTIC_KEY)
+        chrome.storage.session.get(LAST_DIAGNOSTIC_KEY),
+        getWorkspaceConnectionStatus()
       ]);
       const session = Object.values(sessions).find((item) => item.sourceTabId === tab.id) || null;
       const captureInfo = (captured || []).find((item) => item.tabId === tab.id) || null;
       const savedDiagnostic = diagnosticStore[LAST_DIAGNOSTIC_KEY];
       const relevantDiagnostic = savedDiagnostic?.sourceOrigin === site.origin ? savedDiagnostic : null;
       const diagnosis = diagnoseLiveSession(site, session, relevantDiagnostic);
+      if (!captureInfo && workspace.state !== "connected") {
+        diagnosis.recovery = workspace.state === "refresh-required"
+          ? { action: "refresh-workspace", label: "Reconnect Nolane workspace", reason: workspace.reason }
+          : workspace.state === "missing"
+            ? { action: "open-workspace", label: "Open Nolane Infinite", reason: workspace.reason }
+            : workspace.state === "loading"
+              ? { action: "focus-workspace", label: "Finish loading Nolane", reason: workspace.reason }
+              : { action: "inspect", label: "Check workspace connection", reason: workspace.reason };
+        diagnosis.actions = [
+          workspace.reason,
+          session ? "The previous live session will be released before reconnecting." : "Once Nolane is connected, analyze this website again to start its live surface."
+        ];
+      }
       if (!session && captureInfo) {
         diagnosis.code = "CAPTURE_ALREADY_ACTIVE";
         diagnosis.severity = "warning";
@@ -828,6 +994,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         ok: true,
         site,
         diagnosis,
+        workspace,
         captureInfo: captureInfo ? { status: captureInfo.status, fullscreen: !!captureInfo.fullscreen } : null,
         profile: history ? {
           category: history.category,
@@ -853,14 +1020,51 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const sessions = await getLiveSessions();
       const session = Object.values(sessions).find((item) => item.sourceTabId === tab.id) || null;
       const recommendation = NolaneCompatibility.assessSession(session);
+      const workspace = await getWorkspaceConnectionStatus();
       let expectedAction = recommendation.action;
       if (!session) {
         const captured = await chrome.tabCapture.getCapturedTabs().catch(() => []);
-        expectedAction = (captured || []).some((item) => item.tabId === tab.id && ["pending", "active"].includes(item.status))
-          ? "inspect" : "start-capture";
+        if ((captured || []).some((item) => item.tabId === tab.id && ["pending", "active"].includes(item.status))) {
+          expectedAction = "inspect";
+        } else if (workspace.state === "missing") {
+          expectedAction = "open-workspace";
+        } else if (workspace.state === "refresh-required") {
+          expectedAction = "refresh-workspace";
+        } else if (workspace.state === "loading") {
+          expectedAction = "focus-workspace";
+        } else if (workspace.state !== "connected") {
+          expectedAction = "inspect";
+        } else {
+          expectedAction = "start-capture";
+        }
+      } else if (workspace.state !== "connected") {
+        expectedAction = workspace.state === "missing" ? "open-workspace"
+          : workspace.state === "refresh-required" ? "refresh-workspace"
+            : workspace.state === "loading" ? "focus-workspace" : "inspect";
       }
       if (message.action !== expectedAction) {
         throw new Error("The requested action is no longer recommended. Analyze this tab again and use its latest suggestion.");
+      }
+      if (["open-workspace", "refresh-workspace", "focus-workspace"].includes(expectedAction) && session) {
+        await removeLiveSession(session.surfaceId, "The Nolane workspace bridge disconnected. Releasing the previous live surface before reconnecting.", false, true);
+      }
+      if (expectedAction === "open-workspace") {
+        const opened = await chrome.tabs.create({ url: WORKSPACE_URL_PREFIX });
+        return { ok: true, action: expectedAction, tabId: opened.id, message: "Opened Nolane Infinite. Wait for it to finish loading, then open the Companion again." };
+      }
+      if (expectedAction === "refresh-workspace") {
+        if (message.confirmed !== true) throw new Error("Nolane is already open but its Companion bridge is not active. Confirm a page refresh; unsaved text may be lost.");
+        const workspaceTab = await chrome.tabs.get(workspace.tabId);
+        await chrome.tabs.reload(workspaceTab.id);
+        await chrome.tabs.update(workspaceTab.id, { active: true });
+        await chrome.windows.update(workspaceTab.windowId, { focused: true });
+        return { ok: true, action: expectedAction, message: "Refreshing the existing Nolane tab. Wait for it to finish loading, then open the Companion again." };
+      }
+      if (expectedAction === "focus-workspace") {
+        const workspaceTab = await chrome.tabs.get(workspace.tabId);
+        await chrome.tabs.update(workspaceTab.id, { active: true });
+        await chrome.windows.update(workspaceTab.windowId, { focused: true });
+        return { ok: true, action: expectedAction, message: "Nolane Infinite is still loading. Wait for it to finish, then reopen the Companion." };
       }
       if (expectedAction === "refresh-video") {
         await chrome.tabs.sendMessage(session.workspaceTabId, {
@@ -898,7 +1102,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (!isWorkspaceSender(sender)) {
         throw new Error("Only the published Nolane workspace can register this bridge.");
       }
-      await chrome.storage.session.set({ [WORKSPACE_KEY]: { tabId: sender.tab.id, url: sender.url } });
+      await rememberWorkspaceTab({ id: sender.tab.id, url: sender.url });
       const profileId = await profileIdPromise;
       return { ok: true, profileId };
     })());

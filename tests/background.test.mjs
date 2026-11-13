@@ -53,15 +53,18 @@ function createHarness(options = {}) {
       windowId: 1,
       active: false,
       url: "https://nolane-x.github.io/web-view/",
-      title: "Nolane Infinite"
+      title: "Nolane Infinite",
+      status: options.workspaceLoading ? "loading" : "complete"
     }]
   ]);
+
+  if (options.noWorkspaceTab) tabs.delete(20);
 
   const chrome = {
     runtime: {
       onMessage: runtimeMessage,
       getURL(path) { return "chrome-extension://nolane-test/" + path; },
-      getManifest() { return { version: "0.2.10" }; }
+      getManifest() { return { version: "0.2.11" }; }
     },
     storage: {
       local: {
@@ -69,7 +72,10 @@ function createHarness(options = {}) {
           const list = Array.isArray(keys) ? keys : [keys];
           return Object.fromEntries(list.map((key) => [key, localStore[key]]));
         },
-        async set(values) { Object.assign(localStore, values); }
+        async set(values) { Object.assign(localStore, values); },
+        async remove(keys) {
+          for (const key of (Array.isArray(keys) ? keys : [keys])) delete localStore[key];
+        }
       },
       session: {
         async get(keys) {
@@ -83,6 +89,30 @@ function createHarness(options = {}) {
       }
     },
     tabs: {
+      async query(queryInfo = {}) {
+        const all = [...tabs.values()];
+        return all.filter((tab) => {
+          if (queryInfo.url) {
+            const prefix = String(queryInfo.url).replace(/\*+$/, "");
+            if (typeof tab.url !== "string" || !tab.url.startsWith(prefix)) return false;
+          }
+          if (typeof queryInfo.active === "boolean" && !!tab.active !== queryInfo.active) return false;
+          return true;
+        }).map((tab) => ({ ...tab }));
+      },
+      async create(createData) {
+        const id = Math.max(0, ...tabs.keys()) + 1;
+        for (const existing of tabs.values()) existing.active = false;
+        const tab = { id, windowId: 1, active: true, url: createData.url, title: "Nolane Infinite" };
+        tabs.set(id, tab);
+        return { ...tab };
+      },
+      async reload(tabId) {
+        eventOrder.push("tabs.reload:" + tabId);
+        const tab = tabs.get(tabId);
+        if (!tab) throw new Error("No tab with id: " + tabId);
+        return { ...tab };
+      },
       async get(tabId) {
         const tab = tabs.get(tabId);
         if (!tab) throw new Error("No tab with id: " + tabId);
@@ -91,6 +121,10 @@ function createHarness(options = {}) {
       async sendMessage(tabId, message) {
         eventOrder.push("sendMessage:" + message.type);
         sentMessages.push({ tabId, message });
+        if (message.type === "NOLANE_WORKSPACE_PING") {
+          if (options.workspaceBridgeReady === false) throw new Error("Could not establish connection. Receiving end does not exist.");
+          return { ok: true, version: "0.2.11", url: "https://nolane-x.github.io/web-view/" };
+        }
         if (message.type === "NOLANE_LIVE_SURFACE_START") {
           if (options.workspaceSendError) throw new Error(options.workspaceSendError);
           if (typeof options.beforeAck === "function") await options.beforeAck(tabId, message);
@@ -227,9 +261,152 @@ function createHarness(options = {}) {
     tabUpdated,
     captureStatus,
     eventOrder,
-    windowCreates
+    windowCreates,
+    setWorkspaceBridgeReady(value) { options.workspaceBridgeReady = value; }
   };
 }
+
+test("workspace status distinguishes a loading tab from a missing bridge", async () => {
+  const h = createHarness({ workspaceLoading: true });
+  const workspace = await h.send(
+    { type: "NOLANE_GET_WORKSPACE_STATUS" },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  assert.equal(workspace.ok, true);
+  assert.equal(workspace.state, "loading");
+  assert.equal(workspace.tabId, 20);
+  assert.match(workspace.reason, /still loading/i);
+  const diagnosis = await h.send(
+    { type: "NOLANE_DIAGNOSE_TAB", tabId: 10 },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  assert.equal(diagnosis.diagnosis.recovery.action, "focus-workspace");
+});
+
+test("orphaned live sessions are released before workspace reconnection", async () => {
+  const h = createHarness();
+  await h.send(
+    { type: "NOLANE_REGISTER_WORKSPACE" },
+    { tab: { id: 20 }, url: "https://nolane-x.github.io/web-view/" }
+  );
+  const started = await h.send(
+    { type: "NOLANE_START_LIVE_SURFACE", tabId: 10 },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  assert.equal(started.ok, true);
+  h.setWorkspaceBridgeReady(false);
+  const diagnosis = await h.send(
+    { type: "NOLANE_DIAGNOSE_TAB", tabId: 10 },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  assert.equal(diagnosis.diagnosis.recovery.action, "refresh-workspace");
+  const applied = await h.send({
+    type: "NOLANE_APPLY_COMPATIBILITY_ACTION",
+    tabId: 10,
+    action: "refresh-workspace",
+    confirmed: true
+  }, { url: "chrome-extension://nolane-test/popup.html" });
+  assert.equal(applied.ok, true);
+  assert.equal(Object.keys(h.sessionStore.nolaneLiveSessions || {}).length, 0);
+  assert.ok(h.detachedTabs.includes(10));
+  assert.ok(h.eventOrder.includes("tabs.reload:20"));
+});
+
+test("workspace is rediscovered by URL and a versioned ping after extension session reset", async () => {
+  const h = createHarness();
+  const started = await h.send(
+    { type: "NOLANE_START_LIVE_SURFACE", tabId: 10 },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  assert.equal(started.ok, true);
+  assert.equal(h.localStore.nolaneWorkspaceTab.tabId, 20);
+  assert.ok(h.sentMessages.some((item) => item.message.type === "NOLANE_WORKSPACE_PING" && item.tabId === 20));
+});
+
+test("workspace status identifies a Nolane tab whose bridge needs a refresh", async () => {
+  const h = createHarness({ workspaceBridgeReady: false });
+  const workspace = await h.send(
+    { type: "NOLANE_GET_WORKSPACE_STATUS" },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  assert.equal(workspace.ok, true);
+  assert.equal(workspace.state, "refresh-required");
+  assert.equal(workspace.tabId, 20);
+  const started = await h.send(
+    { type: "NOLANE_START_LIVE_SURFACE", tabId: 10 },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  assert.equal(started.ok, false);
+  assert.match(started.error, /bridge is not running/i);
+  assert.equal(h.streamRequests.length, 0);
+});
+
+test("compatibility analysis recommends reconnecting Nolane before starting capture", async () => {
+  const h = createHarness({ workspaceBridgeReady: false });
+  const diagnosis = await h.send(
+    { type: "NOLANE_DIAGNOSE_TAB", tabId: 10 },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  assert.equal(diagnosis.ok, true);
+  assert.equal(diagnosis.workspace.state, "refresh-required");
+  assert.equal(diagnosis.diagnosis.recovery.action, "refresh-workspace");
+  assert.equal(diagnosis.diagnosis.recovery.label, "Reconnect Nolane workspace");
+  const applied = await h.send({
+    type: "NOLANE_APPLY_COMPATIBILITY_ACTION",
+    tabId: 10,
+    action: "refresh-workspace",
+    confirmed: true
+  }, { url: "chrome-extension://nolane-test/popup.html" });
+  assert.equal(applied.ok, true);
+  assert.equal(applied.action, "refresh-workspace");
+  assert.ok(h.eventOrder.includes("tabs.reload:20"));
+});
+
+test("compatibility analysis opens Nolane when no workspace tab exists", async () => {
+  const h = createHarness({ noWorkspaceTab: true });
+  const diagnosis = await h.send(
+    { type: "NOLANE_DIAGNOSE_TAB", tabId: 10 },
+    { url: "chrome-extension://nolane-test/popup.html" }
+  );
+  assert.equal(diagnosis.ok, true);
+  assert.equal(diagnosis.workspace.state, "missing");
+  assert.equal(diagnosis.diagnosis.recovery.action, "open-workspace");
+  const opened = await h.send({
+    type: "NOLANE_APPLY_COMPATIBILITY_ACTION",
+    tabId: 10,
+    action: "open-workspace"
+  }, { url: "chrome-extension://nolane-test/popup.html" });
+  assert.equal(opened.ok, true);
+  assert.equal(opened.action, "open-workspace");
+  assert.ok([...h.tabs.values()].some((tab) => tab.url === "https://nolane-x.github.io/web-view/"));
+});
+
+test("workspace reconnect action focuses a healthy tab or explicitly reloads a stale bridge", async () => {
+  const stale = createHarness({ workspaceBridgeReady: false });
+  const refreshed = await stale.send({
+    type: "NOLANE_RECONNECT_WORKSPACE",
+    confirmed: true
+  }, { url: "chrome-extension://nolane-test/popup.html" });
+  assert.equal(refreshed.ok, true);
+  assert.equal(refreshed.action, "refresh-workspace");
+  assert.ok(stale.eventOrder.includes("tabs.reload:20"));
+
+  const connected = createHarness();
+  const focused = await connected.send({
+    type: "NOLANE_RECONNECT_WORKSPACE"
+  }, { url: "chrome-extension://nolane-test/popup.html" });
+  assert.equal(focused.ok, true);
+  assert.equal(focused.action, "focus-workspace");
+  assert.ok(connected.windowUpdates.some((item) => item.windowId === 1 && item.changes.focused === true));
+
+  const loading = createHarness({ workspaceLoading: true });
+  const broughtForward = await loading.send({
+    type: "NOLANE_RECONNECT_WORKSPACE"
+  }, { url: "chrome-extension://nolane-test/popup.html" });
+  assert.equal(broughtForward.ok, true);
+  assert.equal(broughtForward.action, "focus-workspace");
+  assert.ok(loading.windowUpdates.some((item) => item.windowId === 1 && item.changes.focused === true));
+});
 
 test("live capture is tied to the active source tab and the exact Nolane consumer tab", async () => {
   const h = createHarness();
@@ -802,7 +979,7 @@ test("popup diagnostics are scoped to the companion and omit raw page URLs", asy
     { url: "chrome-extension://nolane-test/popup.html" }
   );
   assert.equal(diagnostic.ok, true);
-  assert.equal(diagnostic.extensionVersion, "0.2.10");
+  assert.equal(diagnostic.extensionVersion, "0.2.11");
   assert.equal(JSON.stringify(diagnostic.capturedTabs), JSON.stringify([{ tabId: 10, status: "active", fullscreen: false }]));
   assert.ok(Array.isArray(diagnostic.liveSessions));
   const denied = await h.send(

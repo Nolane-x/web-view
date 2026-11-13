@@ -55,3 +55,13 @@ main{padding:15px 17px 17px}
 .compat-apply{width:100%;min-height:31px;padding:7px 9px;border:1px solid rgba(167,139,250,.3);border-radius:6px;background:rgba(167,139,250,.11);color:#d6ccff;font-size:9px;font-weight:700;cursor:pointer}
 .compat-apply:hover:not(:disabled){background:rgba(167,139,250,.2);border-color:rgba(167,139,250,.5)}
 .compat-apply:disabled{opacity:.45;cursor:not-allowed}
+
+.workspace-status{padding:10px 11px;margin-top:8px;border:1px solid rgba(255,255,255,.09);border-radius:8px;background:#141a24}
+.workspace-status-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.workspace-status-heading h2{margin:0;font-size:11px}
+#workspaceStatusPill{flex:0 0 auto;padding:2px 7px;border-radius:20px;background:rgba(160,170,190,.12);color:#aab5c6;font-size:8px;font-weight:700}
+#workspaceStatusPill[data-state="connected"]{background:rgba(91,214,160,.12);color:#75d5a6}
+#workspaceStatusPill[data-state="warning"]{background:rgba(239,180,105,.12);color:#e3bd83}
+#workspaceStatusPill[data-state="loading"]{background:rgba(167,139,250,.12);color:#b9aaff}
+#workspaceStatusPill[data-state="missing"]{background:rgba(160,170,190,.12);color:#aab5c6}
+.workspace-status p{margin:5px 0 0;color:#9ca7ba;font-size:9px;line-height:1.5}

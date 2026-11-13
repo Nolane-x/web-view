@@ -9,7 +9,7 @@
 <body>
   <header class="header">
     <div class="mark">N</div>
-    <div><strong>Nolane Companion <span class="version">0.2.10</span></strong><small>Turn a real Chrome tab into a live canvas surface</small></div>
+    <div><strong>Nolane Companion <span class="version">0.2.11</span></strong><small>Turn a real Chrome tab into a live canvas surface</small></div>
   </header>
   <main>
     <div class="privacy">
@@ -39,6 +39,13 @@
       <div><strong>Why does Chrome show a powerful permission warning?</strong><p>The extension uses Chrome's debugger interface only to forward your mouse and keyboard input to the tab you explicitly stream. Chrome's permission also technically allows broader debugging access, so install this unpacked extension only from source you trust.</p></div>
     </section>
 
+    <section id="workspaceStatusPanel" class="workspace-status panel">
+      <div class="workspace-status-heading">
+        <h2 id="workspaceStatusTitle">Checking workspace connection</h2>
+        <span id="workspaceStatusPill" data-state="loading">Checking</span>
+      </div>
+      <p id="workspaceStatusText">Searching open Chrome tabs and checking the Companion bridge.</p>
+    </section>
     <section id="permissionPanel" class="panel">
       <h2>Optional tab import</h2>
       <p>Grant the Tabs permission only if you also want to scan open tabs and import their titles and URLs as cards.</p>
