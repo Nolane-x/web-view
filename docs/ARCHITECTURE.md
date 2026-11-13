@@ -81,3 +81,10 @@ Workspace snapshots are profile-local too: moving from Chrome to the native host
 The host clears stale Chrome tab IDs from imported nodes before rendering when no matching Companion profile is connected. This converts imported tab cards to URL-backed native cards instead of leaving a permanently misleading Focus Chrome action.
 
 Each child WebView2 receives its original un-clipped bounds plus a local RectangleGeometry clip computed from the intersection with the canvas viewport. This preserves page layout while ensuring the native overlay cannot draw or receive input outside the canvas area.
+
+
+## Native browser control plane
+
+The web-to-host protocol is a versioned, allow-listed command surface: back, forward, reload, stop, toggle mute and open external. Card controls are only rendered when a website is actually owned by the native host; a connected Companion Chrome tab is never covered. `native-bridge.js` validates command names, message shape, state values and HTTP(S) URLs, and its contract is covered by Node unit tests. Native state reports include history availability, audio state, title and current safe URL; the workspace persists the active URL so a later session returns to the last page rather than the originally imported URL.
+
+The host detects the installed Evergreen WebView2 Runtime before initialization and watches for newer runtime versions. Per-site WebView2 permissions are never silently auto-granted: each request requires a native Allow once/Block dialog and is not persisted in the WebView profile. The built-in WebView2 download dialog remains user-controlled. New-window requests are allowed to open externally only when they were triggered by a user gesture, preventing background popup spam. URLs containing embedded username/password credentials or non-HTTP(S) schemes are rejected by the native navigation boundary.

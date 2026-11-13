@@ -28,3 +28,8 @@ The app requires the Microsoft Edge WebView2 Evergreen Runtime. Windows 11 norma
 ## Current boundaries
 
 This is an initial native-surface integration, not a replacement for all Chrome browser UI. Chrome-owned passkeys and extensions are not inherited. Some popup or download flows may open in separate windows or the system browser. Browser permission prompts remain controlled by WebView2. Use the Chrome Companion if an already-authenticated Chrome tab is required.
+
+
+## Browser controls, permissions and runtime
+
+Native cards expose per-site Back, Forward, Reload and Mute controls. Active page URLs and history/audio state are synced to the canvas. The host checks for the Evergreen WebView2 Runtime and reports updates that require a restart. Privileged WebView2 permissions use an explicit native Allow once/Block dialog and are not persisted. Downloads retain the WebView2 native save dialog. Unsolicited popups are blocked; user-initiated popups open externally.

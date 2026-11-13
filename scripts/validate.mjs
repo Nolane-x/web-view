@@ -72,6 +72,9 @@ if (!html.includes('id="bridgeDialog"') || !html.includes("Companion not detecte
 else pass("Browser Companion status is explicit and does not imply a working extension.");
 if (!js.includes("Chrome Companion and Native Host connected") || !js.includes("Native WebView2 host connected") || !js.includes("setBridgeConnected(bridgeConnected, bridgeSessionId)")) fail("Browser status UI must distinguish Chrome Companion and the native WebView2 host.");
 else pass("Browser status distinguishes the Chrome Companion, native host and combined mode.");
+if (!html.includes('<script src="./native-bridge.js" defer></script>') ||
+    !html.includes("i-arrow-left") || !html.includes("i-volume-2")) fail("Native bridge script or browser-toolbar icons are missing.");
+else pass("Native bridge contract loads before the workspace and its control icons exist.");
 if (!html.includes("https://github.com/Nolane-x/web-view/releases/download/native-latest/nolane-native-webview2-host-win-x64.zip") || !html.includes("Native WebView2 Host (Windows x64)") ||
     !html.includes("does not copy Chrome cookies")) fail("The native Windows browser host download and separate-profile disclosure are missing.");
 else pass("The website exposes the direct native Windows host download and Chrome-profile separation warning.");
@@ -217,6 +220,8 @@ else pass("Original-tab focus remains tied to its browser profile.");
 const nativeHost = read("desktop-host/MainWindow.xaml.cs");
 const nativeProject = read("desktop-host/Nolane.DesktopHost.csproj");
 const nativeWorkflow = read(".github/workflows/desktop-host.yml");
+const nativeBridge = read("native-bridge.js");
+const nativeBridgeTests = read("tests/native-bridge.test.mjs");
 if (!nativeHost.includes("nolane.surfaces.sync") || !nativeHost.includes("EnsureCoreWebView2Async") || !nativeHost.includes("CreateWithOptionsAsync") ||
     !nativeHost.includes("TrySuspendAsync") || !nativeHost.includes("MaxVisibleSurfaces = 4") ||
     !nativeHost.includes("RectangleGeometry") || !nativeHost.includes("item.ClipWidth")) fail("Native WebView2 host must create real browser surfaces, bound renderers and clip child browsers to the canvas viewport.");
@@ -226,6 +231,20 @@ if (!nativeProject.includes("Microsoft.WindowsAppSDK") || !nativeProject.include
 else pass("Native host targets WinUI 3 on Windows 10 19041+ with self-contained Windows App SDK.");
 if (!nativeHost.includes("WorkspaceView.Loaded += MainWindow_Loaded")) fail("Native browser host must initialize WebView2 from its control Loaded event.");
 else pass("Native browser host starts initialization only after the WebView2 control is loaded.");
+if (!nativeHost.includes("GetAvailableBrowserVersionString") || !nativeHost.includes("NewBrowserVersionAvailable")) fail("Native host must detect the Evergreen WebView2 Runtime and newer runtime updates.");
+else pass("Native host checks runtime availability and detects browser-runtime updates.");
+if (!nativeHost.includes("PermissionRequested") || !nativeHost.includes("Allow once") ||
+    !nativeHost.includes("SavesInProfile = false") || !nativeHost.includes("CoreWebView2PermissionState.Denied")) fail("Native website permissions must require an explicit non-persistent user decision.");
+else pass("Native website permissions require an explicit Allow once/Block decision.");
+if (!nativeHost.includes("DownloadStarting") || !nativeHost.includes("IsUserInitiated") ||
+    !nativeHost.includes("IsSafeWebUri(url)")) fail("Native browser downloads, popup gesture checks or URL restrictions are incomplete.");
+else pass("Native browser retains user-controlled downloads, blocks unsolicited popups and rejects credential/non-web URLs.");
+if (!nativeHost.includes("core.HistoryChanged") || !nativeHost.includes("core.IsMutedChanged") ||
+    !nativeHost.includes("core.IsDocumentPlayingAudioChanged") || !nativeHost.includes("ExecuteSurfaceCommand")) fail("Native browser history/audio controls and state reporting are incomplete.");
+else pass("Native browser exposes per-surface navigation, audio controls and state telemetry.");
+if (!nativeBridge.includes("createCommand") || !nativeBridge.includes("normalizeSurfaceState") ||
+    !nativeBridgeTests.includes("allow-listed protocol") || !nativeBridgeTests.includes("rejects credentials")) fail("The native browser message contract is not independently testable.");
+else pass("The native browser command/state contract is independently testable.");
 if (!nativeWorkflow.includes("runs-on: windows-latest") || !nativeWorkflow.includes("dotnet publish") ||
     !nativeWorkflow.includes("upload-artifact") || !nativeWorkflow.includes("Nolane.DesktopHost.exe")) fail("Native Windows build workflow is incomplete.");
 else pass("Dedicated Windows CI builds and packages the native browser host.");
@@ -243,6 +262,8 @@ if (!nativeSyncFunction.includes("bridgeConnected && node.browserTabId !== undef
     !js.includes("clearUnavailableChromeTabBindings();")) fail("Native WebView2 must preserve current Chrome sessions and convert stale imported tab IDs.");
 else pass("Native WebView2 surfaces preserve Chrome-owned tabs and active Chrome live streams.");
 if (!js.includes("scheduleNativeSurfaceSync") || !js.includes("chrome.webview.postMessage") ||
+    !js.includes("postNativeSurfaceCommand") || !js.includes("native-back") ||
+    !js.includes("native-forward") || !js.includes("native-mute") ||
     !js.includes("nolane.native.ready") || !js.includes("nolane.native.surface") ||
     !js.includes("dialog[open], #sidebar.open") || !js.includes("new MutationObserver(scheduleNativeSurfaceSync)") ||
     !filterFunction.includes("scheduleNativeSurfaceSync()") || !selectionFunction.includes("scheduleNativeSurfaceSync()")) fail("Static workspace/native browser bridge or native overlay/filter/z-order synchronization is incomplete.");

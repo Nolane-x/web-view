@@ -1,5 +1,5 @@
-const CACHE_NAME = "nolane-infinite-shell-v15";
-const ASSETS = ["", "index.html", "styles.css", "app.js", "manifest.webmanifest", "icon.svg"];
+const CACHE_NAME = "nolane-infinite-shell-v16";
+const ASSETS = ["", "index.html", "styles.css", "native-bridge.js", "app.js", "manifest.webmanifest", "icon.svg"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

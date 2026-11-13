@@ -95,3 +95,8 @@ The Windows host has its own WebView2 browser profile, including the workspace's
 When an exported Chrome workspace is imported in the native host, old Chrome-only tab IDs are cleared because the native host cannot access the Chrome profile. Their saved URLs become normal native website cards; you sign in again in the WebView2 profile.
 
 Native browser controls are clipped to the live canvas viewport, so dragging a card across the workspace edge cannot make a child browser cover the sidebar or top bar.
+
+
+## Native browser controls and safety
+
+Each native website card now has independent Back, Forward, Reload and Mute controls. The current HTTP(S) page address is synced back into the workspace, so navigation survives a future restart/export. WebView2 runtime availability is checked at startup and updates are detected; restart Nolane after a runtime update is ready. Camera, microphone, geolocation, notifications and other WebView2 permissions are requested through an explicit Allow once/Block prompt and are not persisted by Nolane. WebView2 keeps its native user-driven download dialog. Unsolicited `window.open` popups are blocked; user-initiated popups open in the system browser.

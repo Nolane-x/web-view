@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -25,6 +26,8 @@ public sealed partial class MainWindow : Window
     private long _syncRevision;
     private List<SurfaceDescriptor>? _pendingSurfaceSync;
     private bool _surfaceSyncRunning;
+    private readonly SemaphoreSlim _permissionDialogGate = new(1, 1);
+    private bool _runtimeUpdateAvailable;
 
     public MainWindow()
     {
@@ -38,10 +41,30 @@ public sealed partial class MainWindow : Window
     {
         try
         {
+            string runtimeVersion;
+            try { runtimeVersion = CoreWebView2Environment.GetAvailableBrowserVersionString(); }
+            catch (Exception runtimeError)
+            {
+                await ShowErrorAsync(
+                    "The Microsoft Edge WebView2 Runtime is missing or unavailable. Install the Evergreen Runtime, then reopen Nolane.",
+                    runtimeError.Message + Environment.NewLine + "https://go.microsoft.com/fwlink/p/?LinkId=2124703");
+                StatusText.Text = "WebView2 Runtime required";
+                return;
+            }
+
             var userData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "Nolane", "NativeWebView2", "UserData");
             Directory.CreateDirectory(userData);
             _environment = await CoreWebView2Environment.CreateWithOptionsAsync(null, userData, new CoreWebView2EnvironmentOptions());
+            _environment.NewBrowserVersionAvailable += (_, _) =>
+            {
+                _runtimeUpdateAvailable = true;
+                StatusText.Text = "A WebView2 security/runtime update is ready. Save your workspace and restart Nolane to apply it.";
+            };
+            _environment.BrowserProcessExited += (_, _) =>
+            {
+                StatusText.Text = "WebView2 browser process exited. Reload the workspace if it does not recover.";
+            };
             await WorkspaceView.EnsureCoreWebView2Async(_environment);
             WorkspaceView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
             WorkspaceView.CoreWebView2.Settings.IsStatusBarEnabled = false;
@@ -49,8 +72,10 @@ public sealed partial class MainWindow : Window
             WorkspaceView.CoreWebView2.NavigationCompleted += Workspace_NavigationCompleted;
             WorkspaceView.CoreWebView2.NewWindowRequested += Workspace_NewWindowRequested;
             WorkspaceView.CoreWebView2.WebMessageReceived += Workspace_WebMessageReceived;
+            WorkspaceView.CoreWebView2.ProcessFailed += (_, args) =>
+                StatusText.Text = "Workspace browser process failed: " + args.ProcessFailedKind + ". Use Reload workspace.";
             WorkspaceView.Source = new Uri(WorkspaceUrl);
-            StatusText.Text = "Loading private workspace…";
+            StatusText.Text = "WebView2 " + runtimeVersion + " · Loading private workspace…";
         }
         catch (Exception ex)
         {
@@ -77,7 +102,7 @@ public sealed partial class MainWindow : Window
     private void Workspace_NewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
     {
         e.Handled = true;
-        OpenExternal(e.Uri);
+        if (e.IsUserInitiated) OpenExternal(e.Uri);
     }
 
     private void Workspace_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -93,6 +118,12 @@ public sealed partial class MainWindow : Window
             {
                 _workspaceReady = true;
                 PostWorkspaceMessage(new { type = "nolane.native.ready", protocol = 1, engine = "WebView2", maxVisibleSurfaces = MaxVisibleSurfaces });
+                return;
+            }
+            if (type == "nolane.surface.command")
+            {
+                if (TryGetString(root, "id", out var surfaceId) && TryGetString(root, "action", out var action))
+                    ExecuteSurfaceCommand(surfaceId, action);
                 return;
             }
             if (type != "nolane.surfaces.sync") return;
@@ -202,26 +233,47 @@ public sealed partial class MainWindow : Window
             core.NewWindowRequested += (_, args) =>
             {
                 args.Handled = true;
-                OpenExternal(args.Uri);
+                if (args.IsUserInitiated) OpenExternal(args.Uri);
             };
             core.NavigationStarting += (_, args) =>
             {
-                if (Uri.TryCreate(args.Uri, UriKind.Absolute, out var uri) &&
-                    (uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
-                     uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))) return;
+                if (IsSafeWebUri(args.Uri))
+                {
+                    PublishSurfaceState(surface, "loading", "Loading " + SafeHost(args.Uri));
+                    return;
+                }
                 args.Cancel = true;
                 OpenExternal(args.Uri);
             };
             core.NavigationCompleted += (_, args) =>
             {
-                if (args.IsSuccess) PublishSurfaceStatus(item.Id, "ready", SafeHost(core.Source));
-                else PublishSurfaceStatus(item.Id, "error", "Navigation failed: " + args.WebErrorStatus);
+                if (IsSafeWebUri(core.Source)) surface.Url = new Uri(core.Source).ToString();
+                PublishSurfaceState(surface,
+                    args.IsSuccess ? "ready" : "error",
+                    args.IsSuccess ? SafeHost(core.Source) : "Navigation failed: " + args.WebErrorStatus);
             };
-            core.ProcessFailed += (_, args) => PublishSurfaceStatus(item.Id, "error", "Browser renderer stopped: " + args.ProcessFailedKind);
-            PublishSurfaceStatus(item.Id, "loading", "Starting native browser surface.");
-            core.Navigate(item.Url);
+            core.SourceChanged += (_, _) =>
+            {
+                if (IsSafeWebUri(core.Source)) surface.Url = new Uri(core.Source).ToString();
+                PublishSurfaceState(surface, "ready", "Address changed");
+            };
+            core.HistoryChanged += (_, _) => PublishSurfaceState(surface, "ready", "Navigation history updated");
+            core.DocumentTitleChanged += (_, _) => PublishSurfaceState(surface, "ready", "Page title updated");
+            core.IsMutedChanged += (_, _) => PublishSurfaceState(surface, "ready", "Audio setting updated");
+            core.IsDocumentPlayingAudioChanged += (_, _) => PublishSurfaceState(surface, "ready", "Audio state updated");
+            core.DownloadStarting += (_, args) =>
+            {
+                var fileName = Path.GetFileName(args.ResultFilePath);
+                PublishSurfaceState(surface, "ready", string.IsNullOrWhiteSpace(fileName) ? "Download started" : "Download started: " + fileName);
+                // Keep WebView2's native Save dialog. The user chooses the destination.
+            };
+            core.PermissionRequested += (_, args) => HandleSurfacePermissionAsync(surface, args);
+            core.ProcessFailed += (_, args) =>
+                PublishSurfaceState(surface, "error", "Browser process stopped: " + args.ProcessFailedKind + ". Use Reload to try again.");
             surface.Url = item.Url;
             surface.Initialized = true;
+            PublishSurfaceState(surface, "loading", "Starting native browser surface.");
+            core.Navigate(item.Url);
             return surface;
         }
         catch (Exception ex)
@@ -244,6 +296,7 @@ public sealed partial class MainWindow : Window
             {
                 try { surface.View.CoreWebView2.Resume(); } catch { }
                 surface.Suspended = false;
+                PublishSurfaceState(surface, "ready", "Website resumed");
             }
         }
         else
@@ -304,6 +357,89 @@ public sealed partial class MainWindow : Window
         };
     }
 
+    private void ExecuteSurfaceCommand(string id, string action)
+    {
+        if (!_surfaces.TryGetValue(id, out var surface) || !surface.Initialized || surface.Suspended) return;
+        var core = surface.View.CoreWebView2;
+        try
+        {
+            switch (action)
+            {
+                case "back":
+                    if (core.CanGoBack) core.GoBack();
+                    break;
+                case "forward":
+                    if (core.CanGoForward) core.GoForward();
+                    break;
+                case "reload":
+                    core.Reload();
+                    break;
+                case "stop":
+                    core.Stop();
+                    PublishSurfaceState(surface, "ready", "Navigation stopped");
+                    break;
+                case "toggle-mute":
+                    core.IsMuted = !core.IsMuted;
+                    PublishSurfaceState(surface, "ready", core.IsMuted ? "Website audio muted" : "Website audio unmuted");
+                    break;
+                case "open-external":
+                    OpenExternal(core.Source);
+                    break;
+                default:
+                    return;
+            }
+        }
+        catch (Exception ex)
+        {
+            PublishSurfaceState(surface, "error", "Browser command failed: " + ex.Message);
+        }
+    }
+
+    private async void HandleSurfacePermissionAsync(BrowserSurface surface, CoreWebView2PermissionRequestedEventArgs args)
+    {
+        var deferral = args.GetDeferral();
+        try
+        {
+            await _permissionDialogGate.WaitAsync();
+            try
+            {
+                var origin = SafeHost(args.Uri);
+                var dialog = new ContentDialog
+                {
+                    Title = "Website permission request",
+                    Content = origin + " wants access to: " + args.PermissionKind +
+                        Environment.NewLine + Environment.NewLine +
+                        "Allow only if you expected this request. Nolane will not save this decision in the browser profile.",
+                    PrimaryButtonText = "Allow once",
+                    CloseButtonText = "Block",
+                    DefaultButton = ContentDialogButton.Close,
+                    XamlRoot = Content.XamlRoot
+                };
+                args.SavesInProfile = false;
+                var result = await dialog.ShowAsync();
+                args.State = result == ContentDialogResult.Primary
+                    ? CoreWebView2PermissionState.Allowed
+                    : CoreWebView2PermissionState.Denied;
+                PublishSurfaceState(surface, "ready",
+                    result == ContentDialogResult.Primary
+                        ? "Allowed one-time permission: " + args.PermissionKind
+                        : "Blocked permission: " + args.PermissionKind);
+            }
+            finally
+            {
+                _permissionDialogGate.Release();
+            }
+        }
+        catch
+        {
+            args.State = CoreWebView2PermissionState.Denied;
+        }
+        finally
+        {
+            deferral.Complete();
+        }
+    }
+
     private void PostWorkspaceMessage(object message)
     {
         try
@@ -314,15 +450,48 @@ public sealed partial class MainWindow : Window
         catch { }
     }
 
+    private void PublishSurfaceState(BrowserSurface surface, string state, string detail)
+    {
+        try
+        {
+            var core = surface.View.CoreWebView2;
+            PostWorkspaceMessage(new
+            {
+                type = "nolane.native.surface",
+                id = surface.Id,
+                state,
+                detail = StringRaw(detail, 240),
+                url = IsSafeWebUri(core.Source) ? core.Source : "",
+                title = StringRaw(core.DocumentTitle, 160),
+                canGoBack = core.CanGoBack,
+                canGoForward = core.CanGoForward,
+                isMuted = core.IsMuted,
+                isPlayingAudio = core.IsDocumentPlayingAudio
+            });
+        }
+        catch
+        {
+            PublishSurfaceStatus(surface.Id, state, detail);
+        }
+    }
+
+    private static string StringRaw(string? value, int maxLength) =>
+        string.IsNullOrEmpty(value) ? "" : value[..Math.Min(value.Length, maxLength)];
+
     private void PublishSurfaceStatus(string id, string state, string detail) =>
         PostWorkspaceMessage(new { type = "nolane.native.surface", id, state, detail });
+
+    private static bool IsSafeWebUri(string value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
+        (uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
+         uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) &&
+        string.IsNullOrEmpty(uri.UserInfo);
 
     private static bool TryParseDescriptor(JsonElement element, out SurfaceDescriptor descriptor)
     {
         descriptor = default!;
         if (!TryGetString(element, "id", out var id) || !TryGetString(element, "url", out var url) ||
-            !Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
-            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)) return false;
+            !IsSafeWebUri(url)) return false;
         var x = ReadNumber(element, "x");
         var y = ReadNumber(element, "y");
         var width = ReadNumber(element, "width");
@@ -354,6 +523,7 @@ public sealed partial class MainWindow : Window
     private static bool IsTrustedWorkspaceUri(string value) =>
         Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
         uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) &&
+        string.IsNullOrEmpty(uri.UserInfo) &&
         uri.Host.Equals(WorkspaceHost, StringComparison.OrdinalIgnoreCase) &&
         (uri.AbsolutePath.Equals("/web-view", StringComparison.OrdinalIgnoreCase) ||
          uri.AbsolutePath.StartsWith("/web-view/", StringComparison.OrdinalIgnoreCase));

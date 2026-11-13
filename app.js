@@ -43,6 +43,7 @@
   let bridgeConnected = false;
   let bridgeSessionId = "";
   const liveSurfaces = new Map();
+  const nativeSurfaceStates = new Map();
   const stoppedLiveSurfaceIds = new Set();
 
   const uid = () => "node-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
@@ -405,6 +406,26 @@
     scheduleNativeSurfaceSync();
   }
 
+  function isChromeOwnedNode(node) {
+    return !!(bridgeConnected && node && node.browserTabId !== undefined &&
+      node.browserSessionId === bridgeSessionId);
+  }
+
+  function canUseNativeSurface(node) {
+    return !!(nativeHostAvailable && node && node.type === "website" &&
+      !isChromeOwnedNode(node) && !liveSurfaces.has(node.id));
+  }
+
+  function postNativeSurfaceCommand(surfaceId, action) {
+    const command = window.NolaneNativeBridge?.createCommand(surfaceId, action);
+    if (!command || !window.chrome?.webview?.postMessage) {
+      toast("Native browser controls are not connected.", "error");
+      return;
+    }
+    try { window.chrome.webview.postMessage(command); }
+    catch (_) { toast("Could not send the browser command to Native Host.", "error"); }
+  }
+
   function scheduleNativeSurfaceSync() {
     if (!nativeHostAvailable || !window.chrome?.webview?.postMessage || nativeSyncFrame) return;
     nativeSyncFrame = requestAnimationFrame(() => {
@@ -412,10 +433,7 @@
       const area = canvas.getBoundingClientRect();
       const items = [];
       for (const node of nodes) {
-        const linkedChromeTab = bridgeConnected && node.browserTabId !== undefined &&
-          node.browserSessionId === bridgeSessionId;
-        if (node.type !== "website" || linkedChromeTab ||
-            liveSurfaces.has(node.id) || items.length >= 80) continue;
+        if (!canUseNativeSurface(node) || items.length >= 80) continue;
         const card = $('.node[data-id="' + CSS.escape(node.id) + '"]', world);
         const body = card?.querySelector(".node-body");
         if (!body) continue;
@@ -461,7 +479,21 @@
       return;
     }
     if (message.type === "nolane.native.surface") {
-      const card = $('.node[data-id="' + CSS.escape(String(message.id || "")) + '"]', world);
+      const state = window.NolaneNativeBridge?.normalizeSurfaceState(message);
+      if (!state) return;
+      nativeSurfaceStates.set(state.id, state);
+      const node = nodes.find((item) => item.id === state.id);
+      if (node && state.url) {
+        try {
+          const currentUrl = normalizeUrl(state.url);
+          if (node.url !== currentUrl) {
+            node.url = currentUrl;
+            scheduleSave();
+            scheduleNativeSurfaceSync();
+          }
+        } catch (_) {}
+      }
+      const card = $('.node[data-id="' + CSS.escape(state.id) + '"]', world);
       if (!card) return;
       let status = card.querySelector(".native-surface-status");
       if (!status) {
@@ -470,10 +502,23 @@
         card.querySelector(".node-title-wrap")?.appendChild(status);
       }
       const states = { ready: "NATIVE WEB", loading: "LOADING WEB", suspended: "PAUSED", limit: "LIMIT", error: "WEB ERROR" };
-      status.dataset.state = String(message.state || "loading");
-      status.textContent = states[message.state] || "NATIVE WEB";
-      status.title = String(message.detail || "Native WebView2 browser surface");
-      if (message.state === "limit") toast("Only four native website surfaces are active at once. Pan the canvas or hide another card.", "error");
+      status.dataset.state = state.state;
+      status.textContent = states[state.state] || "NATIVE WEB";
+      status.title = state.detail || "Native WebView2 browser surface";
+
+      const back = card.querySelector('[data-action="native-back"]');
+      const forward = card.querySelector('[data-action="native-forward"]');
+      const mute = card.querySelector('[data-action="native-mute"]');
+      if (back) back.disabled = !state.canGoBack;
+      if (forward) forward.disabled = !state.canGoForward;
+      if (mute) {
+        mute.title = state.isMuted ? "Unmute this website" : "Mute this website";
+        mute.setAttribute("aria-label", mute.title);
+        mute.innerHTML = '<svg class="icon"><use href="#' + (state.isMuted ? "i-volume-x" : "i-volume-2") + '"/></svg>';
+        mute.dataset.muted = state.isMuted ? "true" : "false";
+        mute.dataset.playing = state.isPlayingAudio ? "true" : "false";
+      }
+      if (state.state === "limit") toast("Only four native website surfaces are active at once. Pan the canvas or hide another card.", "error");
     }
   }
 
@@ -569,10 +614,19 @@
     article.style.zIndex = node.z || 1;
     const header = document.createElement("div");
     header.className = "node-header";
+    const nativeState = nativeSurfaceStates.get(node.id) || {};
+    const nativeTools = canUseNativeSurface(node)
+      ? '<span class="native-card-tools" aria-label="Native browser controls">' +
+        '<button class="node-action native-node-action" data-action="native-back" title="Go back" aria-label="Go back"' + (nativeState.canGoBack ? "" : " disabled") + '><svg class="icon"><use href="#i-arrow-left"/></svg></button>' +
+        '<button class="node-action native-node-action" data-action="native-forward" title="Go forward" aria-label="Go forward"' + (nativeState.canGoForward ? "" : " disabled") + '><svg class="icon"><use href="#i-arrow-right"/></svg></button>' +
+        '<button class="node-action native-node-action" data-action="native-reload" title="Reload website" aria-label="Reload website"><svg class="icon"><use href="#i-refresh"/></svg></button>' +
+        '<button class="node-action native-node-action" data-action="native-mute" title="' + (nativeState.isMuted ? "Unmute this website" : "Mute this website") + '" aria-label="' + (nativeState.isMuted ? "Unmute this website" : "Mute this website") + '"><svg class="icon"><use href="#' + (nativeState.isMuted ? "i-volume-x" : "i-volume-2") + '"/></svg></button>' +
+        '</span>'
+      : "";
     header.innerHTML =
       '<span class="node-favicon">' + (node.type === "website" ? escapeHTML(initials(hostOf(node.url))) : '<svg class="icon"><use href="#i-sticky"/></svg>') + '</span>' +
       '<span class="node-title-wrap"><span class="node-title">' + escapeHTML(node.title) + '</span><span class="node-subtitle">' + escapeHTML(node.type === "website" ? ((node.browserTabId !== undefined ? "Chrome tab · " : "") + hostOf(node.url)) : "Personal note") + '</span></span>' +
-      '<span class="node-actions">' +
+      '<span class="node-actions">' + nativeTools +
         (node.type === "website" ? '<button class="node-action" data-action="open" title="' + (node.browserTabId !== undefined ? "Switch to existing Chrome tab" : "Open in browser") + '"><svg class="icon"><use href="#i-external"/></svg></button>' : '<button class="node-action" data-action="edit" title="Edit note"><svg class="icon"><use href="#i-sticky"/></svg></button>') +
         '<button class="node-action" data-action="delete" title="Remove"><svg class="icon"><use href="#i-x"/></svg></button>' +
       '</span>';
@@ -1453,6 +1507,10 @@
     const node = nodes.find((item) => item.id === article.dataset.id);
     if (!node) return;
     const action = button.dataset.action;
+    if (action === "native-back") postNativeSurfaceCommand(node.id, "back");
+    if (action === "native-forward") postNativeSurfaceCommand(node.id, "forward");
+    if (action === "native-reload") postNativeSurfaceCommand(node.id, "reload");
+    if (action === "native-mute") postNativeSurfaceCommand(node.id, "toggle-mute");
     if (action === "open" && node.type === "website") openWebsite(node);
     if (action === "open-url" && node.type === "website") openWebsiteUrl(node);
     if (action === "delete") deleteNode(node.id);
