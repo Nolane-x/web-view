@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Nolane Browser Companion",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "minimum_chrome_version": "116",
-  "description": "Capture real Chrome tabs into Nolane, preserve source visibility, diagnose site compatibility and recover live video.",
+  "description": "Capture real Chrome tabs into Nolane, diagnose site compatibility and safely apply recommended video recovery actions.",
   "permissions": [
     "storage",
     "activeTab",
