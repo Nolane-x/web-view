@@ -117,3 +117,5 @@ The Native Host includes a private Library with browsing History and Bookmarks. 
 The Native Library supports instant search across page title, domain and safe stored address in both History and Bookmarks.
 
 Library data can be exported as a versioned JSON backup and merged on another Windows machine. Import validates the schema, a 5 MiB file limit, maximum history/bookmark counts and every URL before showing a confirmation; it never silently replaces the current Library. The backup contains only sanitized History and Bookmarks, not cookies, passwords, WebView2 profiles, download records or Chrome data.
+
+Library backup/restore uses the native WinUI desktop file picker. Run Nolane normally (not as administrator) to use this feature; the host detects elevated mode and explains why the picker cannot be opened.

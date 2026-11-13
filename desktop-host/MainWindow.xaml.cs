@@ -10,7 +10,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.WebView2.Core;
-using Microsoft.Windows.Storage.Pickers;
+using Windows.Storage.Pickers;
+using System.Security.Principal;
 
 namespace Nolane.DesktopHost;
 
@@ -1378,24 +1379,28 @@ public sealed partial class MainWindow : Window
     private void LibrarySearch_TextChanged(object sender, TextChangedEventArgs e) =>
         RefreshLibraryUi();
 
+    private static void EnsureNonElevatedFilePickerMode()
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        var principal = new WindowsPrincipal(identity);
+        if (principal.IsInRole(WindowsBuiltInRole.Administrator))
+            throw new InvalidOperationException("Library backup uses the Windows desktop file picker, which does not support elevated applications. Close Nolane and reopen it normally, without Run as administrator.");
+    }
+
     private async void ExportLibrary_Click(object sender, RoutedEventArgs e)
     {
         try
         {
-            var picker = new FileSavePicker(AppWindow.Id)
+            EnsureNonElevatedFilePickerMode();
+            var picker = new FileSavePicker
             {
                 SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
                 SuggestedFileName = "Nolane-Library-" + DateTime.Now.ToString("yyyyMMdd"),
                 DefaultFileExtension = ".json",
-                CommitButtonText = "Export backup",
-                Title = "Export Nolane Library",
-                SettingsIdentifier = "NolaneLibraryBackupExport",
-                ShowOverwritePrompt = true,
-                FileTypeChoices =
-                {
-                    { "Nolane Library backup", new List<string> { ".json" } }
-                }
+                CommitButtonText = "Export backup"
             };
+            picker.FileTypeChoices.Add("Nolane Library backup", new List<string> { ".json" });
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
 
             var result = await picker.PickSaveFileAsync();
             if (result is null) return;
@@ -1425,14 +1430,14 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-            var picker = new FileOpenPicker(AppWindow.Id)
+            EnsureNonElevatedFilePickerMode();
+            var picker = new FileOpenPicker
             {
                 SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
-                CommitButtonText = "Validate backup",
-                Title = "Import Nolane Library backup",
-                SettingsIdentifier = "NolaneLibraryBackupImport",
-                FileTypeFilter = { ".json" }
+                CommitButtonText = "Validate backup"
             };
+            picker.FileTypeFilter.Add(".json");
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
 
             var result = await picker.PickSingleFileAsync();
             if (result is null) return;

@@ -264,12 +264,14 @@ if (!nativeHost.includes("OpenLibraryUrl") || !nativeHost.includes("GetLibraryTa
     !js.includes("native-bookmark") || !js.includes("toggle-bookmark")) fail("Native browser Library UI, per-card bookmark control or instant search is incomplete.");
 else pass("Native Library opens history/bookmarks in the focused website card, supports per-card bookmarks and filters title/domain/address instantly.");
 if (!nativeHost.includes("ExportLibrary_Click") || !nativeHost.includes("ImportLibrary_Click") ||
-    !nativeHost.includes("FileSavePicker(AppWindow.Id)") || !nativeHost.includes("FileOpenPicker(AppWindow.Id)") ||
-    !nativeHost.includes("SchemaVersion != 1") || !nativeHost.includes("MaxLibraryBackupBytes") ||
-    !nativeHost.includes("stagedHistory") || !nativeHost.includes("stagedBookmarks") ||
-    !nativeHost.includes("ContentDialogResult.Primary") || !nativeXaml.includes("Export backup") ||
-    !nativeXaml.includes("Import backup")) fail("Native Library backup/restore must use WinAppSDK pickers, enforce schema/size limits and stage before user-approved merge.");
-else pass("Native Library backup/restore uses WinAppSDK pickers, versioned JSON, size/count limits, URL sanitization and a staged user-approved merge.");
+    !nativeHost.includes("new FileSavePicker") || !nativeHost.includes("new FileOpenPicker") ||
+    !nativeHost.includes("InitializeWithWindow.Initialize") || !nativeHost.includes("WindowNative.GetWindowHandle(this)") ||
+    !nativeHost.includes("EnsureNonElevatedFilePickerMode") || !nativeHost.includes("SchemaVersion != 1") ||
+    !nativeHost.includes("MaxLibraryBackupBytes") || !nativeHost.includes("stagedHistory") ||
+    !nativeHost.includes("stagedBookmarks") || !nativeHost.includes("ContentDialogResult.Primary") ||
+    !nativeXaml.includes("Export backup") || !nativeXaml.includes("Import backup") ||
+    nativeProject.includes("Microsoft.Web.WebView2")) fail("Native Library backup/restore picker integration or its WebView2 dependency isolation is invalid.");
+else pass("Native Library backup/restore uses the WinUI HWND file-picker bridge, versioned JSON, size/count limits, URL sanitization and a staged user-approved merge.");
 if (!nativeHost.includes("HandleDownloadStarting") || !nativeHost.includes("BytesReceivedChanged") ||
     !nativeHost.includes("StateChanged") || !nativeHost.includes("operation?.Pause()") ||
     !nativeHost.includes("operation?.Resume()") || !nativeHost.includes("operation?.Cancel()") ||
