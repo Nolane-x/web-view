@@ -234,7 +234,9 @@ const selectionFunction = js.slice(js.indexOf("function selectNode"), js.indexOf
 const nativeSyncFunction = js.slice(js.indexOf("function scheduleNativeSurfaceSync"), js.indexOf("function handleNativeHostMessage"));
 if (!nativeSyncFunction.includes("bridgeConnected && node.browserTabId !== undefined") ||
     !nativeSyncFunction.includes("node.browserSessionId === bridgeSessionId") ||
-    !nativeSyncFunction.includes("liveSurfaces.has(node.id)")) fail("Native WebView2 must preserve only currently connected Chrome tabs and active Chrome live streams.");
+    !nativeSyncFunction.includes("liveSurfaces.has(node.id)") ||
+    !js.includes("function clearUnavailableChromeTabBindings") ||
+    !js.includes("clearUnavailableChromeTabBindings();")) fail("Native WebView2 must preserve current Chrome sessions and convert stale imported tab IDs.");
 else pass("Native WebView2 surfaces preserve Chrome-owned tabs and active Chrome live streams.");
 if (!js.includes("scheduleNativeSurfaceSync") || !js.includes("chrome.webview.postMessage") ||
     !js.includes("nolane.native.ready") || !js.includes("nolane.native.surface") ||

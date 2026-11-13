@@ -448,7 +448,7 @@
         nativeHostReadyNotified = true;
         toast("Native WebView2 is connected. Website cards now use real embedded browser surfaces.");
       }
-      scheduleNativeSurfaceSync();
+      renderNodes();
       return;
     }
     if (message.type === "nolane.native.surface") {
@@ -519,7 +519,27 @@
     $("#noteCount").textContent = nodes.filter((node) => node.type === "note").length;
   }
 
+  function clearUnavailableChromeTabBindings() {
+    if (!nativeHostAvailable) return 0;
+    let cleared = 0;
+    nodes.forEach((node) => {
+      if (node.browserTabId !== undefined &&
+          (!bridgeConnected || !node.browserSessionId || node.browserSessionId !== bridgeSessionId)) {
+        delete node.browserTabId;
+        delete node.browserWindowId;
+        delete node.browserSessionId;
+        cleared++;
+      }
+    });
+    if (cleared) {
+      scheduleSave();
+      toast("Converted " + cleared + " imported Chrome tab link(s) to native website cards. Sign in again in this WebView2 profile.", "info");
+    }
+    return cleared;
+  }
+
   function renderNodes() {
+    clearUnavailableChromeTabBindings();
     world.replaceChildren();
     nodes.forEach((node) => world.appendChild(createNodeElement(node)));
     updateViewFilter();
