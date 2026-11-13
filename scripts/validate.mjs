@@ -212,19 +212,19 @@ else pass("Original-tab focus remains tied to its browser profile.");
 const nativeHost = read("desktop-host/MainWindow.xaml.cs");
 const nativeProject = read("desktop-host/Nolane.DesktopHost.csproj");
 const nativeWorkflow = read(".github/workflows/desktop-host.yml");
-if (!/nolane\\.surfaces\\.sync/.test(nativeHost) || !/EnsureCoreWebView2Async/.test(nativeHost) ||
-    !/TrySuspendAsync/.test(nativeHost) || !/MaxVisibleSurfaces = 4/.test(nativeHost)) fail("Native WebView2 host must create real browser surfaces and bound active renderers.");
+if (!nativeHost.includes("nolane.surfaces.sync") || !nativeHost.includes("EnsureCoreWebView2Async") ||
+    !nativeHost.includes("TrySuspendAsync") || !nativeHost.includes("MaxVisibleSurfaces = 4")) fail("Native WebView2 host must create real browser surfaces and bound active renderers.");
 else pass("Native WebView2 host creates real browser surfaces and bounds active renderers.");
-if (!/Microsoft\\.WindowsAppSDK/.test(nativeProject) || !/net8\\.0-windows10\\.0\\.19041\\.0/.test(nativeProject) ||
-    !/WindowsAppSDKSelfContained/.test(nativeProject)) fail("Native host project is missing its Windows App SDK target.");
+if (!nativeProject.includes("Microsoft.WindowsAppSDK") || !nativeProject.includes("net8.0-windows10.0.19041.0") ||
+    !nativeProject.includes("WindowsAppSDKSelfContained")) fail("Native host project is missing its Windows App SDK target.");
 else pass("Native host targets WinUI 3 on Windows 10 19041+ with self-contained Windows App SDK.");
-if (!/WorkspaceView\\.Loaded \\+= MainWindow_Loaded/.test(nativeHost)) fail("Native browser host must initialize WebView2 from its control Loaded event.");
+if (!nativeHost.includes("WorkspaceView.Loaded += MainWindow_Loaded")) fail("Native browser host must initialize WebView2 from its control Loaded event.");
 else pass("Native browser host starts initialization only after the WebView2 control is loaded.");
-if (!/runs-on: windows-latest/.test(nativeWorkflow) || !/dotnet publish/.test(nativeWorkflow) ||
-    !/upload-artifact/.test(nativeWorkflow) || !/Nolane\\.DesktopHost\\.exe/.test(nativeWorkflow)) fail("Native Windows build workflow is incomplete.");
+if (!nativeWorkflow.includes("runs-on: windows-latest") || !nativeWorkflow.includes("dotnet publish") ||
+    !nativeWorkflow.includes("upload-artifact") || !nativeWorkflow.includes("Nolane.DesktopHost.exe")) fail("Native Windows build workflow is incomplete.");
 else pass("Dedicated Windows CI builds and packages the native browser host.");
-if (!/scheduleNativeSurfaceSync/.test(js) || !/chrome\\.webview\\.postMessage/.test(js) ||
-    !/nolane\\.native\\.ready/.test(js) || !/nolane\\.native\\.surface/.test(js)) fail("Static workspace and native browser host bridge is incomplete.");
+if (!js.includes("scheduleNativeSurfaceSync") || !js.includes("chrome.webview.postMessage") ||
+    !js.includes("nolane.native.ready") || !js.includes("nolane.native.surface")) fail("Static workspace and native browser host bridge is incomplete.");
 else pass("Static workspace sends website-card geometry to the native host and receives browser status.");
 
 if (process.exitCode) process.exit(process.exitCode);
