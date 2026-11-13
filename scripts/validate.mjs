@@ -245,11 +245,22 @@ if (!nativeHost.includes("PermissionRequested") || !nativeHost.includes("Allow o
     !nativeHost.includes("SavesInProfile = false") || !nativeHost.includes("CoreWebView2PermissionState.Deny")) fail("Native website permissions must require an explicit non-persistent user decision.");
 else pass("Native website permissions require an explicit Allow once/Block decision.");
 if (!nativeHost.includes("DownloadStarting") || !nativeHost.includes("IsUserInitiated") ||
-    !nativeHost.includes("IsSafeWebUri(url)")) fail("Native browser downloads, popup gesture checks or URL restrictions are incomplete.");
+    !nativeHost.includes("IsSafeWebUri(url)") || !f["desktop-host/MainWindow.xaml"].includes('x:Name="DownloadsPanel"') ||
+    !f["desktop-host/MainWindow.xaml"].includes('x:Name="DownloadsList"')) fail("Native browser downloads, popup gesture checks or URL restrictions are incomplete.");
 else pass("Native browser retains user-controlled downloads, blocks unsolicited popups and rejects credential/non-web URLs.");
 if (!nativeHost.includes("core.HistoryChanged") || !nativeHost.includes("core.IsMutedChanged") ||
     !nativeHost.includes("core.IsDocumentPlayingAudioChanged") || !nativeHost.includes("ExecuteSurfaceCommand")) fail("Native browser history/audio controls and state reporting are incomplete.");
 else pass("Native browser exposes per-surface navigation, audio controls and state telemetry.");
+if (!nativeHost.includes("HandleDownloadStarting") || !nativeHost.includes("BytesReceivedChanged") ||
+    !nativeHost.includes("StateChanged") || !nativeHost.includes("operation.Pause()") ||
+    !nativeHost.includes("operation.Resume()") || !nativeHost.includes("operation.Cancel()") ||
+    !nativeHost.includes("DownloadHistoryRecord") || !nativeHost.includes("File.Move(temporaryPath, _downloadHistoryPath, true)") ||
+    !nativeHost.includes("Keep Handled=false")) fail("Native download tracking, controls or atomic history persistence are incomplete.");
+else pass("Native download manager tracks progress, supports pause/resume/cancel and atomically persists a bounded local history.");
+if (!nativeHost.includes("ToggleDownloads_Click") || !nativeHost.includes("ClearFinishedDownloads_Click") ||
+    !nativeHost.includes("OpenDownloadedFile") || !nativeHost.includes("ShowDownloadedFile") ||
+    !nativeHost.includes("Path.IsPathFullyQualified")) fail("Native download panel actions or saved-path validation are incomplete.");
+else pass("Native download panel exposes open/reveal/clear actions and validates local saved paths.");
 if (!nativeBridge.includes("createCommand") || !nativeBridge.includes("createNavigationCommand") ||
     !nativeBridge.includes("normalizeSurfaceState") || !nativeBridgeTests.includes("allow-listed protocol") ||
     !nativeBridgeTests.includes("rejects credentials") || !nativeBridgeTests.includes("native address bar")) fail("The native browser command/state/address contract is not independently testable.");

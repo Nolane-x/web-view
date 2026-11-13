@@ -30,6 +30,15 @@ public sealed partial class MainWindow : Window
     private bool _surfaceSyncRunning;
     private readonly SemaphoreSlim _permissionDialogGate = new(1, 1);
     private bool _runtimeUpdateAvailable;
+    private string? _downloadHistoryPath;
+    private readonly List<DownloadEntry> _downloads = new();
+    private int _downloadRefreshQueued;
+    private int _downloadHistoryDirty;
+
+    private static readonly JsonSerializerOptions DownloadJsonOptions = new()
+    {
+        WriteIndented = true
+    };
 
     private static int DetermineVisibleSurfaceBudget()
     {
@@ -71,6 +80,9 @@ public sealed partial class MainWindow : Window
             var userData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "Nolane", "NativeWebView2", "UserData");
             Directory.CreateDirectory(userData);
+            _downloadHistoryPath = Path.Combine(userData, "download-history.json");
+            LoadDownloadHistory();
+            RefreshDownloadsUi();
             _environment = await CoreWebView2Environment.CreateWithOptionsAsync(null, userData, new CoreWebView2EnvironmentOptions());
             _environment.NewBrowserVersionAvailable += (_, _) =>
             {
@@ -288,12 +300,7 @@ public sealed partial class MainWindow : Window
             core.DocumentTitleChanged += (_, _) => PublishSurfaceState(surface, "ready", "Page title updated");
             core.IsMutedChanged += (_, _) => PublishSurfaceState(surface, "ready", "Audio setting updated");
             core.IsDocumentPlayingAudioChanged += (_, _) => PublishSurfaceState(surface, "ready", "Audio state updated");
-            core.DownloadStarting += (_, args) =>
-            {
-                var fileName = Path.GetFileName(args.ResultFilePath);
-                PublishSurfaceState(surface, "ready", string.IsNullOrWhiteSpace(fileName) ? "Download started" : "Download started: " + fileName);
-                // Keep WebView2's native Save dialog. The user chooses the destination.
-            };
+            core.DownloadStarting += (_, args) => HandleDownloadStarting(surface, args);
             core.PermissionRequested += (_, args) => HandleSurfacePermissionAsync(surface, args);
             core.ProcessFailed += (_, args) => HandleSurfaceProcessFailure(surface, args);
             surface.Url = item.Url;
@@ -310,6 +317,389 @@ public sealed partial class MainWindow : Window
             _surfaces.Remove(item.Id);
             return null;
         }
+    }
+
+    private void HandleDownloadStarting(BrowserSurface surface, CoreWebView2DownloadStartingEventArgs args)
+    {
+        var operation = args.DownloadOperation;
+        if (operation is null)
+        {
+            PublishSurfaceState(surface, "error", "WebView2 did not provide a download operation.");
+            return;
+        }
+
+        var entry = new DownloadEntry
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Operation = operation,
+            SourceHost = SafeHost(operation.Uri),
+            MimeType = StringRaw(operation.MimeType, 120),
+            StartedAtUtc = DateTimeOffset.UtcNow,
+            Status = "Starting download"
+        };
+        UpdateDownloadEntry(entry);
+        _downloads.Insert(0, entry);
+        TrimDownloadHistory();
+
+        operation.BytesReceivedChanged += (_, _) => QueueDownloadUiRefresh();
+        operation.StateChanged += (_, _) =>
+        {
+            UpdateDownloadEntry(entry);
+            QueueDownloadUiRefresh(persist: true);
+        };
+
+        // Keep Handled=false so WebView2 displays its native Save dialog and the user chooses the destination.
+        // The in-app manager observes and controls the same DownloadOperation.
+        PublishSurfaceState(surface, "ready", "Download started: " + entry.FileName);
+        QueueDownloadUiRefresh(persist: true);
+    }
+
+    private static void UpdateDownloadEntry(DownloadEntry entry)
+    {
+        var operation = entry.Operation;
+        if (operation is null) return;
+        try
+        {
+            entry.BytesReceived = Math.Max(0, operation.BytesReceived);
+            var total = operation.TotalBytesToReceive;
+            entry.TotalBytesToReceive = total.HasValue && total.Value > 0 ? total : null;
+            var resultPath = operation.ResultFilePath;
+            if (!string.IsNullOrWhiteSpace(resultPath) && Path.IsPathFullyQualified(resultPath))
+            {
+                entry.FilePath = resultPath;
+                entry.FileName = Path.GetFileName(resultPath);
+            }
+            if (string.IsNullOrWhiteSpace(entry.FileName))
+            {
+                try { entry.FileName = Path.GetFileName(new Uri(operation.Uri).LocalPath); }
+                catch { entry.FileName = ""; }
+            }
+            if (string.IsNullOrWhiteSpace(entry.FileName)) entry.FileName = "Website download";
+            entry.State = operation.State;
+            entry.CanResume = operation.State == CoreWebView2DownloadState.Interrupted && operation.CanResume;
+            entry.InterruptReason = operation.InterruptReason.ToString();
+            entry.MimeType = StringRaw(operation.MimeType, 120);
+            entry.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            entry.Status = operation.State switch
+            {
+                CoreWebView2DownloadState.InProgress => entry.UserPaused ? "Paused" : "Downloading",
+                CoreWebView2DownloadState.Interrupted => entry.InterruptReason == "UserCanceled"
+                    ? (entry.UserPaused ? "Paused" : "Canceled or interrupted")
+                    : "Interrupted · " + entry.InterruptReason,
+                CoreWebView2DownloadState.Completed => "Completed",
+                _ => operation.State.ToString()
+            };
+        }
+        catch (Exception ex)
+        {
+            entry.Status = "Download status unavailable: " + StringRaw(ex.Message, 120);
+        }
+    }
+
+    private void QueueDownloadUiRefresh(bool persist = false)
+    {
+        if (persist) Interlocked.Exchange(ref _downloadHistoryDirty, 1);
+        if (Interlocked.Exchange(ref _downloadRefreshQueued, 1) != 0) return;
+        if (!DispatcherQueue.TryEnqueue(() =>
+        {
+            try
+            {
+                RefreshDownloadsUi();
+                if (Interlocked.Exchange(ref _downloadHistoryDirty, 0) == 1) SaveDownloadHistory();
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _downloadRefreshQueued, 0);
+                if (Volatile.Read(ref _downloadHistoryDirty) == 1) QueueDownloadUiRefresh();
+            }
+        }))
+        {
+            Interlocked.Exchange(ref _downloadRefreshQueued, 0);
+        }
+    }
+
+    private void LoadDownloadHistory()
+    {
+        if (string.IsNullOrWhiteSpace(_downloadHistoryPath) || !File.Exists(_downloadHistoryPath)) return;
+        try
+        {
+            var records = JsonSerializer.Deserialize<List<DownloadHistoryRecord>>(
+                File.ReadAllText(_downloadHistoryPath), DownloadJsonOptions) ?? new List<DownloadHistoryRecord>();
+            foreach (var record in records.OrderByDescending(item => item.StartedAtUtc).Take(100))
+            {
+                var safePath = !string.IsNullOrWhiteSpace(record.FilePath) && Path.IsPathFullyQualified(record.FilePath)
+                    ? record.FilePath : "";
+                var completedFileExists = record.State == nameof(CoreWebView2DownloadState.Completed) &&
+                    safePath.Length > 0 && File.Exists(safePath);
+                var status = completedFileExists
+                    ? "Completed"
+                    : record.State == nameof(CoreWebView2DownloadState.InProgress)
+                        ? "Interrupted when Nolane closed"
+                        : record.State == nameof(CoreWebView2DownloadState.Completed)
+                            ? "Completed · file no longer exists"
+                            : "Interrupted · " + StringRaw(record.InterruptReason, 80);
+                _downloads.Add(new DownloadEntry
+                {
+                    Id = StringRaw(record.Id, 64),
+                    FileName = StringRaw(record.FileName, 180),
+                    SourceHost = StringRaw(record.SourceHost, 120),
+                    FilePath = safePath,
+                    MimeType = StringRaw(record.MimeType, 120),
+                    BytesReceived = Math.Max(0, record.BytesReceived),
+                    TotalBytesToReceive = record.TotalBytesToReceive > 0 ? record.TotalBytesToReceive : null,
+                    StartedAtUtc = record.StartedAtUtc,
+                    UpdatedAtUtc = record.UpdatedAtUtc,
+                    Status = status,
+                    IsHistorical = true
+                });
+            }
+        }
+        catch
+        {
+            // A malformed history file must never prevent the browser host from starting.
+            _downloads.Clear();
+        }
+    }
+
+    private void SaveDownloadHistory()
+    {
+        if (string.IsNullOrWhiteSpace(_downloadHistoryPath)) return;
+        string? temporaryPath = null;
+        try
+        {
+            foreach (var entry in _downloads) UpdateDownloadEntry(entry);
+            var records = _downloads.Take(100).Select(entry => new DownloadHistoryRecord
+            {
+                Id = entry.Id,
+                FileName = StringRaw(entry.FileName, 180),
+                SourceHost = StringRaw(entry.SourceHost, 120),
+                FilePath = StringRaw(entry.FilePath, 2048),
+                MimeType = StringRaw(entry.MimeType, 120),
+                BytesReceived = Math.Max(0, entry.BytesReceived),
+                TotalBytesToReceive = entry.TotalBytesToReceive ?? 0,
+                State = entry.State?.ToString() ?? "Interrupted",
+                InterruptReason = StringRaw(entry.InterruptReason, 100),
+                StartedAtUtc = entry.StartedAtUtc,
+                UpdatedAtUtc = entry.UpdatedAtUtc
+            }).ToList();
+            temporaryPath = _downloadHistoryPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            File.WriteAllText(temporaryPath, JsonSerializer.Serialize(records, DownloadJsonOptions));
+            File.Move(temporaryPath, _downloadHistoryPath, true);
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = "Could not save download history: " + StringRaw(ex.Message, 100);
+        }
+        finally
+        {
+            if (!string.IsNullOrWhiteSpace(temporaryPath) && File.Exists(temporaryPath))
+            {
+                try { File.Delete(temporaryPath); } catch { }
+            }
+        }
+    }
+
+    private void TrimDownloadHistory()
+    {
+        while (_downloads.Count > 100)
+        {
+            var removableIndex = _downloads.FindLastIndex(entry =>
+                entry.Operation?.State != CoreWebView2DownloadState.InProgress &&
+                !(entry.Operation?.CanResume ?? false));
+            if (removableIndex < 0) break;
+            _downloads.RemoveAt(removableIndex);
+        }
+    }
+
+    private void RefreshDownloadsUi()
+    {
+        var activeCount = _downloads.Count(entry => entry.Operation?.State == CoreWebView2DownloadState.InProgress);
+        DownloadsButton.Content = $"Downloads ({activeCount})";
+        DownloadsSummaryText.Text = activeCount == 0
+            ? $"{_downloads.Count} recent item(s) · history stored on this device"
+            : $"{activeCount} active · {_downloads.Count} recent item(s)";
+
+        if (DownloadsPanel.Visibility != Visibility.Visible) return;
+        DownloadsList.Children.Clear();
+        if (_downloads.Count == 0)
+        {
+            DownloadsList.Children.Add(new TextBlock
+            {
+                Text = "No downloads yet. Files downloaded by websites will appear here.",
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 145, 158, 180)),
+                Margin = new Thickness(8, 18, 8, 18)
+            });
+            return;
+        }
+
+        foreach (var entry in _downloads.Take(100))
+            DownloadsList.Children.Add(CreateDownloadCard(entry));
+    }
+
+    private UIElement CreateDownloadCard(DownloadEntry entry)
+    {
+        if (entry.Operation is not null) UpdateDownloadEntry(entry);
+        var card = new Border
+        {
+            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 25, 34, 49)),
+            BorderBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 49, 62, 83)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(11)
+        };
+        var content = new StackPanel { Spacing = 6 };
+        content.Children.Add(new TextBlock
+        {
+            Text = entry.FileName,
+            FontSize = 12,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 235, 241, 250)),
+            TextTrimming = TextTrimming.CharacterEllipsis
+        });
+        content.Children.Add(new TextBlock
+        {
+            Text = entry.SourceHost + " · " + entry.Status,
+            FontSize = 10,
+            Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 151, 164, 185)),
+            TextWrapping = TextWrapping.Wrap
+        });
+
+        var progress = new ProgressBar { Height = 5, Minimum = 0, Maximum = 100 };
+        if (entry.TotalBytesToReceive is > 0)
+        {
+            progress.IsIndeterminate = false;
+            progress.Value = Math.Clamp(entry.BytesReceived * 100d / entry.TotalBytesToReceive.Value, 0, 100);
+        }
+        else
+        {
+            progress.IsIndeterminate = entry.Operation?.State == CoreWebView2DownloadState.InProgress;
+            progress.Value = entry.State == CoreWebView2DownloadState.Completed ? 100 : 0;
+        }
+        content.Children.Add(progress);
+
+        var details = entry.TotalBytesToReceive is > 0
+            ? FormatBytes(entry.BytesReceived) + " / " + FormatBytes(entry.TotalBytesToReceive.Value)
+            : FormatBytes(entry.BytesReceived) + " received";
+        if (!string.IsNullOrWhiteSpace(entry.InterruptReason) &&
+            entry.State == CoreWebView2DownloadState.Interrupted)
+            details += " · " + entry.InterruptReason;
+        content.Children.Add(new TextBlock
+        {
+            Text = details,
+            FontSize = 9,
+            Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 122, 137, 160))
+        });
+
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+        var operation = entry.Operation;
+        var inProgress = operation?.State == CoreWebView2DownloadState.InProgress;
+        var canResume = operation?.State == CoreWebView2DownloadState.Interrupted && operation.CanResume;
+        actions.Children.Add(CreateDownloadAction("Pause", inProgress, () =>
+        {
+            try { entry.UserPaused = true; operation?.Pause(); UpdateDownloadEntry(entry); QueueDownloadUiRefresh(persist: true); }
+            catch (Exception ex) { StatusText.Text = "Could not pause download: " + StringRaw(ex.Message, 100); }
+        }));
+        actions.Children.Add(CreateDownloadAction("Resume", canResume, () =>
+        {
+            try { entry.UserPaused = false; operation?.Resume(); UpdateDownloadEntry(entry); QueueDownloadUiRefresh(persist: true); }
+            catch (Exception ex) { StatusText.Text = "Could not resume download: " + StringRaw(ex.Message, 100); }
+        }));
+        actions.Children.Add(CreateDownloadAction("Cancel", inProgress || canResume, () =>
+        {
+            try { operation?.Cancel(); entry.UserPaused = false; UpdateDownloadEntry(entry); QueueDownloadUiRefresh(persist: true); }
+            catch (Exception ex) { StatusText.Text = "Could not cancel download: " + StringRaw(ex.Message, 100); }
+        }));
+        var fileExists = !string.IsNullOrWhiteSpace(entry.FilePath) && Path.IsPathFullyQualified(entry.FilePath) && File.Exists(entry.FilePath);
+        actions.Children.Add(CreateDownloadAction("Open", fileExists, () => OpenDownloadedFile(entry)));
+        actions.Children.Add(CreateDownloadAction("Folder", !string.IsNullOrWhiteSpace(entry.FilePath) && Path.IsPathFullyQualified(entry.FilePath) &&
+            Directory.Exists(Path.GetDirectoryName(entry.FilePath)), () => ShowDownloadedFile(entry)));
+        content.Children.Add(actions);
+        card.Child = content;
+        return card;
+    }
+
+    private static Button CreateDownloadAction(string label, bool enabled, Action action)
+    {
+        var button = new Button
+        {
+            Content = label,
+            IsEnabled = enabled,
+            Padding = new Thickness(8, 4, 8, 4),
+            FontSize = 10
+        };
+        button.Click += (_, _) => action();
+        return button;
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        var size = Math.Max(0, bytes);
+        var units = new[] { "B", "KB", "MB", "GB", "TB" };
+        var value = (double)size;
+        var index = 0;
+        while (value >= 1024 && index < units.Length - 1)
+        {
+            value /= 1024;
+            index++;
+        }
+        return index == 0 ? $"{(long)value} {units[index]}" : $"{value:0.0} {units[index]}";
+    }
+
+    private void OpenDownloadedFile(DownloadEntry entry)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(entry.FilePath) || !Path.IsPathFullyQualified(entry.FilePath) || !File.Exists(entry.FilePath))
+            {
+                StatusText.Text = "The downloaded file is not available at its saved location.";
+                return;
+            }
+            Process.Start(new ProcessStartInfo(entry.FilePath) { UseShellExecute = true });
+        }
+        catch (Exception ex) { StatusText.Text = "Could not open download: " + StringRaw(ex.Message, 100); }
+    }
+
+    private void ShowDownloadedFile(DownloadEntry entry)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(entry.FilePath) || !Path.IsPathFullyQualified(entry.FilePath))
+            {
+                StatusText.Text = "The download folder is not available.";
+                return;
+            }
+            var folder = Path.GetDirectoryName(entry.FilePath);
+            if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+            {
+                StatusText.Text = "The download folder no longer exists.";
+                return;
+            }
+            if (File.Exists(entry.FilePath))
+                Process.Start(new ProcessStartInfo("explorer.exe") { Arguments = "/select,\"" + entry.FilePath + "\"", UseShellExecute = true });
+            else
+                Process.Start(new ProcessStartInfo(folder) { UseShellExecute = true });
+        }
+        catch (Exception ex) { StatusText.Text = "Could not open download folder: " + StringRaw(ex.Message, 100); }
+    }
+
+    private void ToggleDownloads_Click(object sender, RoutedEventArgs e)
+    {
+        DownloadsPanel.Visibility = DownloadsPanel.Visibility == Visibility.Visible
+            ? Visibility.Collapsed : Visibility.Visible;
+        RefreshDownloadsUi();
+    }
+
+    private void CloseDownloads_Click(object sender, RoutedEventArgs e) =>
+        DownloadsPanel.Visibility = Visibility.Collapsed;
+
+    private void ClearFinishedDownloads_Click(object sender, RoutedEventArgs e)
+    {
+        _downloads.RemoveAll(entry =>
+            entry.Operation?.State != CoreWebView2DownloadState.InProgress &&
+            !(entry.Operation?.CanResume ?? false));
+        SaveDownloadHistory();
+        RefreshDownloadsUi();
     }
 
     private void HandleSurfaceProcessFailure(BrowserSurface surface, CoreWebView2ProcessFailedEventArgs args)
@@ -641,6 +1031,41 @@ public sealed partial class MainWindow : Window
     }
 
     private void ReloadWorkspace_Click(object sender, RoutedEventArgs e) => WorkspaceView.CoreWebView2?.Reload();
+
+    private sealed class DownloadEntry
+    {
+        public string Id { get; set; } = "";
+        public CoreWebView2DownloadOperation? Operation { get; set; }
+        public string FileName { get; set; } = "Website download";
+        public string SourceHost { get; set; } = "website";
+        public string FilePath { get; set; } = "";
+        public string MimeType { get; set; } = "";
+        public long BytesReceived { get; set; }
+        public long? TotalBytesToReceive { get; set; }
+        public CoreWebView2DownloadState? State { get; set; }
+        public bool CanResume { get; set; }
+        public bool UserPaused { get; set; }
+        public bool IsHistorical { get; set; }
+        public string InterruptReason { get; set; } = "";
+        public string Status { get; set; } = "Starting";
+        public DateTimeOffset StartedAtUtc { get; set; }
+        public DateTimeOffset UpdatedAtUtc { get; set; }
+    }
+
+    private sealed class DownloadHistoryRecord
+    {
+        public string Id { get; set; } = "";
+        public string FileName { get; set; } = "";
+        public string SourceHost { get; set; } = "";
+        public string FilePath { get; set; } = "";
+        public string MimeType { get; set; } = "";
+        public long BytesReceived { get; set; }
+        public long TotalBytesToReceive { get; set; }
+        public string State { get; set; } = "";
+        public string InterruptReason { get; set; } = "";
+        public DateTimeOffset StartedAtUtc { get; set; }
+        public DateTimeOffset UpdatedAtUtc { get; set; }
+    }
 
     private sealed class BrowserSurface(string id, string url, WebView2 view)
     {

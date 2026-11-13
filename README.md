@@ -107,3 +107,6 @@ Native website cards also expose an address field in the card header. Enter a ho
 ## Adaptive browser resource budget and crash recovery
 
 The Windows host reads the memory budget exposed by the .NET runtime and selects a conservative visible-surface cap: up to 2 visible website surfaces at 10 GiB or less, 3 up to 16 GiB, and 4 above that. The hidden cache is capped at twice the visible budget (maximum 8). These are guardrails, not a hard RAM guarantee: actual memory consumption still depends on each website. A renderer crash gets at most one automatic reload per surface in a two-minute window; repeated crashes and unresponsive pages are surfaced for manual recovery instead of creating reload loops. GPU and utility process exits are reported without reloading every page because WebView2 handles those process types automatically. A shared browser-process exit requires restarting the native host.
+
+
+The Windows Native Host also includes a Downloads panel for active/recent WebView2 transfers. It exposes progress, pause/resume/cancel, open-file and show-folder actions, and saves up to 100 recent records locally. It keeps WebView2's native destination chooser active and does not persist full download URLs or query strings.

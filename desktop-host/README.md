@@ -38,3 +38,8 @@ Native cards expose per-site Back, Forward, Reload and Mute controls. Active pag
 ## Adaptive resource limits and renderer recovery
 
 The number of visible websites adapts to the runtime memory budget: at most 2 on systems reporting 10 GiB or less, 3 up to 16 GiB, and 4 above 16 GiB. Hidden surfaces are suspended and the cached-control limit is twice the active limit (up to 8). Renderer crashes trigger one bounded automatic reload per two-minute window; repeated crashes and unresponsive pages require an intentional manual Reload. GPU and utility process exits are left to WebView2's automatic recovery. A shared browser-process exit requires restarting the host.
+
+
+## Native download manager
+
+The host tracks WebView2 downloads in the Downloads panel. It shows filename, source host, transfer progress, received bytes, and WebView2 interruption state; it can pause, resume when WebView2 reports `CanResume`, cancel, open a completed file, or reveal its containing folder. The normal WebView2 Save dialog remains enabled (`Handled` is left false), so the user chooses the destination and existing files are not silently overwritten by a host-selected path. Up to 100 recent download records are stored in `%LOCALAPPDATA%\\Nolane\\NativeWebView2\\UserData\\download-history.json`; the history stores only the source host, not the full URL/query string. A download in progress when Nolane closes is recorded as interrupted; the original WebView2 operation cannot be resumed after the host process exits.

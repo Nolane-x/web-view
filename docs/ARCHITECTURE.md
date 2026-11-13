@@ -95,3 +95,8 @@ The native toolbar includes a compact per-card address input. Its navigation com
 ## Adaptive resource and failure policy
 
 The host uses `GC.GetGCMemoryInfo().TotalAvailableMemoryBytes` to select a visible surface budget (2 / 3 / 4) and caps the suspended cache at twice that count, up to 8. The policy is intentionally conservative and is not a precise per-process memory meter. Each surface tracks its own bounded renderer recovery window: one automatic reload per two minutes, then manual retry. Unresponsive renderers are not automatically reloaded because WebView2 can repeatedly report them while a page remains frozen. GPU and utility process exits are informational because WebView2 recreates those process types. A shared browser-process exit is elevated to an app-level restart instruction because the controls sharing that environment must be recreated.
+
+
+## Native download lifecycle
+
+Each child WebView2's `DownloadStarting` event is attached to a single host-level download ledger. The host deliberately leaves `Handled=false` so WebView2 retains its native Save dialog; the in-app manager operates on the same `CoreWebView2DownloadOperation` for progress, pause/resume/cancel and completion. BytesChanged is UI-coalesced; state transitions are atomically persisted to a bounded local JSON history. History stores only the source host rather than the full URI/query, the absolute saved file path, MIME type and transfer metadata. On restart, in-progress records are marked interrupted and no stale `DownloadOperation` is fabricated; resume is only offered for a live operation when WebView2 reports `CanResume`.
