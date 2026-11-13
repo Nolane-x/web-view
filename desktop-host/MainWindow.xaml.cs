@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,8 +11,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.WebView2.Core;
-using Windows.Storage.Pickers;
-using System.Security.Principal;
+
+
 
 namespace Nolane.DesktopHost;
 
@@ -22,6 +23,9 @@ public sealed partial class MainWindow : Window
     private const int MaxLibraryHistoryEntries = 500;
     private const int MaxLibraryBookmarkEntries = 200;
     private const long MaxLibraryBackupBytes = 5L * 1024 * 1024;
+    private static readonly Guid LibraryBackupSaveClientGuid = new("D1E8F7A4-8B3C-4E6B-91C8-7A2D5E0F3411");
+    private static readonly Guid LibraryBackupOpenClientGuid = new("7A5B2D91-4F6C-48A3-B8D2-1E9F6C0A5274");
+
     private readonly int _maxVisibleSurfaces = DetermineVisibleSurfaceBudget();
 
     private int MaxVisibleSurfaces => _maxVisibleSurfaces;
@@ -1379,31 +1383,12 @@ public sealed partial class MainWindow : Window
     private void LibrarySearch_TextChanged(object sender, TextChangedEventArgs e) =>
         RefreshLibraryUi();
 
-    private static void EnsureNonElevatedFilePickerMode()
-    {
-        using var identity = WindowsIdentity.GetCurrent();
-        var principal = new WindowsPrincipal(identity);
-        if (principal.IsInRole(WindowsBuiltInRole.Administrator))
-            throw new InvalidOperationException("Library backup uses the Windows desktop file picker, which does not support elevated applications. Close Nolane and reopen it normally, without Run as administrator.");
-    }
-
     private async void ExportLibrary_Click(object sender, RoutedEventArgs e)
     {
         try
         {
-            EnsureNonElevatedFilePickerMode();
-            var picker = new FileSavePicker
-            {
-                SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
-                SuggestedFileName = "Nolane-Library-" + DateTime.Now.ToString("yyyyMMdd"),
-                DefaultFileExtension = ".json",
-                CommitButtonText = "Export backup"
-            };
-            picker.FileTypeChoices.Add("Nolane Library backup", new List<string> { ".json" });
-            WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
-
-            var result = await picker.PickSaveFileAsync();
-            if (result is null) return;
+            var selectedPath = PickLibraryBackupPath(save: true);
+            if (selectedPath is null) return;
 
             var document = new BrowserLibraryDocument
             {
@@ -1416,7 +1401,7 @@ public sealed partial class MainWindow : Window
             if (System.Text.Encoding.UTF8.GetByteCount(json) > MaxLibraryBackupBytes)
                 throw new InvalidDataException("The Library backup is larger than the supported 5 MiB limit.");
 
-            await File.WriteAllTextAsync(result.Path, json);
+            await File.WriteAllTextAsync(selectedPath, json);
             StatusText.Text = "Library backup exported · " +
                 document.History.Count + " history entries · " + document.Bookmarks.Count + " bookmarks";
         }
@@ -1430,19 +1415,10 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-            EnsureNonElevatedFilePickerMode();
-            var picker = new FileOpenPicker
-            {
-                SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
-                CommitButtonText = "Validate backup"
-            };
-            picker.FileTypeFilter.Add(".json");
-            WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+            var selectedPath = PickLibraryBackupPath(save: false);
+            if (selectedPath is null) return;
 
-            var result = await picker.PickSingleFileAsync();
-            if (result is null) return;
-
-            var fullPath = Path.GetFullPath(result.Path);
+            var fullPath = Path.GetFullPath(selectedPath);
             var info = new FileInfo(fullPath);
             if (!info.Exists || info.Length <= 0 || info.Length > MaxLibraryBackupBytes)
                 throw new InvalidDataException("Choose a non-empty JSON backup no larger than 5 MiB.");
