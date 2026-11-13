@@ -875,6 +875,8 @@
             try { video.cancelVideoFrameCallback(monitor.callbackId); } catch (_) {}
             monitor.callbackId = null;
           }
+          monitor.video = null;
+          bindLiveFrameMonitor(nodeId, surface, video);
         }
         setLiveSurfaceHealth(surface.surfaceId, "healthy", liveVideoMetrics(video, track));
         if (!automatic) toast("Video presentation refreshed without restarting the Chrome capture.");
