@@ -1397,6 +1397,7 @@
     $("#emptyTitle").textContent = query ? "No matches yet." : activeView === "websites" ? "No websites here yet." : activeView === "notes" ? "No notes here yet." : "A fresh space.";
     $("#emptyDescription").textContent = query ? "Try a different search, or clear the search field." : "Start with a website, a note, or both. Your workspace grows with you.";
     $$(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === activeView));
+    scheduleNativeSurfaceSync();
   }
 
   function selectNode(id) {
@@ -1408,6 +1409,7 @@
       const element = $('.node[data-id="' + CSS.escape(id) + '"]', world);
       if (element) element.style.zIndex = node.z;
       scheduleSave();
+      scheduleNativeSurfaceSync();
     }
   }
 
