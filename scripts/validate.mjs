@@ -72,9 +72,9 @@ if (!html.includes('id="bridgeDialog"') || !html.includes("Companion not detecte
 else pass("Browser Companion status is explicit and does not imply a working extension.");
 
 const extensionManifest = JSON.parse(read("extension/manifest.json"));
-if (extensionManifest.version !== "0.2.7") fail("Browser Companion release metadata must be synchronized at version 0.2.7.");
-else pass("Browser Companion release metadata is synchronized at 0.2.7.");
-for (const file of ["extension/background.js", "extension/content.js", "extension/popup.html", "extension/popup.css", "extension/popup.js", "extension/README.md"]) {
+if (extensionManifest.version !== "0.2.8") fail("Browser Companion release metadata must be synchronized at version 0.2.8.");
+else pass("Browser Companion release metadata is synchronized at 0.2.8.");
+for (const file of ["extension/background.js", "extension/compatibility.js", "extension/content.js", "extension/popup.html", "extension/popup.css", "extension/popup.js", "extension/README.md"]) {
   if (!fs.existsSync(path.join(root, file))) fail("Browser Companion asset missing: " + file);
 }
 if (extensionManifest.manifest_version !== 3 || !extensionManifest.permissions?.includes("activeTab")) fail("Browser Companion must be MV3 and request activeTab for user-invoked capture.");
@@ -97,6 +97,7 @@ if (!fs.existsSync(path.join(root, "tests/background.test.mjs"))) fail("Live Chr
 else pass("Live Chrome Surface controller tests are present.");
 
 const background = read("extension/background.js");
+const compatibilityEngine = read("extension/compatibility.js");
 const bridge = read("extension/content.js");
 const popup = read("extension/popup.js");
 const popupHTML = read("extension/popup.html");
@@ -144,6 +145,16 @@ if (!/chrome\.tabCapture\.getCapturedTabs/.test(background) || !/already reports
 else pass("Existing tab captures are detected before stream setup.");
 if (!/NOLANE_GET_DIAGNOSTICS/.test(background) || !/diagnosticsButton/.test(popup)) fail("The companion compatibility diagnostics action is incomplete.");
 else pass("The companion exposes a local compatibility diagnostics report.");
+if (!/importScripts\("compatibility\.js"\)/.test(background) || !/root\.NolaneCompatibility/.test(compatibilityEngine)) fail("The service worker does not load the local Website Compatibility Engine.");
+else pass("The service worker loads the local Website Compatibility Engine.");
+if (!/NOLANE_DIAGNOSE_TAB/.test(background) || !/diagnoseButton/.test(popup) || !/renderCompatibilityResult/.test(popup)) fail("Current-tab compatibility analysis is incomplete.");
+else pass("The Companion can analyze the active website locally.");
+if (!/COMPATIBILITY_PROFILES_KEY/.test(background) || !/recordCompatibilityObservation/.test(background) || !/slice\(0, 40\)/.test(background)) fail("Origin-only compatibility history is not bounded and persisted locally.");
+else pass("Compatibility history is stored locally by origin and bounded to 40 sites.");
+if (!/CDP_FOREIGN_EXTENSION_FRAME/.test(compatibilityEngine) || !/CAPTURE_ENDED/.test(compatibilityEngine) || !/VIDEO_NO_NEW_FRAMES/.test(compatibilityEngine)) fail("Compatibility engine is missing major Chrome capture failure diagnoses.");
+else pass("Compatibility engine recognizes Chrome debugger, capture-track and no-frame failure families.");
+if (!/assessSession/.test(compatibilityEngine) || !/restart-capture/.test(compatibilityEngine) || !/refresh-video/.test(compatibilityEngine)) fail("Compatibility recovery recommendations do not distinguish ended tracks from live tracks.");
+else pass("Compatibility engine recommends refresh only for a live track and a new capture for ended tracks.");
 if (!/LIVE_SURFACE_HEALTH/.test(background) || !/NOLANE_LIVE_SURFACE_HEALTH/.test(bridge) || !/normalizeHealthState/.test(background)) fail("Continuous live-surface health telemetry is incomplete.");
 else pass("Live video health transitions are authenticated and persisted locally.");
 if (!/requestVideoFrameCallback\(onFrame\)/.test(js) || !/Date\.now\(\) - monitor\.lastFrameAt > 12000/.test(js) || !/stopLiveFrameMonitor/.test(js)) fail("Long-running live video watchdog or teardown is incomplete.");
