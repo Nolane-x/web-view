@@ -452,6 +452,7 @@
     if (!message || typeof message !== "object") return;
     if (message.type === "nolane.native.ready") {
       nativeHostAvailable = true;
+      setBridgeConnected(bridgeConnected, bridgeSessionId);
       if (!nativeHostReadyNotified) {
         nativeHostReadyNotified = true;
         toast("Native WebView2 is connected. Website cards now use real embedded browser surfaces.");
@@ -1558,13 +1559,28 @@
     const pill = $("#bridgeStatusPill");
     const panel = $(".bridge-status-large");
     const sidebar = $("#bridgeSidebarState");
-    if (title) title.textContent = bridgeConnected ? "Browser Companion connected" : "Companion not detected";
-    if (detail) detail.textContent = bridgeConnected ? "Import selected tab links or stream a real Chrome tab directly into this canvas." : "Install Browser Companion 0.2.13, then refresh this page.";
-    if (pill) pill.textContent = bridgeConnected ? "Connected" : "Not connected";
-    if (panel) panel.classList.toggle("connected", bridgeConnected);
-    if (sidebar) sidebar.innerHTML = '<i class="status-dot' + (bridgeConnected ? ' green' : '') + '"></i> ' + (bridgeConnected ? "Connected" : "Not connected");
+    const nativeConnected = nativeHostAvailable;
+    const anyConnected = bridgeConnected || nativeConnected;
+    const connectionLabel = bridgeConnected && nativeConnected ? "Chrome + Native" :
+      bridgeConnected ? "Chrome Companion" : nativeConnected ? "Native WebView2" : "Not connected";
+    if (title) title.textContent = bridgeConnected && nativeConnected
+      ? "Chrome Companion and Native Host connected"
+      : bridgeConnected ? "Browser Companion connected"
+        : nativeConnected ? "Native WebView2 host connected" : "Browser integrations not detected";
+    if (detail) detail.textContent = bridgeConnected && nativeConnected
+      ? "Chrome tabs keep their original sessions; standalone website cards use native WebView2 surfaces."
+      : bridgeConnected ? "Import Chrome tabs or stream an authenticated Chrome page into a card."
+        : nativeConnected ? "Website cards are rendered as real embedded WebView2 browsers. Logins are stored in the native profile."
+          : "Install the Chrome Companion or open the Windows Native WebView2 Host.";
+    if (pill) pill.textContent = bridgeConnected && nativeConnected ? "Both" :
+      bridgeConnected ? "Chrome" : nativeConnected ? "Native" : "Not connected";
+    if (panel) panel.classList.toggle("connected", anyConnected);
+    if (sidebar) sidebar.innerHTML = '<i class="status-dot' + (anyConnected ? ' green' : '') + '"></i> ' + connectionLabel;
     const footer = $("#bridgeFooterState");
-    if (footer) footer.textContent = bridgeConnected ? "Local companion · Connected · Live Surface 0.2.13" : "Optional local companion · Live Surface 0.2.13";
+    if (footer) footer.textContent = bridgeConnected && nativeConnected
+      ? "Chrome Companion + Native WebView2 · Connected"
+      : bridgeConnected ? "Chrome Companion · Connected"
+        : nativeConnected ? "Native WebView2 · Connected" : "Optional local browser integration";
   }
 
   function addBrowserTabsToWorkspace(tabs, sessionId) {
