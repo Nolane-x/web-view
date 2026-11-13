@@ -249,7 +249,6 @@ else pass("The native browser command/state/address contract is independently te
 if (!js.includes("native-address-input") || !js.includes("navigateNativeSurface") ||
     !nativeHost.includes('case "navigate":') || !nativeHost.includes('!IsSafeWebUri(targetUrl ?? "")')) fail("Native website cards need a safe, editable per-card address bar.");
 else pass("Native website cards expose a per-card address bar with a native HTTP(S)-only navigation command.");
-else pass("The native browser command/state contract is independently testable.");
 if (!nativeWorkflow.includes("runs-on: windows-latest") || !nativeWorkflow.includes("dotnet publish") ||
     !nativeWorkflow.includes("upload-artifact") || !nativeWorkflow.includes("Nolane.DesktopHost.exe")) fail("Native Windows build workflow is incomplete.");
 else pass("Dedicated Windows CI builds and packages the native browser host.");
