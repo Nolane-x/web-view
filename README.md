@@ -115,3 +115,5 @@ The Windows Native Host also includes a Downloads panel for active/recent WebVie
 The Native Host includes a private Library with browsing History and Bookmarks. History is capped at 500 visits and bookmarks at 200 pages. Before an address is persisted, fragments and sensitive query keys (tokens, secrets, passwords, signatures, auth/session values, API keys and OAuth codes) are removed. Library items open in the currently focused native website card, falling back to the system browser only when no native card is active. This Library is local to the Native WebView2 profile and does not read Chrome history or bookmarks.
 
 The Native Library supports instant search across page title, domain and safe stored address in both History and Bookmarks.
+
+Library data can be exported as a versioned JSON backup and merged on another Windows machine. Import validates the schema, a 5 MiB file limit, maximum history/bookmark counts and every URL before showing a confirmation; it never silently replaces the current Library. The backup contains only sanitized History and Bookmarks, not cookies, passwords, WebView2 profiles, download records or Chrome data.

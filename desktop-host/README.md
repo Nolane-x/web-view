@@ -52,3 +52,8 @@ An active or resumable download pins its originating WebView2 surface while the 
 The Library panel stores up to 500 recent visits and 200 bookmarks in `browser-library.json` under the Native WebView2 profile. Use the star button on a native website card to save or remove the current page. History and bookmarks open in the currently focused visible native card. Fragments, embedded credentials and sensitive query keys (tokens, passwords, secrets, signatures, session/auth values, API keys and OAuth codes) are removed before persistence. Chrome history and bookmarks are not accessed.
 
 The Library panel can filter both History and Bookmarks instantly by title, domain or stored address.
+
+
+## Library backup and restore
+
+Use Export backup to save a versioned JSON copy, or Import backup to validate and merge a backup from another machine. The app uses the Windows App SDK 1.8+ file pickers. Import is limited to 5 MiB, schema version 1, at most 500 history entries and 200 bookmarks; URLs are sanitized again, duplicate entries are skipped, and the user must confirm the staged merge. It does not include cookies, passwords, the WebView2 profile, download history or Chrome data.

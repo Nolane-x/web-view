@@ -56,7 +56,7 @@
           <Border Background="#171F2D" BorderBrush="#2C374B" BorderThickness="0,0,0,1"
                   CornerRadius="12,12,0,0" Padding="14,12">
             <Grid>
-              <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+              <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
               <StackPanel Spacing="3">
                 <TextBlock Text="Library" FontSize="15" FontWeight="SemiBold" Foreground="#EDF2FA" />
                 <TextBlock x:Name="LibrarySummaryText" Text="Your browsing history and saved pages" FontSize="10" Foreground="#93A0B4" />
@@ -70,6 +70,10 @@
               <TextBox x:Name="LibrarySearchBox" Grid.Row="2" Margin="0,9,0,0"
                        PlaceholderText="Search title, domain or address"
                        TextChanged="LibrarySearch_TextChanged" MinHeight="32" />
+              <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="6" Margin="0,9,0,0">
+                <Button Content="Export backup" Click="ExportLibrary_Click" Padding="9,5" FontSize="10" />
+                <Button Content="Import backup" Click="ImportLibrary_Click" Padding="9,5" FontSize="10" />
+              </StackPanel>
             </Grid>
           </Border>
           <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">

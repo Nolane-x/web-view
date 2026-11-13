@@ -9,7 +9,8 @@ using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
-using Microsoft.Web.WebView2.Core;
+using Microsoft.WebView2.Core;
+using Microsoft.Windows.Storage.Pickers;
 
 namespace Nolane.DesktopHost;
 
@@ -17,6 +18,9 @@ public sealed partial class MainWindow : Window
 {
     private const string WorkspaceUrl = "https://nolane-x.github.io/web-view/";
     private const string WorkspaceHost = "nolane-x.github.io";
+    private const int MaxLibraryHistoryEntries = 500;
+    private const int MaxLibraryBookmarkEntries = 200;
+    private const long MaxLibraryBackupBytes = 5L * 1024 * 1024;
     private readonly int _maxVisibleSurfaces = DetermineVisibleSurfaceBudget();
 
     private int MaxVisibleSurfaces => _maxVisibleSurfaces;
@@ -1162,6 +1166,8 @@ public sealed partial class MainWindow : Window
         {
             var document = new BrowserLibraryDocument
             {
+                SchemaVersion = 1,
+                ExportedAtUtc = DateTimeOffset.UtcNow,
                 History = _browserHistory.Take(500).ToList(),
                 Bookmarks = _browserBookmarks.Take(200).ToList()
             };
@@ -1372,6 +1378,174 @@ public sealed partial class MainWindow : Window
     private void LibrarySearch_TextChanged(object sender, TextChangedEventArgs e) =>
         RefreshLibraryUi();
 
+    private async void ExportLibrary_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var picker = new FileSavePicker(AppWindow.Id)
+            {
+                SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
+                SuggestedFileName = "Nolane-Library-" + DateTime.Now.ToString("yyyyMMdd"),
+                DefaultFileExtension = ".json",
+                CommitButtonText = "Export backup",
+                Title = "Export Nolane Library",
+                SettingsIdentifier = "NolaneLibraryBackupExport",
+                ShowOverwritePrompt = true,
+                FileTypeChoices =
+                {
+                    { "Nolane Library backup", new List<string> { ".json" } }
+                }
+            };
+
+            var result = await picker.PickSaveFileAsync();
+            if (result is null) return;
+
+            var document = new BrowserLibraryDocument
+            {
+                SchemaVersion = 1,
+                ExportedAtUtc = DateTimeOffset.UtcNow,
+                History = _browserHistory.Take(MaxLibraryHistoryEntries).ToList(),
+                Bookmarks = _browserBookmarks.Take(MaxLibraryBookmarkEntries).ToList()
+            };
+            var json = JsonSerializer.Serialize(document, DownloadJsonOptions);
+            if (System.Text.Encoding.UTF8.GetByteCount(json) > MaxLibraryBackupBytes)
+                throw new InvalidDataException("The Library backup is larger than the supported 5 MiB limit.");
+
+            await File.WriteAllTextAsync(result.Path, json);
+            StatusText.Text = "Library backup exported · " +
+                document.History.Count + " history entries · " + document.Bookmarks.Count + " bookmarks";
+        }
+        catch (Exception ex)
+        {
+            await ShowErrorAsync("Could not export the Library backup.", StringRaw(ex.Message, 220));
+        }
+    }
+
+    private async void ImportLibrary_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var picker = new FileOpenPicker(AppWindow.Id)
+            {
+                SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
+                CommitButtonText = "Validate backup",
+                Title = "Import Nolane Library backup",
+                SettingsIdentifier = "NolaneLibraryBackupImport",
+                FileTypeFilter = { ".json" }
+            };
+
+            var result = await picker.PickSingleFileAsync();
+            if (result is null) return;
+
+            var fullPath = Path.GetFullPath(result.Path);
+            var info = new FileInfo(fullPath);
+            if (!info.Exists || info.Length <= 0 || info.Length > MaxLibraryBackupBytes)
+                throw new InvalidDataException("Choose a non-empty JSON backup no larger than 5 MiB.");
+
+            var json = await File.ReadAllTextAsync(fullPath);
+            var backup = JsonSerializer.Deserialize<BrowserLibraryDocument>(json, DownloadJsonOptions)
+                ?? throw new InvalidDataException("The selected file is not a valid Nolane Library backup.");
+
+            if (backup.SchemaVersion != 1)
+                throw new InvalidDataException("This Library backup uses an unsupported schema version.");
+            if (backup.History is null || backup.Bookmarks is null ||
+                backup.History.Count > MaxLibraryHistoryEntries ||
+                backup.Bookmarks.Count > MaxLibraryBookmarkEntries)
+                throw new InvalidDataException("The backup exceeds the supported history or bookmark limits.");
+
+            var stagedHistory = new List<BrowserHistoryEntry>();
+            var stagedBookmarks = new List<BrowserBookmark>();
+            var now = DateTimeOffset.UtcNow;
+
+            foreach (var item in backup.History)
+            {
+                if (item is null || string.IsNullOrWhiteSpace(item.Url) || item.Url.Length > 4096) continue;
+                var safeUrl = SanitizeLibraryUrl(item.Url);
+                if (safeUrl.Length == 0) continue;
+                var visitedAt = item.VisitedAtUtc == default || item.VisitedAtUtc > now.AddDays(1)
+                    ? now : item.VisitedAtUtc;
+                var duplicate = _browserHistory.Any(existing =>
+                    StringComparer.Ordinal.Equals(existing.Url, safeUrl) &&
+                    Math.Abs((existing.VisitedAtUtc - visitedAt).TotalSeconds) < 1) ||
+                    stagedHistory.Any(existing =>
+                    StringComparer.Ordinal.Equals(existing.Url, safeUrl) &&
+                    Math.Abs((existing.VisitedAtUtc - visitedAt).TotalSeconds) < 1);
+                if (duplicate) continue;
+
+                stagedHistory.Add(new BrowserHistoryEntry
+                {
+                    Id = Guid.NewGuid().ToString("N"),
+                    SurfaceId = "",
+                    Url = safeUrl,
+                    Title = string.IsNullOrWhiteSpace(item.Title)
+                        ? SafeHost(safeUrl) : StringRaw(item.Title, 180),
+                    Host = SafeHost(safeUrl),
+                    VisitedAtUtc = visitedAt
+                });
+            }
+
+            foreach (var item in backup.Bookmarks)
+            {
+                if (item is null || string.IsNullOrWhiteSpace(item.Url) || item.Url.Length > 4096) continue;
+                var safeUrl = SanitizeLibraryUrl(item.Url);
+                if (safeUrl.Length == 0 ||
+                    _browserBookmarks.Any(existing => StringComparer.Ordinal.Equals(existing.Url, safeUrl)) ||
+                    stagedBookmarks.Any(existing => StringComparer.Ordinal.Equals(existing.Url, safeUrl)))
+                    continue;
+
+                var savedAt = item.SavedAtUtc == default || item.SavedAtUtc > now.AddDays(1)
+                    ? now : item.SavedAtUtc;
+                stagedBookmarks.Add(new BrowserBookmark
+                {
+                    Id = Guid.NewGuid().ToString("N"),
+                    Url = safeUrl,
+                    Title = string.IsNullOrWhiteSpace(item.Title)
+                        ? SafeHost(safeUrl) : StringRaw(item.Title, 180),
+                    Host = SafeHost(safeUrl),
+                    SavedAtUtc = savedAt
+                });
+            }
+
+            if (stagedHistory.Count == 0 && stagedBookmarks.Count == 0)
+            {
+                StatusText.Text = "No new safe History or Bookmarks were found in that backup.";
+                return;
+            }
+
+            var confirmation = new ContentDialog
+            {
+                Title = "Merge Library backup?",
+                Content = "Nolane validated the backup and staged " +
+                    stagedHistory.Count + " new history entries and " +
+                    stagedBookmarks.Count + " new bookmarks. Existing items will be kept; duplicate bookmarks and visits will be skipped.",
+                PrimaryButtonText = "Merge Library",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = Content.XamlRoot
+            };
+            if (await confirmation.ShowAsync() != ContentDialogResult.Primary) return;
+
+            _browserHistory.AddRange(stagedHistory);
+            _browserHistory.Sort((left, right) => right.VisitedAtUtc.CompareTo(left.VisitedAtUtc));
+            if (_browserHistory.Count > MaxLibraryHistoryEntries)
+                _browserHistory.RemoveRange(MaxLibraryHistoryEntries, _browserHistory.Count - MaxLibraryHistoryEntries);
+
+            _browserBookmarks.AddRange(stagedBookmarks);
+            _browserBookmarks.Sort((left, right) => right.SavedAtUtc.CompareTo(left.SavedAtUtc));
+            if (_browserBookmarks.Count > MaxLibraryBookmarkEntries)
+                _browserBookmarks.RemoveRange(MaxLibraryBookmarkEntries, _browserBookmarks.Count - MaxLibraryBookmarkEntries);
+
+            SaveBrowserLibrary();
+            RefreshLibraryUi();
+            StatusText.Text = "Library backup merged · " +
+                stagedHistory.Count + " history entries · " + stagedBookmarks.Count + " bookmarks";
+        }
+        catch (Exception ex)
+        {
+            await ShowErrorAsync("Could not import the Library backup.", StringRaw(ex.Message, 220));
+        }
+    }
+
     private void ShowHistory_Click(object sender, RoutedEventArgs e)
     {
         _showingBookmarks = false;
@@ -1530,6 +1704,8 @@ public sealed partial class MainWindow : Window
 
     private sealed class BrowserLibraryDocument
     {
+        public int SchemaVersion { get; set; } = 1;
+        public DateTimeOffset ExportedAtUtc { get; set; } = DateTimeOffset.UtcNow;
         public List<BrowserHistoryEntry> History { get; set; } = new();
         public List<BrowserBookmark> Bookmarks { get; set; } = new();
     }
