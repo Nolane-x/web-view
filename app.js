@@ -531,6 +531,7 @@
       (surface.healthState === "healthy" ? "VIDEO FLOWING" : surface.healthState === "stalled" ? "NO NEW FRAMES" : surface.healthState === "muted" ? "VIDEO TRACK MUTED" : "CHECKING VIDEO") +
       '</span>' +
       '<span class="live-surface-actions">' +
+      '<button class="live-tool" data-action="refresh-live" title="Reconnect the local video presentation without restarting Chrome capture">Refresh video</button>' +
       '<button class="live-tool" data-action="toggle-live-audio" title="Enable sound from this Chrome tab">Enable sound</button>' +
       '<button class="live-tool" data-action="focus-live" title="Focus the original Chrome tab">Focus source</button>' +
       '<button class="live-tool danger" data-action="stop-live" title="Stop live capture">Stop</button>' +
@@ -774,7 +775,7 @@
       if (item.surfaceId === surfaceId) { nodeId = id; surface = item; break; }
     }
     if (!surface) return;
-    const nextState = ["checking", "healthy", "stalled", "muted", "paused", "ended"].includes(state) ? state : "checking";
+    const nextState = ["checking", "healthy", "recovering", "stalled", "muted", "paused", "ended"].includes(state) ? state : "checking";
     const changed = surface.healthState !== nextState;
     surface.healthState = nextState;
     if (videoInfo) surface.videoInfo = videoInfo;
@@ -783,12 +784,15 @@
     if (badge) {
       badge.dataset.health = nextState;
       badge.textContent = nextState === "healthy" ? "VIDEO FLOWING" :
+        nextState === "recovering" ? "RECOVERING VIDEO" :
         nextState === "stalled" ? "NO NEW FRAMES" :
         nextState === "muted" ? "VIDEO TRACK MUTED" :
         nextState === "paused" ? "VIEW PAUSED" : "CHECKING VIDEO";
       badge.title = nextState === "stalled"
         ? "No new decoded frame has reached the compositor for 12 seconds. The source may be paused, throttled or withholding frames; inspect the source tab and compatibility report."
-        : nextState === "muted"
+        : nextState === "recovering"
+          ? "Reattaching the existing captured stream to the local video element. This does not restart Chrome tab capture."
+          : nextState === "muted"
           ? "Chrome temporarily marked the captured video track as muted."
           : nextState === "paused" ? "Health monitoring pauses while this workspace or card is hidden." : "Live video frame monitoring.";
     }
@@ -802,6 +806,97 @@
         videoInfo: surface.videoInfo || null
       }, location.origin);
     }
+  }
+
+
+  async function refreshLiveVideo(nodeId, button, automatic = false) {
+    const surface = liveSurfaces.get(nodeId);
+    if (!surface || !surface.connected) {
+      if (!automatic) toast("This website does not have an active live video stream.", "error");
+      return false;
+    }
+    if (surface.recoveryPromise) return surface.recoveryPromise;
+
+    const track = surface.stream.getVideoTracks()[0];
+    if (!track || track.readyState === "ended") {
+      stopLiveSurfaceById(surface.surfaceId, "Chrome ended the source video track. Start a new stream from the Companion.", false);
+      return false;
+    }
+    if (track.muted) {
+      setLiveSurfaceHealth(surface.surfaceId, "muted", liveVideoMetrics(surface.frameMonitor?.video, track));
+      if (!automatic) toast("Chrome has muted the captured video track. Wait for it to unmute or reconnect the source tab.", "error");
+      return false;
+    }
+
+    const now = Date.now();
+    surface.recoveryAttempts = (surface.recoveryAttempts || []).filter((time) => now - time < 300000);
+    if (surface.recoveryAttempts.length >= 3) {
+      if (!automatic) toast("Video refresh is rate-limited. Try again in a few minutes or restart capture from Chrome.", "error");
+      return false;
+    }
+    if (automatic && surface.autoRecoveryAttempted) return false;
+    surface.recoveryAttempts.push(now);
+    if (automatic) surface.autoRecoveryAttempted = true;
+
+    const video = $('.node[data-id="' + CSS.escape(nodeId) + '"] .live-surface-video', world);
+    if (!video) {
+      if (!automatic) toast("The live video element is not currently visible on the canvas.", "error");
+      return false;
+    }
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Refreshing…";
+    }
+    setLiveSurfaceHealth(surface.surfaceId, "recovering", liveVideoMetrics(video, track));
+    const recoveryPromise = (async () => {
+      try {
+        // Rebind only the existing stream. Do not mint another Chrome capture
+        // token, so the source page's login/session and capture permission stay intact.
+        video.pause();
+        video.srcObject = null;
+        await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+        if (liveSurfaces.get(nodeId) !== surface || track.readyState !== "live") {
+          throw new Error("The original Chrome capture is no longer live.");
+        }
+        video.srcObject = surface.stream;
+        await video.play();
+        const videoInfo = await waitForLiveVideoFrame(video, surface.stream, 7000);
+        if (liveSurfaces.get(nodeId) !== surface) throw new Error("The live surface was closed during refresh.");
+
+        const monitor = surface.frameMonitor;
+        if (monitor) {
+          monitor.video = video;
+          monitor.lastFrameAt = Date.now();
+          monitor.lastFrameCounter = videoInfo.presentedFrames ?? null;
+          monitor.previousFrame = null;
+          monitor.lastHealthReportAt = 0;
+          if (monitor.callbackId && typeof video.cancelVideoFrameCallback === "function") {
+            try { video.cancelVideoFrameCallback(monitor.callbackId); } catch (_) {}
+            monitor.callbackId = null;
+          }
+        }
+        setLiveSurfaceHealth(surface.surfaceId, "healthy", liveVideoMetrics(video, track));
+        if (!automatic) toast("Video presentation refreshed without restarting the Chrome capture.");
+        return true;
+      } catch (error) {
+        if (liveSurfaces.get(nodeId) === surface) {
+          setLiveSurfaceHealth(surface.surfaceId, "stalled", liveVideoMetrics(video, track));
+        }
+        if (!automatic) {
+          toast("Video refresh failed: " + String(error?.message || error) + ". Use Focus source, then restart capture from the Companion if needed.", "error");
+        }
+        return false;
+      } finally {
+        if (button?.isConnected) {
+          button.disabled = false;
+          button.textContent = "Refresh video";
+        }
+        if (surface.recoveryPromise === recoveryPromise) surface.recoveryPromise = null;
+      }
+    })();
+    surface.recoveryPromise = recoveryPromise;
+    return recoveryPromise;
   }
 
   function bindLiveFrameMonitor(nodeId, surface, video) {
@@ -820,7 +915,8 @@
         track,
         onTrackMute: null,
         onTrackUnmute: null,
-        onVisibility: null
+        onVisibility: null,
+        autoRecoveryAttempted: !!surface.autoRecoveryAttempted
       };
       monitor.onTrackMute = () => setLiveSurfaceHealth(surface.surfaceId, "muted", liveVideoMetrics(monitor.video || video, track));
       monitor.onTrackUnmute = () => {
@@ -877,8 +973,14 @@
             } else surface.videoInfo = info;
           }
         }
-        if (Date.now() - monitor.lastFrameAt > 12000) {
-          if (surface.healthState !== "stalled") setLiveSurfaceHealth(surface.surfaceId, "stalled", liveVideoMetrics(currentVideo, track));
+        if (Date.now() - monitor.lastFrameAt > 12000 && surface.healthState !== "recovering") {
+          if (!monitor.autoRecoveryAttempted) {
+            monitor.autoRecoveryAttempted = true;
+            surface.autoRecoveryAttempted = true;
+            void refreshLiveVideo(nodeId, null, true);
+          } else if (surface.healthState !== "stalled") {
+            setLiveSurfaceHealth(surface.surfaceId, "stalled", liveVideoMetrics(currentVideo, track));
+          }
         }
       }, 4000);
       surface.frameMonitor = monitor;
@@ -1092,7 +1194,10 @@
         keepSourceVisible: !!message.keepSourceVisible,
         healthState: "checking",
         connected: false,
-        frameMonitor: null
+        frameMonitor: null,
+        autoRecoveryAttempted: false,
+        recoveryAttempts: [],
+        recoveryPromise: null
       });
       activeView = "canvas";
       $("#searchInput").value = "";
@@ -1237,6 +1342,7 @@
     if (action === "compatibility" && node.type === "website") setEmbedMode(node, article, "compat");
     if (action === "safe-mode" && node.type === "website") setEmbedMode(node, article, "safe");
     if (action === "stop-live" && node.type === "website") stopLiveSurface(node.id);
+    if (action === "refresh-live" && node.type === "website") void refreshLiveVideo(node.id, button, false);
     if (action === "toggle-live-audio" && node.type === "website") toggleLiveAudio(node.id, button);
     if (action === "focus-live" && node.type === "website") openWebsite(node);
     if (action === "live-help" && node.type === "website") toast("Open this website in a Chrome tab, click the Nolane Companion icon there, then choose Stream this tab to Nolane.");
