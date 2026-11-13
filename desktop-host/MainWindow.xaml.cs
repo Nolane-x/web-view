@@ -418,8 +418,8 @@ public sealed partial class MainWindow : Window
                 args.SavesInProfile = false;
                 var result = await dialog.ShowAsync();
                 args.State = result == ContentDialogResult.Primary
-                    ? CoreWebView2PermissionState.Allowed
-                    : CoreWebView2PermissionState.Denied;
+                    ? CoreWebView2PermissionState.Allow
+                    : CoreWebView2PermissionState.Deny;
                 PublishSurfaceState(surface, "ready",
                     result == ContentDialogResult.Primary
                         ? "Allowed one-time permission: " + args.PermissionKind
@@ -432,7 +432,7 @@ public sealed partial class MainWindow : Window
         }
         catch
         {
-            args.State = CoreWebView2PermissionState.Denied;
+            args.State = CoreWebView2PermissionState.Deny;
         }
         finally
         {

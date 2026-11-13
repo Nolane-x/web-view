@@ -234,7 +234,7 @@ else pass("Native browser host starts initialization only after the WebView2 con
 if (!nativeHost.includes("GetAvailableBrowserVersionString") || !nativeHost.includes("NewBrowserVersionAvailable")) fail("Native host must detect the Evergreen WebView2 Runtime and newer runtime updates.");
 else pass("Native host checks runtime availability and detects browser-runtime updates.");
 if (!nativeHost.includes("PermissionRequested") || !nativeHost.includes("Allow once") ||
-    !nativeHost.includes("SavesInProfile = false") || !nativeHost.includes("CoreWebView2PermissionState.Denied")) fail("Native website permissions must require an explicit non-persistent user decision.");
+    !nativeHost.includes("SavesInProfile = false") || !nativeHost.includes("CoreWebView2PermissionState.Deny")) fail("Native website permissions must require an explicit non-persistent user decision.");
 else pass("Native website permissions require an explicit Allow once/Block decision.");
 if (!nativeHost.includes("DownloadStarting") || !nativeHost.includes("IsUserInitiated") ||
     !nativeHost.includes("IsSafeWebUri(url)")) fail("Native browser downloads, popup gesture checks or URL restrictions are incomplete.");
@@ -254,8 +254,10 @@ else pass("Successful main-branch builds publish a stable, rolling Windows host 
 const filterFunction = js.slice(js.indexOf("function updateViewFilter"), js.indexOf("function selectNode"));
 const selectionFunction = js.slice(js.indexOf("function selectNode"), js.indexOf("function handleNodeAction"));
 const nativeSyncFunction = js.slice(js.indexOf("function scheduleNativeSurfaceSync"), js.indexOf("function handleNativeHostMessage"));
-if (!nativeSyncFunction.includes("bridgeConnected && node.browserTabId !== undefined") ||
-    !nativeSyncFunction.includes("node.browserSessionId === bridgeSessionId") ||
+const nativeEligibility = js.slice(js.indexOf("function isChromeOwnedNode"), js.indexOf("function postNativeSurfaceCommand"));
+if (!nativeSyncFunction.includes("canUseNativeSurface(node)") ||
+    !nativeEligibility.includes("bridgeConnected && node.browserTabId !== undefined") ||
+    !nativeEligibility.includes("node.browserSessionId === bridgeSessionId") ||
     !nativeSyncFunction.includes("liveSurfaces.has(node.id)") ||
     !nativeSyncFunction.includes("clipX:") || !nativeSyncFunction.includes("clipWidth:") ||
     !js.includes("function clearUnavailableChromeTabBindings") ||
