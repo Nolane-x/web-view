@@ -70,6 +70,9 @@ else pass("Static workspace does not access privileged browser APIs.");
 
 if (!html.includes('id="bridgeDialog"') || !html.includes("Companion not detected")) fail("Browser Companion status UI is missing.");
 else pass("Browser Companion status is explicit and does not imply a working extension.");
+if (!html.includes("https://github.com/Nolane-x/web-view/releases/download/native-latest/nolane-native-webview2-host-win-x64.zip") || !html.includes("Native WebView2 Host (Windows x64)") ||
+    !html.includes("does not copy Chrome cookies")) fail("The native Windows browser host download and separate-profile disclosure are missing.");
+else pass("The website exposes the direct native Windows host download and Chrome-profile separation warning.");
 
 const extensionManifest = JSON.parse(read("extension/manifest.json"));
 const extensionBridge = read("extension/content.js");
