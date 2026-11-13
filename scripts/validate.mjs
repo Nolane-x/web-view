@@ -269,9 +269,10 @@ if (!nativeHost.includes("OpenLibraryUrl") || !nativeHost.includes("GetLibraryTa
     !js.includes("native-bookmark") || !js.includes("toggle-bookmark")) fail("Native browser Library UI, per-card bookmark control or instant search is incomplete.");
 else pass("Native Library opens history/bookmarks in the focused website card, supports per-card bookmarks and filters title/domain/address instantly.");
 if (!nativeHost.includes("ExportLibrary_Click") || !nativeHost.includes("ImportLibrary_Click") ||
-    !nativeHost.includes("new FileSavePicker") || !nativeHost.includes("new FileOpenPicker") ||
-    !nativeHost.includes("InitializeWithWindow.Initialize") || !nativeHost.includes("WindowNative.GetWindowHandle(this)") ||
-    !nativeHost.includes("EnsureNonElevatedFilePickerMode") || !nativeHost.includes("SchemaVersion != 1") ||
+    !nativeHost.includes("PickLibraryBackupPath(save: true)") || !nativeHost.includes("PickLibraryBackupPath(save: false)") ||
+    !nativeHost.includes("Type.GetTypeFromCLSID(classId") || !nativeHost.includes("IFileSaveDialog") ||
+    !nativeHost.includes("IFileOpenDialog") || !nativeHost.includes("FileDialogOptions.OverwritePrompt") ||
+    !nativeHost.includes("FileDialogOptions.FileMustExist") || !nativeHost.includes("SchemaVersion != 1") ||
     !nativeHost.includes("MaxLibraryBackupBytes") || !nativeHost.includes("stagedHistory") ||
     !nativeHost.includes("stagedBookmarks") || !nativeHost.includes("ContentDialogResult.Primary") ||
     !nativeXaml.includes("Export backup") || !nativeXaml.includes("Import backup") ||
