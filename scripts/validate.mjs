@@ -218,6 +218,7 @@ else pass("Original-tab focus remains tied to its browser profile.");
 
 
 const nativeHost = read("desktop-host/MainWindow.xaml.cs");
+const nativeXaml = read("desktop-host/MainWindow.xaml");
 const nativeProject = read("desktop-host/Nolane.DesktopHost.csproj");
 const nativeWorkflow = read(".github/workflows/desktop-host.yml");
 const nativeBridge = read("native-bridge.js");
@@ -245,8 +246,8 @@ if (!nativeHost.includes("PermissionRequested") || !nativeHost.includes("Allow o
     !nativeHost.includes("SavesInProfile = false") || !nativeHost.includes("CoreWebView2PermissionState.Deny")) fail("Native website permissions must require an explicit non-persistent user decision.");
 else pass("Native website permissions require an explicit Allow once/Block decision.");
 if (!nativeHost.includes("DownloadStarting") || !nativeHost.includes("IsUserInitiated") ||
-    !nativeHost.includes("IsSafeWebUri(url)") || !f["desktop-host/MainWindow.xaml"].includes('x:Name="DownloadsPanel"') ||
-    !f["desktop-host/MainWindow.xaml"].includes('x:Name="DownloadsList"')) fail("Native browser downloads, popup gesture checks or URL restrictions are incomplete.");
+    !nativeHost.includes("IsSafeWebUri(url)") || !nativeXaml.includes('x:Name="DownloadsPanel"') ||
+    !nativeXaml.includes('x:Name="DownloadsList"')) fail("Native browser downloads, popup gesture checks or URL restrictions are incomplete.");
 else pass("Native browser retains user-controlled downloads, blocks unsolicited popups and rejects credential/non-web URLs.");
 if (!nativeHost.includes("core.HistoryChanged") || !nativeHost.includes("core.IsMutedChanged") ||
     !nativeHost.includes("core.IsDocumentPlayingAudioChanged") || !nativeHost.includes("ExecuteSurfaceCommand")) fail("Native browser history/audio controls and state reporting are incomplete.");
