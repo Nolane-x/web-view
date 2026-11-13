@@ -4,6 +4,10 @@ import fs from "node:fs";
 import vm from "node:vm";
 
 const backgroundSource = fs.readFileSync(new URL("../extension/background.js", import.meta.url), "utf8");
+const compatibilitySource = fs.readFileSync(new URL("../extension/compatibility.js", import.meta.url), "utf8");
+const compatibilityContext = { URL };
+vm.runInNewContext(compatibilitySource, compatibilityContext, { filename: "extension/compatibility.js" });
+const compatibilityEngine = compatibilityContext.NolaneCompatibility;
 
 function makeEvent() {
   const listeners = [];
@@ -57,7 +61,7 @@ function createHarness(options = {}) {
     runtime: {
       onMessage: runtimeMessage,
       getURL(path) { return "chrome-extension://nolane-test/" + path; },
-      getManifest() { return { version: "0.2.7" }; }
+      getManifest() { return { version: "0.2.8" }; }
     },
     storage: {
       local: {
@@ -179,6 +183,7 @@ function createHarness(options = {}) {
   };
 
   vm.runInNewContext(backgroundSource, {
+    NolaneCompatibility: compatibilityEngine,
     chrome,
     URL,
     setTimeout,
@@ -730,7 +735,7 @@ test("popup diagnostics are scoped to the companion and omit raw page URLs", asy
     { url: "chrome-extension://nolane-test/popup.html" }
   );
   assert.equal(diagnostic.ok, true);
-  assert.equal(diagnostic.extensionVersion, "0.2.7");
+  assert.equal(diagnostic.extensionVersion, "0.2.8");
   assert.equal(JSON.stringify(diagnostic.capturedTabs), JSON.stringify([{ tabId: 10, status: "active", fullscreen: false }]));
   assert.ok(Array.isArray(diagnostic.liveSessions));
   const denied = await h.send(
@@ -834,4 +839,49 @@ test("capture status transitions are tracked and stopped/error status tears down
     item.message.surfaceId === started.surfaceId &&
     /capture error/i.test(item.message.reason)
   ));
+});
+
+
+test("compatibility engine classifies known website families without collecting page contents", () => {
+  const media = compatibilityEngine.classifyUrl("https://www.youtube.com/watch?v=redacted");
+  assert.equal(media.category, "media");
+  assert.equal(media.origin, "https://www.youtube.com");
+  assert.equal(media.hints.some((hint) => /protected video output/i.test(hint)), true);
+
+  const learning = compatibilityEngine.classifyUrl("https://learn.example.edu/course/1");
+  assert.equal(learning.category, "learning");
+  assert.equal(learning.hints.some((hint) => /source tab visible/i.test(hint)), true);
+
+  const auth = compatibilityEngine.classifyUrl("https://example.com/oauth/authorize?code=secret");
+  assert.equal(auth.authFlow, true);
+  assert.equal(auth.origin, "https://example.com");
+  assert.equal(auth.hints.some((hint) => /credentials/i.test(hint)), true);
+});
+
+test("compatibility engine maps major Chrome capture failures to concrete next actions", () => {
+  const site = compatibilityEngine.classifyUrl("https://youpass.vn/dashboard");
+  const debuggerFailure = compatibilityEngine.diagnose({
+    site,
+    errorMessage: "Cannot access a chrome-extension:// URL of different extension"
+  });
+  assert.equal(debuggerFailure.code, "CDP_FOREIGN_EXTENSION_FRAME");
+  assert.equal(debuggerFailure.severity, "warning");
+
+  const ended = compatibilityEngine.diagnose({
+    site,
+    captureStatus: "stopped",
+    videoInfo: { trackReadyState: "ended" },
+    session: true
+  });
+  assert.equal(ended.code, "CAPTURE_ENDED");
+  assert.equal(compatibilityEngine.assessSession({
+    captureStatus: "stopped",
+    videoInfo: { trackReadyState: "ended" }
+  }).action, "restart-capture");
+
+  const stalled = compatibilityEngine.assessSession({
+    healthState: "stalled",
+    videoInfo: { trackReadyState: "live", trackMuted: false }
+  });
+  assert.equal(stalled.action, "refresh-video");
 });
