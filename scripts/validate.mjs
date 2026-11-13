@@ -228,10 +228,13 @@ if (!nativeHost.includes("nolane.surfaces.sync") || !nativeHost.includes("Ensure
     !nativeHost.includes("TotalAvailableMemoryBytes") || !nativeHost.includes("MaxCachedSurfaces => Math.Min(8, MaxVisibleSurfaces * 2)") ||
     !nativeHost.includes("RectangleGeometry") || !nativeHost.includes("item.ClipWidth")) fail("Native WebView2 host must create real browser surfaces, adapt its memory budget, bound the cache and clip child browsers to the canvas viewport.");
 else pass("Native WebView2 host creates real browser surfaces and bounds active renderers.");
-if (!nativeProject.includes("Microsoft.WindowsAppSDK") || !nativeProject.includes("Microsoft.Web.WebView2") ||
-    !nativeProject.includes('Version="1.0.4314.35"') || !nativeProject.includes("net8.0-windows10.0.19041.0") ||
-    !nativeProject.includes("WindowsAppSDKSelfContained")) fail("Native host must pin a direct WebView2 SDK dependency alongside its Windows App SDK target.");
-else pass("Native host targets WinUI 3 with a direct, pinned WebView2 SDK on Windows 10 19041+.");
+if (!nativeProject.includes("Microsoft.WindowsAppSDK") || nativeProject.includes("Microsoft.Web.WebView2") ||
+    !nativeProject.includes("net8.0-windows10.0.19041.0") || !nativeProject.includes("WindowsAppSDKSelfContained") ||
+    !nativeHost.includes("using Windows.Storage.Pickers;") ||
+    !nativeHost.includes("WinRT.Interop.InitializeWithWindow.Initialize") ||
+    !nativeHost.includes("WinRT.Interop.WindowNative.GetWindowHandle(this)") ||
+    !nativeHost.includes("EnsureNonElevatedFilePickerMode")) fail("Native host must retain its verified WebView2 package graph and use a correctly window-associated desktop picker.");
+else pass("Native host retains the verified WinUI/WebView2 dependency graph and uses the supported HWND-associated desktop picker bridge.");
 if (!nativeHost.includes("WorkspaceView.Loaded += MainWindow_Loaded")) fail("Native browser host must initialize WebView2 from its control Loaded event.");
 else pass("Native browser host starts initialization only after the WebView2 control is loaded.");
 if (!nativeHost.includes("GetAvailableBrowserVersionString") || !nativeHost.includes("NewBrowserVersionAvailable")) fail("Native host must detect the Evergreen WebView2 Runtime and newer runtime updates.");
