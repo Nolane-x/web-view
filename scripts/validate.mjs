@@ -264,7 +264,6 @@ else pass("Native browser host starts initialization only after the WebView2 con
 if (!workflow.includes("Compile isolated WebView2 projection smoke test") ||
     !workflow.includes("native-diagnostics/WebView2ProjectionSmokeTest.csproj") ||
     !workflow.includes("native-diagnostics/HostCompileProbe/HostCompileProbe.csproj") ||
-    !validator.includes("native-diagnostics/HostCompileProbe/HostCompileProbe.csproj") ||
     !workflow.includes("native-diagnostics/WinUIWebView2ControlSmokeTest/WinUIWebView2ControlSmokeTest.csproj") ||
     !smokeProject.includes('PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3179.45"') ||
     !smokeCs.includes("CoreWebView2Environment") ||
