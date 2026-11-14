@@ -457,6 +457,7 @@ if (!nativeHost.includes('uri.AbsolutePath.Equals("/web-view"') || !nativeHost.i
 else pass("Native host accepts only the exact Nolane workspace path family.");
 
 const localBridge = read("desktop-host/LocalBridgeServer.cs");
+const bridgeSmoke = read("native-diagnostics/LocalBridgeServerSmokeTest/Program.cs");
 const trayIcon = read("desktop-host/BackgroundTrayIcon.cs");
 if (!localBridge.includes("IPAddress.Loopback") ||
     !localBridge.includes("Port = 43172") ||
@@ -513,9 +514,6 @@ if (!trayIcon.includes("EnableStartupAfterFirstConnection") ||
     !trayIcon.includes('key.SetValue(StartupChoiceValue, "disabled")')) fail("First connection startup registration must respect an explicit user decision to disable auto-start.");
 else pass("Windows auto-start is enabled after first connection unless the user has explicitly disabled it.");
 
-if (process.exitCode) process.exit(process.exitCode);
-console.log("All static checks passed.");
-
 if (!nativeHost.includes("IsTrustedWorkspaceUri") ||
     !nativeHost.includes("pageElement.GetString()") ||
     !js.includes("page: location.href")) fail("The first local handshake must bind to the published /web-view workspace path, not just the shared GitHub Pages origin.");
@@ -536,3 +534,6 @@ else pass("The local bridge rejects alternate request paths and abandons incompl
 if (!bridgeSmoke.includes("client.CloseStatus == WebSocketCloseStatus.MessageTooBig") ||
     bridgeSmoke.includes("closed.CloseStatus")) fail("The Windows WebSocket smoke test must inspect the close status from ClientWebSocket.");
 else pass("The Windows bridge smoke test checks the server's 2 MiB close code through ClientWebSocket.");
+
+if (process.exitCode) process.exit(process.exitCode);
+console.log("All static checks passed.");
