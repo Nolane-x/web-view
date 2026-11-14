@@ -407,3 +407,7 @@ kbd { font-family: var(--sans); font-size: 9px; border: 1px solid rgba(255,255,2
 .native-node-action[data-bookmarked="true"] .icon { fill: rgba(240,201,108,.28); }
 
 .native-private-status { display: inline-flex; align-items: center; flex: 0 0 auto; padding: 2px 5px; border: 1px solid rgba(181, 156, 255, .34); border-radius: 4px; color: #c8b8ff; background: rgba(139, 116, 255, .13); font-size: 6px; font-weight: 850; letter-spacing: .45px; white-space: nowrap; }
+
+.native-profile-select { display: block; width: 82px; min-width: 64px; max-width: 96px; height: 18px; flex: 0 1 82px; padding: 0 3px; border: 1px solid rgba(255,255,255,.075); border-radius: 4px; outline: 0; color: #aeb9cb; background: rgba(5,8,13,.5); font: 7px/15px var(--mono); cursor: pointer; }
+.native-profile-select:hover { border-color: rgba(167,139,250,.3); color: #e0d8ff; }
+.native-profile-select:focus { border-color: rgba(167,139,250,.62); box-shadow: 0 0 0 2px rgba(167,139,250,.08); }

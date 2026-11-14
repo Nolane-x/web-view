@@ -350,6 +350,8 @@
       clean.description = String(node.description || "A website in your workspace.").slice(0, 240);
       clean.embedMode = node.embedMode === "compat" ? "compat" : "safe";
       clean.privateMode = node.privateMode === true;
+      const browserProfile = window.NolaneNativeBridge?.normalizeProfileName(node.browserProfile);
+      if (browserProfile) clean.browserProfile = browserProfile;
       if (Number.isInteger(node.browserTabId) && node.browserTabId >= 0) clean.browserTabId = node.browserTabId;
       if (Number.isInteger(node.browserWindowId) && node.browserWindowId >= 0) clean.browserWindowId = node.browserWindowId;
       if (typeof node.browserSessionId === "string" && node.browserSessionId.length >= 20 && node.browserSessionId.length <= 80) clean.browserSessionId = node.browserSessionId;
@@ -475,6 +477,7 @@
           url: node.privateMode && node.transientUrl ? node.transientUrl : node.url,
           title: node.title,
           privateMode: node.privateMode === true,
+          profileName: node.browserProfile || "",
           x: Math.round(rect.left * 100) / 100,
           y: Math.round(rect.top * 100) / 100,
           width: Math.round(rect.width * 100) / 100,
@@ -514,6 +517,18 @@
         node.privateMode = state.isPrivateMode;
         if (!state.isPrivateMode) delete node.transientUrl;
         scheduleSave();
+      }
+      if (node && state.profileName !== null) {
+        const actualProfile = state.profileName || "";
+        const savedProfile = node.browserProfile || "";
+        if (savedProfile !== actualProfile) {
+          if (actualProfile) node.browserProfile = actualProfile;
+          else delete node.browserProfile;
+          scheduleSave();
+          scheduleNativeSurfaceSync();
+        }
+        const profileSelect = $('.node[data-id="' + CSS.escape(state.id) + '"] .native-profile-select', world);
+        if (profileSelect) profileSelect.value = actualProfile;
       }
       if (node && state.url) {
         try {
@@ -571,6 +586,9 @@
         mute.dataset.muted = state.isMuted ? "true" : "false";
         mute.dataset.playing = state.isPlayingAudio ? "true" : "false";
       }
+      const profileSelect = card.querySelector(".native-profile-select");
+      if (profileSelect && state.profileName !== null) profileSelect.value = state.profileName;
+
       const privateButton = card.querySelector('[data-action="native-private"]');
       if (privateButton) {
         privateButton.dataset.private = state.isPrivateMode ? "true" : "false";
@@ -671,6 +689,17 @@
     scheduleNativeSurfaceSync();
   }
 
+  function availableBrowserProfiles() {
+    const profiles = new Map();
+    ["Work", "Personal", "Research"].forEach((name) => profiles.set(name.toLowerCase(), name));
+    const allNodes = [...nodes, ...spaces.flatMap((space) => Array.isArray(space.nodes) ? space.nodes : [])];
+    for (const item of allNodes) {
+      const name = window.NolaneNativeBridge?.normalizeProfileName(item?.browserProfile);
+      if (name) profiles.set(name.toLowerCase(), name);
+    }
+    return [...profiles.values()].sort((a, b) => a.localeCompare(b));
+  }
+
   function createNodeElement(node) {
     const article = document.createElement("article");
     article.className = "node" + (node.id === selectedId ? " selected" : "");
@@ -697,7 +726,12 @@
       '<span class="node-favicon">' + (node.type === "website" ? escapeHTML(initials(hostOf(node.url))) : '<svg class="icon"><use href="#i-sticky"/></svg>') + '</span>' +
       '<span class="node-title-wrap"><span class="node-title">' + escapeHTML(node.title) + '</span>' +
         (canUseNativeSurface(node)
-          ? '<input class="native-address-input" type="text" aria-label="Website address" title="Type an address and press Enter" spellcheck="false" autocomplete="off" value="' + escapeHTML(node.privateMode && node.transientUrl ? node.transientUrl : node.url) + '">'
+          ? '<input class="native-address-input" type="text" aria-label="Website address" title="Type an address and press Enter" spellcheck="false" autocomplete="off" value="' + escapeHTML(node.privateMode && node.transientUrl ? node.transientUrl : node.url) + '">' +
+            '<select class="native-profile-select" aria-label="Browser profile" title="Choose an isolated login profile">' +
+              '<option value="">Default</option>' +
+              availableBrowserProfiles().map((name) => '<option value="' + escapeHTML(name) + '"' + ((node.browserProfile || "").toLowerCase() === name.toLowerCase() ? " selected" : "") + '>' + escapeHTML(name) + '</option>').join("") +
+              '<option value="__new__">+ New profile…</option>' +
+            '</select>'
           : '<span class="node-subtitle">' + escapeHTML(node.type === "website" ? ((node.browserTabId !== undefined ? "Chrome tab · " : "") + hostOf(node.url)) : "Personal note") + '</span>') +
       '</span>' +
       '<span class="node-actions">' + nativeTools +
@@ -713,6 +747,46 @@
       privateBadge.title = "This card is using a temporary WebView2 InPrivate session.";
       header.querySelector(".node-title-wrap")?.appendChild(privateBadge);
     }
+    const profileSelect = header.querySelector(".native-profile-select");
+    if (profileSelect) {
+      profileSelect.addEventListener("pointerdown", (event) => event.stopPropagation());
+      profileSelect.addEventListener("click", (event) => event.stopPropagation());
+      profileSelect.addEventListener("change", () => {
+        let selectedProfile = profileSelect.value;
+        if (selectedProfile === "__new__") {
+          const proposed = window.prompt("Create a browser profile name (up to 64 letters, numbers, spaces, _ or -).", "");
+          if (proposed === null) {
+            profileSelect.value = node.browserProfile || "";
+            return;
+          }
+          selectedProfile = window.NolaneNativeBridge?.normalizeProfileName(proposed);
+          if (!selectedProfile) {
+            toast("Profile name is invalid. Use up to 64 letters, numbers, spaces, underscores or hyphens.", "error");
+            profileSelect.value = node.browserProfile || "";
+            return;
+          }
+        } else if (selectedProfile) {
+          selectedProfile = window.NolaneNativeBridge?.normalizeProfileName(selectedProfile);
+          if (!selectedProfile) {
+            profileSelect.value = node.browserProfile || "";
+            return toast("That browser profile name is not supported.", "error");
+          }
+        }
+        const nextProfile = selectedProfile || "";
+        if ((node.browserProfile || "") === nextProfile) {
+          profileSelect.value = nextProfile;
+          return;
+        }
+        if (nextProfile) node.browserProfile = nextProfile;
+        else delete node.browserProfile;
+        scheduleSave();
+        renderNodes();
+        toast(nextProfile
+          ? "Switching this card to the " + nextProfile + " profile. Its cookies and site data are separate."
+          : "Switching this card to the Default browser profile.");
+      });
+    }
+
     const nativeAddressInput = header.querySelector(".native-address-input");
     if (nativeAddressInput) {
       nativeAddressInput.addEventListener("pointerdown", (event) => event.stopPropagation());

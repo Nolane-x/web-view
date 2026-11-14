@@ -35,6 +35,13 @@
     }
   }
 
+  function normalizeProfileName(value) {
+    if (typeof value !== "string") return null;
+    const clean = value.trim();
+    if (!clean || clean.length > 64 || !/^[A-Za-z0-9 _-]+$/.test(clean) || /[. ]$/.test(clean)) return null;
+    return clean;
+  }
+
   function normalizeSurfaceState(message) {
     if (!message || typeof message !== "object" || message.type !== "nolane.native.surface") return null;
     if (typeof message.id !== "string" || !message.id.trim() || message.id.length > 128) return null;
@@ -59,11 +66,14 @@
       isMuted: message.isMuted === true,
       isPlayingAudio: message.isPlayingAudio === true,
       isBookmarked: message.isBookmarked === true,
-      isPrivateMode: typeof message.isPrivateMode === "boolean" ? message.isPrivateMode : null
+      isPrivateMode: typeof message.isPrivateMode === "boolean" ? message.isPrivateMode : null,
+      profileName: typeof message.profileName === "string"
+        ? (message.profileName === "" ? "" : normalizeProfileName(message.profileName))
+        : null
     });
   }
 
-  const api = Object.freeze({ createCommand, createNavigationCommand, normalizeSurfaceState });
+  const api = Object.freeze({ createCommand, createNavigationCommand, normalizeProfileName, normalizeSurfaceState });
   const root = typeof window !== "undefined" ? window : globalThis;
   root.NolaneNativeBridge = api;
 })();

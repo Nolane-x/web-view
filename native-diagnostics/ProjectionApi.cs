@@ -12,6 +12,7 @@ public static class ProjectionApi
     public static CoreWebView2ControllerOptions CreatePrivateControllerOptions(CoreWebView2Environment environment)
     {
         var options = environment.CreateCoreWebView2ControllerOptions();
+        options.ProfileName = "NolaneSmokeProfile";
         options.IsInPrivateModeEnabled = true;
         return options;
     }

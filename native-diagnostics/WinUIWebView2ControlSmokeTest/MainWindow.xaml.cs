@@ -27,6 +27,7 @@ public sealed partial class MainWindow : Window
     public async Task InitializePrivateSessionAsync(CoreWebView2Environment environment)
     {
         var options = environment.CreateCoreWebView2ControllerOptions();
+        options.ProfileName = "NolaneSmokeProfile";
         options.IsInPrivateModeEnabled = true;
         await Browser.EnsureCoreWebView2Async(environment, options);
     }

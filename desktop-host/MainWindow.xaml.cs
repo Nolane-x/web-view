@@ -388,14 +388,16 @@ public sealed partial class MainWindow : Window
                 }
 
                 activeCount++;
-                if (_surfaces.TryGetValue(item.Id, out var configured) && configured.IsPrivate != item.PrivateMode)
+                if (_surfaces.TryGetValue(item.Id, out var configured) &&
+                    (configured.IsPrivate != item.PrivateMode ||
+                     !StringComparer.OrdinalIgnoreCase.Equals(configured.ProfileName, item.ProfileName)))
                 {
                     if (HasRetainedDownload(item.Id))
                     {
                         ApplyBounds(configured.View, item);
                         await SetSurfaceVisibleAsync(configured, true);
                         PublishSurfaceState(configured, "ready",
-                            "Finish or cancel this card's active download before changing its browser session mode.");
+                            "Finish or cancel this card's active download before changing its browser profile or privacy mode.");
                         continue;
                     }
                     await RemoveSurfaceAsync(item.Id);
@@ -427,13 +429,14 @@ public sealed partial class MainWindow : Window
             VerticalAlignment = VerticalAlignment.Stretch,
             Visibility = Visibility.Collapsed
         };
-        var surface = new BrowserSurface(item.Id, item.Url, view, item.PrivateMode);
+        var surface = new BrowserSurface(item.Id, item.Url, view, item.PrivateMode, item.ProfileName);
         _surfaces[item.Id] = surface;
         BrowserSurfaceLayer.Children.Add(view);
         ApplyBounds(view, item);
         try
         {
             var controllerOptions = _environment!.CreateCoreWebView2ControllerOptions();
+            controllerOptions.ProfileName = item.ProfileName;
             controllerOptions.IsInPrivateModeEnabled = item.PrivateMode;
             await view.EnsureCoreWebView2Async(_environment, controllerOptions);
             if (!_surfaces.ContainsKey(item.Id))
@@ -1737,7 +1740,8 @@ public sealed partial class MainWindow : Window
                 isMuted = core.IsMuted,
                 isPlayingAudio = core.IsDocumentPlayingAudio,
                 isBookmarked = surface.IsPrivate ? false : IsBookmarked(core.Source),
-                isPrivateMode = surface.IsPrivate
+                isPrivateMode = surface.IsPrivate,
+                profileName = surface.ProfileName
             });
         }
         catch
@@ -1777,8 +1781,15 @@ public sealed partial class MainWindow : Window
         var visible = element.TryGetProperty("visible", out var v) && v.ValueKind == JsonValueKind.True;
         var privateMode = element.TryGetProperty("privateMode", out var privateProperty) &&
             privateProperty.ValueKind == JsonValueKind.True;
+        var profileName = "";
+        if (element.TryGetProperty("profileName", out var profileProperty))
+        {
+            if (profileProperty.ValueKind != JsonValueKind.String) return false;
+            profileName = profileProperty.GetString() ?? "";
+            if (!IsSafeProfileName(profileName)) return false;
+        }
         descriptor = new SurfaceDescriptor(id, uri.ToString(), x, y, width, height,
-            clipX, clipY, clipWidth, clipHeight, z, visible, privateMode);
+            clipX, clipY, clipWidth, clipHeight, z, visible, privateMode, profileName);
         return true;
     }
 
@@ -1803,6 +1814,16 @@ public sealed partial class MainWindow : Window
 
     private static string SafeHost(string value) =>
         Uri.TryCreate(value, UriKind.Absolute, out var uri) ? uri.Host : "website";
+
+    private static bool IsSafeProfileName(string value)
+    {
+        if (value.Length > 64 || (value.Length > 0 && (value[^1] == '.' || value[^1] == ' '))) return false;
+        foreach (var character in value)
+        {
+            if (!char.IsAsciiLetterOrDigit(character) && character is not (' ' or '_' or '-')) return false;
+        }
+        return true;
+    }
 
     private static void OpenExternal(string value)
     {
@@ -1889,12 +1910,13 @@ public sealed partial class MainWindow : Window
         public DateTimeOffset UpdatedAtUtc { get; set; }
     }
 
-    private sealed class BrowserSurface(string id, string url, WebView2 view, bool isPrivate)
+    private sealed class BrowserSurface(string id, string url, WebView2 view, bool isPrivate, string profileName)
     {
         public string Id { get; } = id;
         public string Url { get; set; } = url;
         public WebView2 View { get; } = view;
         public bool IsPrivate { get; } = isPrivate;
+        public string ProfileName { get; } = profileName;
         public bool Initialized { get; set; }
         public bool Suspended { get; set; }
         public bool PendingRemoval { get; set; }
@@ -1906,5 +1928,5 @@ public sealed partial class MainWindow : Window
     private sealed record SurfaceDescriptor(
         string Id, string Url, double X, double Y, double Width, double Height,
         double ClipX, double ClipY, double ClipWidth, double ClipHeight,
-        int ZIndex, bool Visible, bool PrivateMode);
+        int ZIndex, bool Visible, bool PrivateMode, string ProfileName);
 }

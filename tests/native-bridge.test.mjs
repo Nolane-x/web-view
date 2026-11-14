@@ -75,6 +75,15 @@ test("native browser bridge allows bookmark toggles and normalizes saved state",
   assert.equal(state.isBookmarked, true);
 });
 
+test("browser profile names are trimmed, bounded and restricted to a safe ASCII subset", () => {
+  assert.equal(bridge.normalizeProfileName("  Work  "), "Work");
+  assert.equal(bridge.normalizeProfileName("Research_2"), "Research_2");
+  assert.equal(bridge.normalizeProfileName("A".repeat(64)), "A".repeat(64));
+  for (const value of ["", "bad/name", "trailing.", "two  ", "ümlaut", "x".repeat(65), null]) {
+    assert.equal(bridge.normalizeProfileName(value), null);
+  }
+});
+
 test("native surface state reports private mode only when the host sends a boolean", () => {
   const privateState = bridge.normalizeSurfaceState({
     type: "nolane.native.surface", id: "private-1", state: "ready", isPrivateMode: true
@@ -88,4 +97,12 @@ test("native surface state reports private mode only when the host sends a boole
     type: "nolane.native.surface", id: "legacy-1", state: "ready", isPrivateMode: "true"
   });
   assert.equal(invalidState.isPrivateMode, null);
+  const namedProfile = bridge.normalizeSurfaceState({
+    type: "nolane.native.surface", id: "profile-1", state: "ready", profileName: "Work"
+  });
+  assert.equal(namedProfile.profileName, "Work");
+  const invalidProfile = bridge.normalizeSurfaceState({
+    type: "nolane.native.surface", id: "profile-2", state: "ready", profileName: "bad/name"
+  });
+  assert.equal(invalidProfile.profileName, null);
 });

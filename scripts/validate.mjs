@@ -264,11 +264,23 @@ else pass("Native host pins its known-good WebView2 SDK, isolates smoke tests ou
 if (!smokeWindowXaml.includes("controls:WebView2") ||
     !smokeWindowCs.includes("using Microsoft.Web.WebView2.Core;") ||
     !smokeWindowCs.includes("Browser.CoreWebView2") ||
-    !smokeWindowCs.includes("Browser.Close();")) fail("The XAML smoke test must bind the WinUI WebView2 Core API and compile its explicit Close lifecycle.");
+    !smokeWindowCs.includes("Browser.Close();") ||
+    !smokeWindowCs.includes('options.ProfileName = "NolaneSmokeProfile"')) fail("The XAML smoke test must bind the WinUI WebView2 Core API and compile its explicit Close lifecycle.");
 else pass("An isolated WinUI executable compiles the XAML WebView2 control and its Core API together.");
 if (!workflow.includes("dotnet restore desktop-host/Nolane.DesktopHost.csproj -r win-x64") ||
     !workflow.includes("dotnet build desktop-host/Nolane.DesktopHost.csproj -c Release -r win-x64 --no-restore -p:WindowsAppSDKSelfContained=true -p:WebView2EnableCsWinRTProjection=true")) fail("Native CI must compile the exact shipping WinUI host project, not a parallel source-linked approximation.");
 else pass("Native CI compiles the exact shipping WinUI host project with the pinned WebView2 package graph.");
+if (!js.includes("clean.browserProfile = browserProfile") ||
+    !js.includes('profileName: node.browserProfile || ""') ||
+    !js.includes("native-profile-select") ||
+    !js.includes("normalizeProfileName(proposed)") ||
+    !nativeHost.includes("controllerOptions.ProfileName = item.ProfileName") ||
+    !nativeHost.includes("configured.ProfileName, item.ProfileName") ||
+    !nativeHost.includes("IsSafeProfileName(profileName)") ||
+    !nativeHost.includes("profileName = surface.ProfileName") ||
+    !nativeBridge.includes("function normalizeProfileName(value)") ||
+    !nativeBridgeTests.includes("browser profile names are trimmed")) fail("Named browser profiles must flow from a validated card selection through the bridge into a dedicated WebView2 profile.");
+else pass("Website cards can select persistent named browser profiles with host-side validation and profile-aware controller recreation.");
 if (!nativeHost.includes("WorkspaceView.Loaded += MainWindow_Loaded")) fail("Native browser host must initialize WebView2 from its control Loaded event.");
 else pass("Native browser host starts initialization only after the WebView2 control is loaded.");
 if (!nativeHost.includes("surface.View.Close()") ||
