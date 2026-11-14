@@ -411,3 +411,11 @@ kbd { font-family: var(--sans); font-size: 9px; border: 1px solid rgba(255,255,2
 .native-profile-select { display: block; width: 82px; min-width: 64px; max-width: 96px; height: 18px; flex: 0 1 82px; padding: 0 3px; border: 1px solid rgba(255,255,255,.075); border-radius: 4px; outline: 0; color: #aeb9cb; background: rgba(5,8,13,.5); font: 7px/15px var(--mono); cursor: pointer; }
 .native-profile-select:hover { border-color: rgba(167,139,250,.3); color: #e0d8ff; }
 .native-profile-select:focus { border-color: rgba(167,139,250,.62); box-shadow: 0 0 0 2px rgba(167,139,250,.08); }
+
+.bridge-setup-steps { display: grid; gap: 13px; margin: 18px 0 4px; padding: 0; list-style: none; }
+.bridge-setup-steps > li { display: flex; gap: 11px; align-items: flex-start; }
+.bridge-setup-steps > li > span { flex: 0 0 21px; height: 21px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; color: var(--text); font-size: 9px; }
+.bridge-setup-steps > li > div { min-width: 0; display: grid; gap: 3px; }
+.bridge-setup-steps strong { color: var(--text); font-size: 9px; }
+.bridge-setup-steps p { margin: 0; color: var(--muted); font-size: 8.5px; line-height: 1.6; }
+.bridge-setup-steps code { color: #d7dce6; font-size: 8px; }

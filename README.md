@@ -72,7 +72,9 @@ Nolane Infinite is a local-first web workspace with a static website UI and an o
 
 ## Windows background bridge and native web surfaces
 
-The Windows host is a **background companion**, not a second workspace app. Run `Nolane.DesktopHost.exe` once; it moves to the notification area and stays out of the way. After a successful connection it registers itself to start with the current Windows user. The website remains the only place where users create, move, resize and manage website cards.
+The Windows host is a **background companion**, not a second workspace app. Download and extract the Windows ZIP, then run `Install-NolaneInfinite.cmd` once. It installs into `%LOCALAPPDATA%\Programs\NolaneInfiniteBridge`, starts the hidden host and creates a Start Menu shortcut to the website. It requires no Administrator access. After the first successful website connection, it registers itself to start with the current Windows user. The website remains the only place where users create, move, resize and manage website cards.
+
+To remove the application, run `Uninstall-NolaneInfinite.cmd` from the extracted ZIP. It preserves WebView2 profiles, Library data and download history by default; pass `-RemoveUserData` to remove those as well.
 
 The bridge listens on IPv4 loopback only at `127.0.0.1:43172`. It accepts a WebSocket only from the exact `https://nolane-x.github.io` Origin and the `nolane.infinite.v2` subprotocol, and caps incoming messages at 2 MiB. Chrome/Edge requires a one-time **Loopback Network Access** permission when the user first clicks Connect Windows bridge on the website. Once granted, the site reconnects automatically on later visits while the Windows background process is running.
 
@@ -140,3 +142,6 @@ Windows CI compiles and packages the real WinUI/WebView2 host and runs JavaScrip
 
 
 Windows background bridge download: [Nolane Native WebView2 Host (Windows x64)](https://github.com/Nolane-x/web-view/releases/download/native-latest/nolane-native-webview2-host-win-x64.zip). The stable asset is refreshed only after the native Windows workflow succeeds.
+
+
+The startup choice is stored in a separate per-user application registry key; the Windows `Run` key contains only the host executable command. The installer updates that command after a reinstall without overriding an explicit startup opt-out, and the host migrates the marker written by an earlier development build.

@@ -10,7 +10,8 @@ internal sealed class BackgroundTrayIcon : IDisposable
 {
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string RunValue = "NolaneInfiniteBridge";
-    private const string StartupChoiceValue = "NolaneInfiniteBridgeStartupChoice";
+    private const string PreferencesKey = @"Software\Nolane\NolaneInfiniteBridge";
+    private const string StartupChoiceValue = "StartupChoice";
     private const uint NIM_ADD = 0, NIM_DELETE = 2, NIF_MESSAGE = 1, NIF_ICON = 2, NIF_TIP = 4;
     private const uint WM_NULL = 0, WM_RBUTTONUP = 0x0205, WM_LBUTTONDBLCLK = 0x0203;
     private const uint TPM_RIGHTBUTTON = 0x0002, TPM_RETURNCMD = 0x0100, TPM_NONOTIFY = 0x0080;
@@ -149,26 +150,46 @@ internal sealed class BackgroundTrayIcon : IDisposable
 
     public static void EnableStartupAfterFirstConnection()
     {
-        using var key = Registry.CurrentUser.CreateSubKey(RunKey, true);
-        if (key?.GetValue(StartupChoiceValue) is string) return;
-        SetStartupRegistration(true, rememberChoice: true);
+        try
+        {
+            using var runKey = Registry.CurrentUser.CreateSubKey(RunKey, true);
+            using var preferences = Registry.CurrentUser.CreateSubKey(PreferencesKey, true);
+            var choice = preferences?.GetValue(StartupChoiceValue) as string;
+
+            // Migrate the old marker out of Run; Windows treats every Run value as an executable command.
+            if (string.IsNullOrWhiteSpace(choice) && runKey?.GetValue("NolaneInfiniteBridgeStartupChoice") is string legacyChoice)
+            {
+                choice = legacyChoice;
+                preferences?.SetValue(StartupChoiceValue, legacyChoice);
+            }
+            runKey?.DeleteValue("NolaneInfiniteBridgeStartupChoice", false);
+
+            if (string.Equals(choice, "disabled", StringComparison.OrdinalIgnoreCase)) return;
+            // Refresh the executable path after an update/reinstall, but never override an explicit opt-out.
+            SetStartupRegistration(true, rememberChoice: choice is null);
+        }
+        catch { }
     }
 
     private static void SetStartupRegistration(bool enabled, bool rememberChoice)
     {
-        using var key = Registry.CurrentUser.CreateSubKey(RunKey, true);
-        if (key is null) return;
+        using var runKey = Registry.CurrentUser.CreateSubKey(RunKey, true);
+        if (runKey is null) return;
         if (enabled)
         {
             var executable = Environment.ProcessPath;
             if (string.IsNullOrWhiteSpace(executable) || !File.Exists(executable)) return;
-            key.SetValue(RunValue, $"\"{executable}\" --background");
-            if (rememberChoice) key.SetValue(StartupChoiceValue, "enabled");
+            runKey.SetValue(RunValue, $"\"{executable}\" --background");
         }
         else
         {
-            key.DeleteValue(RunValue, false);
-            if (rememberChoice) key.SetValue(StartupChoiceValue, "disabled");
+            runKey.DeleteValue(RunValue, false);
+        }
+
+        if (rememberChoice)
+        {
+            using var preferences = Registry.CurrentUser.CreateSubKey(PreferencesKey, true);
+            preferences?.SetValue(StartupChoiceValue, enabled ? "enabled" : "disabled");
         }
     }
 

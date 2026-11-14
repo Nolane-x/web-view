@@ -510,9 +510,11 @@ if (!nativeHost.includes("ExecutePanelCommand") ||
 else pass("Website toolbar owns Downloads, Library and Profiles commands; the Windows process only renders their native panels.");
 
 if (!trayIcon.includes("EnableStartupAfterFirstConnection") ||
-    !trayIcon.includes("StartupChoiceValue") ||
-    !trayIcon.includes('key.SetValue(StartupChoiceValue, "disabled")')) fail("First connection startup registration must respect an explicit user decision to disable auto-start.");
-else pass("Windows auto-start is enabled after first connection unless the user has explicitly disabled it.");
+    !trayIcon.includes('PreferencesKey = @"Software\\Nolane\\NolaneInfiniteBridge"') ||
+    !trayIcon.includes('preferences?.SetValue(StartupChoiceValue, enabled ? "enabled" : "disabled")') ||
+    !trayIcon.includes('runKey.DeleteValue("NolaneInfiniteBridgeStartupChoice", false)') ||
+    trayIcon.includes("runKey.SetValue(StartupChoiceValue")) fail("The startup preference must be outside Windows' executable Run key, and the old marker must be migrated.");
+else pass("Windows startup preference is stored outside Run, the old marker is migrated, and user opt-out is respected.");
 
 if (!nativeHost.includes("IsTrustedWorkspaceUri") ||
     !nativeHost.includes("pageElement.GetString()") ||
@@ -554,3 +556,28 @@ else pass("The native panel command router has one unambiguous handler.");
 
 if (nativeHost.includes('"firefox"')) fail("The native overlay must not advertise Firefox while its viewport locator requires Chromium renderer HWNDs.");
 else pass("Native overlay browser detection matches the Chromium renderer-window implementation.");
+
+const installerScript = read("desktop-host/packaging/Install-NolaneInfinite.ps1");
+const installerCmd = read("desktop-host/packaging/Install-NolaneInfinite.cmd");
+const uninstallerScript = read("desktop-host/packaging/Uninstall-NolaneInfinite.ps1");
+const uninstallerCmd = read("desktop-host/packaging/Uninstall-NolaneInfinite.cmd");
+if (!installerScript.includes("NolaneInfiniteBridge") ||
+    !installerScript.includes("Programs\\NolaneInfiniteBridge") ||
+    !installerScript.includes("Copy-Item") ||
+    !installerScript.includes("Start-Process") ||
+    !installerCmd.includes("ExecutionPolicy Bypass") ||
+    !uninstallerScript.includes("NolaneInfiniteBridgeStartupChoice") ||
+    !uninstallerScript.includes('HKCU:\\Software\\Nolane\\NolaneInfiniteBridge') ||
+    !uninstallerScript.includes("RemoveUserData") ||
+    !uninstallerCmd.includes("Uninstall-NolaneInfinite.ps1")) fail("The Windows ZIP must provide current-user install and clean uninstall scripts.");
+else pass("The Windows ZIP contains a no-admin installer, double-click launchers and a data-preserving uninstaller.");
+
+if (!html.includes("Install-NolaneInfinite.cmd") ||
+    !html.includes("allow the browser's one-time Loopback Network permission") ||
+    !html.includes("you do not need to operate a separate Windows app")) fail("Website onboarding must explain the one-time Windows installation and the website-first daily workflow.");
+else pass("Website onboarding guides the user through one-time installation and then keeps all daily work on the website.");
+
+if (!workflow.includes("Validate Windows installer scripts") ||
+    !workflow.includes("Install-NolaneInfinite.ps1") ||
+    !workflow.includes("Uninstall-NolaneInfinite.ps1")) fail("Windows CI must syntax-check and package the installer and uninstaller alongside the native host.");
+else pass("Windows CI validates and packages the current-user installer and uninstaller.");

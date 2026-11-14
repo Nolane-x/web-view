@@ -162,7 +162,12 @@
     <form method="dialog" class="modal-frame">
       <div class="modal-head"><div><span class="modal-eyebrow">WINDOWS BACKGROUND BRIDGE</span><h2>Connect your Windows device.</h2><p>The Windows host works quietly in the background. You continue using this website as your workspace.</p></div><button class="icon-button" value="cancel" aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button></div>
       <div class="bridge-status-large"><span class="bridge-orbit"><svg class="icon"><use href="#i-monitor"/></svg></span><div><strong id="bridgeStatusTitle">Windows bridge not connected</strong><small id="bridgeStatusText">Start the Windows background bridge, then connect once.</small></div><span class="status-pill" id="bridgeStatusPill">Not connected</span></div>
-      <div class="info-callout"><svg class="icon"><use href="#i-info"/></svg><p><strong>One-time browser permission:</strong> Chrome/Edge asks to let Nolane connect to its local Windows companion. This is a browser security control. Approve it once; future visits reconnect automatically while the Windows bridge is running.</p></div>
+      <ol class="bridge-setup-steps">
+        <li><span>1</span><div><strong>Install once</strong><p>Extract the ZIP and run <code>Install-NolaneInfinite.cmd</code>. It installs to your user profile and starts the hidden background bridge. No Administrator access is needed.</p></div></li>
+        <li><span>2</span><div><strong>Connect from this website</strong><p>Choose Connect Windows bridge below and allow the browser's one-time Loopback Network permission.</p></div></li>
+        <li><span>3</span><div><strong>Use Nolane as usual</strong><p>The bridge starts with Windows after the first successful connection. Keep working on this website; you do not need to operate a separate Windows app or install an extension.</p></div></li>
+      </ol>
+      <div class="info-callout"><svg class="icon"><use href="#i-info"/></svg><p><strong>Browser permission:</strong> Chrome/Edge protects websites that connect to local apps. Nolane requests loopback access only to its own local bridge on this computer.</p></div>
       <div class="bridge-capabilities">
         <div><svg class="icon"><use href="#i-check"/></svg><span>No Chrome extension or browser debugger permission is required</span></div>
         <div><svg class="icon"><use href="#i-check"/></svg><span>Real WebView2 browser surfaces are positioned over website cards</span></div>

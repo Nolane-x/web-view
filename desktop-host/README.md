@@ -19,3 +19,10 @@ The shipping process is a background agent. It hosts `LocalBridgeServer` on IPv4
 The app moves to the Windows notification area. A successful, user-initiated website connection registers the current executable under the current user's Run key so the bridge can start silently at the next sign-in. The tray menu can disable startup or exit the process.
 
 Browser Local Network Access permission is required on first connection. The browser's permission prompt is expected and must not be suppressed or worked around.
+
+
+## Windows installation
+
+The self-contained ZIP includes `Install-NolaneInfinite.cmd` and `Uninstall-NolaneInfinite.cmd`. Run the installer from the extracted ZIP; it copies the host to the current user's Local AppData Programs folder, creates a website shortcut and starts the background bridge without elevation. The installer scripts themselves are not copied into the application folder. Uninstall defaults to retaining WebView2 profiles and Library/download history; `-RemoveUserData` removes that data explicitly.
+
+The startup preference lives in a separate per-user settings key. The Run key contains only the executable command; the host migrates the older development marker out of Run on the next successful website connection.

@@ -130,3 +130,13 @@ The HTTPS workspace checks the browser's `loopback-network` permission. If permi
 The workspace sends each visible card's viewport rectangle plus screen viewport geometry and device scale. The native process places a borderless transparent WinUI overlay over the browser page viewport, creates real WebView2 controls for eligible cards, and applies a native window region formed from visible clipped card rectangles. Pixels and pointer areas outside these rectangles remain transparent/click-through. The overlay is owned by the detected browser top-level window and is hidden when the Nolane tab is hidden or the foreground application leaves that browser/overlay ownership chain.
 
 This mode removes the normal need for the Chrome Companion extension. It does not inherit Chrome's profile: WebView2 remains a separate browser engine and stores its own login state. A local WebSocket connection and coordinate model are necessary but not sufficient to prove pixel-perfect overlay compatibility; manual checks are still required for browser chrome insets, browser zoom, display scaling, multi-monitor moves, fullscreen, maximized windows, tab switching and focus.
+
+
+## Windows first-run installation
+
+The Windows ZIP includes a current-user installer and uninstaller. The installer stages the complete self-contained host under `%LOCALAPPDATA%\Programs\NolaneInfiniteBridge`, replaces the previous installation only after verifying the staged executable, creates a Start Menu shortcut and starts the background bridge. It does not require elevation or install a browser extension. The host registers its Run-key startup entry after the first successful website handshake. A persistent user choice to disable startup is preserved even when the installer updates the executable path.
+
+The uninstaller clears both the Run entry and its startup-choice marker, stops the host, removes the application directory and website shortcut, but preserves the WebView2 user-data folder unless `-RemoveUserData` is explicitly passed.
+
+
+The startup-choice marker is stored under `HKCU\Software\Nolane\NolaneInfiniteBridge`, not under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. The Run key contains only the executable command, so Windows never tries to launch a preference string as a program. On successful website connection, the host migrates the temporary legacy marker out of Run and refreshes the executable path unless the user opted out.
