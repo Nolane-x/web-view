@@ -361,7 +361,7 @@ if (!nativeHost.includes("ExportLibrary_Click") || !nativeHost.includes("ImportL
     !nativePicker.includes("public static string? PickLibraryBackupPath(IntPtr ownerWindow, bool save)") ||
     !nativePicker.includes("Type.GetTypeFromCLSID(classId") || !nativePicker.includes("IFileDialog") ||
     !nativePicker.includes("FileDialogOptions.OverwritePrompt") || !nativePicker.includes("FileDialogOptions.FileMustExist") ||
-    !nativeHost.includes("SchemaVersion != 1") || !nativeHost.includes("MaxLibraryBackupBytes") ||
+    !nativeHost.includes("backup.SchemaVersion is not (1 or 2)") || !nativeHost.includes("MaxLibraryBackupBytes") ||
     !nativeHost.includes("stagedHistory") || !nativeHost.includes("stagedBookmarks") ||
     !nativeHost.includes("ContentDialogResult.Primary") ||
     !nativePicker.includes('Name = "Nolane Library backup (*.json)"') ||
