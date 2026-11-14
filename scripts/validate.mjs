@@ -528,3 +528,11 @@ else pass("Renderer swaps cannot reuse stale overlay coordinates, and incoming c
 
 if (process.exitCode) process.exit(process.exitCode);
 console.log("All static checks passed.");
+
+if (!localBridge.includes("CancelAfter(TimeSpan.FromSeconds(5))") ||
+    !localBridge.includes('string.Equals(lines[0], "GET /bridge HTTP/1.1"')) fail("The local bridge handshake must have a bounded timeout and accept only the exact /bridge path.");
+else pass("The local bridge rejects alternate request paths and abandons incomplete handshakes after five seconds.");
+
+if (!bridgeSmoke.includes("client.CloseStatus == WebSocketCloseStatus.MessageTooBig") ||
+    bridgeSmoke.includes("closed.CloseStatus")) fail("The Windows WebSocket smoke test must inspect the close status from ClientWebSocket.");
+else pass("The Windows bridge smoke test checks the server's 2 MiB close code through ClientWebSocket.");

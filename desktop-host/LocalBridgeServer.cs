@@ -55,10 +55,12 @@ internal sealed class LocalBridgeServer : IAsyncDisposable
         try
         {
             var stream = client.GetStream();
-            var headers = await ReadHandshakeAsync(stream, cancellationToken).ConfigureAwait(false);
+            using var handshakeTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            handshakeTimeout.CancelAfter(TimeSpan.FromSeconds(5));
+            var headers = await ReadHandshakeAsync(stream, handshakeTimeout.Token).ConfigureAwait(false);
             if (!ValidateHandshake(headers, out var key))
             {
-                await WriteHttpErrorAsync(stream, 403, "Forbidden", cancellationToken).ConfigureAwait(false);
+                await WriteHttpErrorAsync(stream, 403, "Forbidden", handshakeTimeout.Token).ConfigureAwait(false);
                 return;
             }
 

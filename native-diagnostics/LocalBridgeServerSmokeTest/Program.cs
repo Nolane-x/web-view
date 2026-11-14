@@ -53,7 +53,7 @@ var oversizedMessage = new byte[2 * 1024 * 1024 + 1];
 await client.SendAsync(oversizedMessage.AsMemory(), WebSocketMessageType.Text, true, timeout.Token);
 var closed = await client.ReceiveAsync(buffer.AsMemory(), timeout.Token);
 Check(closed.MessageType == WebSocketMessageType.Close &&
-      closed.CloseStatus == WebSocketCloseStatus.MessageTooBig,
+      client.CloseStatus == WebSocketCloseStatus.MessageTooBig,
     "The bridge did not close a message that exceeded its 2 MiB safety limit.");
 
 Console.WriteLine("PASS: loopback binding, Origin rejection, WebSocket negotiation, bidirectional messages and 2 MiB limit.");
