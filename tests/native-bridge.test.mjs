@@ -75,6 +75,32 @@ test("native browser bridge allows bookmark toggles and normalizes saved state",
   assert.equal(state.isBookmarked, true);
 });
 
+test("profile usage counts website cards across all saved spaces, including duplicate IDs", () => {
+  const usage = bridge.summarizeProfileUsage([
+    { id: "one", nodes: [
+      { id: "shared", type: "website", browserProfile: " Work " },
+      { id: "note", type: "note", browserProfile: "Work" },
+      { id: "default-1", type: "website" }
+    ] },
+    { id: "two", nodes: [
+      { id: "shared", type: "website", browserProfile: "Work" },
+      { id: "personal", type: "website", browserProfile: "Personal" }
+    ] },
+    { id: "malformed", nodes: null },
+    null
+  ]);
+  assert.deepEqual(JSON.parse(JSON.stringify(usage)), [
+    { name: "", count: 1 },
+    { name: "Personal", count: 1 },
+    { name: "Work", count: 2 }
+  ]);
+});
+
+test("profile usage ignores malformed workspace collections", () => {
+  assert.deepEqual(JSON.parse(JSON.stringify(bridge.summarizeProfileUsage(null))), []);
+  assert.deepEqual(JSON.parse(JSON.stringify(bridge.summarizeProfileUsage([{}, { nodes: "invalid" }]))), []);
+});
+
 test("browser profile names are trimmed, bounded and restricted to a safe ASCII subset", () => {
   assert.equal(bridge.normalizeProfileName("  Work  "), "Work");
   assert.equal(bridge.normalizeProfileName("Research_2"), "Research_2");

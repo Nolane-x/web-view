@@ -457,13 +457,7 @@
       syncActiveSpace();
       const area = canvas.getBoundingClientRect();
       const items = [];
-      const profileUsage = new Map();
-      const profileNodes = spaces.flatMap((space) => Array.isArray(space.nodes) ? space.nodes : []);
-      for (const candidate of profileNodes) {
-        if (!candidate || candidate.type !== "website") continue;
-        const name = window.NolaneNativeBridge?.normalizeProfileName(candidate.browserProfile) || "";
-        profileUsage.set(name, (profileUsage.get(name) || 0) + 1);
-      }
+      const profileUsage = window.NolaneNativeBridge?.summarizeProfileUsage(spaces) || [];
       for (const node of nodes) {
         if (!canUseNativeSurface(node) || items.length >= 80) continue;
         const card = $('.node[data-id="' + CSS.escape(node.id) + '"]', world);
@@ -502,7 +496,7 @@
           type: "nolane.surfaces.sync",
           protocol: 1,
           items,
-          profileUsage: [...profileUsage].map(([name, count]) => ({ name, count }))
+          profileUsage
         });
       } catch (_) {}
     });

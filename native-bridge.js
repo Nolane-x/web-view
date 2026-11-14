@@ -42,6 +42,22 @@
     return clean;
   }
 
+  function summarizeProfileUsage(spaces) {
+    const usage = new Map();
+    if (!Array.isArray(spaces)) return [];
+    for (const space of spaces) {
+      if (!space || !Array.isArray(space.nodes)) continue;
+      for (const node of space.nodes) {
+        if (!node || node.type !== "website") continue;
+        const name = normalizeProfileName(node.browserProfile) || "";
+        usage.set(name, (usage.get(name) || 0) + 1);
+      }
+    }
+    return [...usage.entries()]
+      .sort((left, right) => left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0)
+      .map(([name, count]) => ({ name, count }));
+  }
+
   function normalizeSurfaceState(message) {
     if (!message || typeof message !== "object" || message.type !== "nolane.native.surface") return null;
     if (typeof message.id !== "string" || !message.id.trim() || message.id.length > 128) return null;
@@ -73,7 +89,7 @@
     });
   }
 
-  const api = Object.freeze({ createCommand, createNavigationCommand, normalizeProfileName, normalizeSurfaceState });
+  const api = Object.freeze({ createCommand, createNavigationCommand, normalizeProfileName, summarizeProfileUsage, normalizeSurfaceState });
   const root = typeof window !== "undefined" ? window : globalThis;
   root.NolaneNativeBridge = api;
 })();

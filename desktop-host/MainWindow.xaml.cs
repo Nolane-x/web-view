@@ -1036,6 +1036,21 @@ public sealed partial class MainWindow : Window
                 surface.Suspended = false;
                 PublishSurfaceState(surface, "ready", "Website resumed");
             }
+            if (surface.NeedsReloadAfterProfileClear)
+            {
+                try
+                {
+                    surface.View.CoreWebView2.Reload();
+                    surface.NeedsReloadAfterProfileClear = false;
+                    PublishSurfaceState(surface, "loading",
+                        "This profile's browsing data was cleared. The website is reloading without its previous page session.");
+                }
+                catch
+                {
+                    PublishSurfaceState(surface, "error",
+                        "Profile data was cleared, but this website could not reload. Use Reload to refresh it.");
+                }
+            }
         }
         else
         {
@@ -1526,6 +1541,15 @@ public sealed partial class MainWindow : Window
             {
                 maintenanceView = await CreateProfileMaintenanceViewAsync(profileName);
                 await maintenanceView.CoreWebView2.Profile.ClearBrowsingDataAsync();
+            }
+
+            foreach (var surface in _surfaces.Values
+                         .Where(surface => !surface.IsPrivate && SameProfile(surface.ProfileName, profileName))
+                         .ToArray())
+            {
+                surface.NeedsReloadAfterProfileClear = true;
+                if (surface.View.Visibility == Visibility.Visible)
+                    await SetSurfaceVisibleAsync(surface, true);
             }
 
             _browserHistory.RemoveAll(item => SameProfile(item.ProfileName, profileName));
@@ -2318,6 +2342,7 @@ public sealed partial class MainWindow : Window
         public bool Initialized { get; set; }
         public bool Suspended { get; set; }
         public bool PendingRemoval { get; set; }
+        public bool NeedsReloadAfterProfileClear { get; set; }
         public DateTimeOffset LastVisibleAt { get; set; } = DateTimeOffset.UtcNow;
         public DateTimeOffset LastRendererRecoveryAt { get; set; } = DateTimeOffset.MinValue;
         public int RendererRecoveryAttempts { get; set; }
