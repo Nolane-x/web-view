@@ -1624,7 +1624,16 @@ public sealed partial class MainWindow : Window
             TextWrapping = TextWrapping.Wrap,
             Foreground = LibraryBrush(151, 164, 185)
         };
-        var confirmation = new CheckBox
+        var clearConfirmation = new CheckBox
+        {
+            Content = new TextBlock
+            {
+                Text = "I understand that clearing this profile signs websites out and removes its saved site data.",
+                TextWrapping = TextWrapping.Wrap
+            },
+            IsChecked = false
+        };
+        var deleteConfirmation = new CheckBox
         {
             Content = new TextBlock
             {
@@ -1642,8 +1651,9 @@ public sealed partial class MainWindow : Window
         content.Children.Add(new TextBlock { Text = "Choose a browser profile", FontSize = 11 });
         content.Children.Add(picker);
         content.Children.Add(usageText);
+        content.Children.Add(clearConfirmation);
         content.Children.Add(actions);
-        content.Children.Add(confirmation);
+        content.Children.Add(deleteConfirmation);
         content.Children.Add(new TextBlock
         {
             Text = "Clear removes cookies, cache, site storage and this profile's Library History/Bookmarks. Delete is available only when no saved card in any workspace uses the profile. WebView2 removes its folder when the browser process exits; restart Nolane before reusing the name. Downloaded files are kept.",
@@ -1665,19 +1675,28 @@ public sealed partial class MainWindow : Window
             usageText.Text = ProfileLabel(name) + " · " + usage + " saved card assignment(s) · " +
                 live + " live/cached browser surface(s)" +
                 (downloadsBlocked ? " · active/resumable download" : "");
-            clearButton.IsEnabled = !_deletedProfileNames.Contains(name) && !downloadsBlocked;
+            clearButton.IsEnabled = !_deletedProfileNames.Contains(name) && !downloadsBlocked &&
+                clearConfirmation.IsChecked == true;
             deleteButton.IsEnabled = name.Length > 0 && usage == 0 && live == 0 &&
-                confirmation.IsChecked == true && !_deletedProfileNames.Contains(name);
+                deleteConfirmation.IsChecked == true && !_deletedProfileNames.Contains(name);
         }
 
-        picker.SelectionChanged += (_, _) => { confirmation.IsChecked = false; RefreshState(); };
-        confirmation.Checked += (_, _) => RefreshState();
-        confirmation.Unchecked += (_, _) => RefreshState();
+        picker.SelectionChanged += (_, _) =>
+        {
+            clearConfirmation.IsChecked = false;
+            deleteConfirmation.IsChecked = false;
+            RefreshState();
+        };
+        clearConfirmation.Checked += (_, _) => RefreshState();
+        clearConfirmation.Unchecked += (_, _) => RefreshState();
+        deleteConfirmation.Checked += (_, _) => RefreshState();
+        deleteConfirmation.Unchecked += (_, _) => RefreshState();
         clearButton.Click += async (_, _) =>
         {
             clearButton.IsEnabled = false;
             var result = await ClearBrowserProfileDataAsync(SelectedProfile());
             feedback.Text = result.Message;
+            clearConfirmation.IsChecked = false;
             RefreshState();
         };
         deleteButton.Click += async (_, _) =>
@@ -1691,7 +1710,8 @@ public sealed partial class MainWindow : Window
                 var selected = picker.SelectedItem;
                 if (selected is not null) picker.Items.Remove(selected);
                 picker.SelectedIndex = 0;
-                confirmation.IsChecked = false;
+                clearConfirmation.IsChecked = false;
+                deleteConfirmation.IsChecked = false;
             }
             RefreshState();
         };

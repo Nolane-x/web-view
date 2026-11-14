@@ -302,6 +302,11 @@ if (!nativeHost.includes("NeedsReloadAfterProfileClear") ||
     !nativeHost.includes("This profile's browsing data was cleared. The website is reloading without its previous page session.") ||
     !nativeHost.includes("surface.View.CoreWebView2.Reload()")) fail("Clearing a profile must reload visible websites and defer reload for suspended cards until restore.");
 else pass("Clearing a profile refreshes active pages immediately and suspended pages when restored.");
+if (!nativeHost.includes("clearConfirmation.IsChecked == true") ||
+    !nativeHost.includes("deleteConfirmation.IsChecked == true") ||
+    !nativeHost.includes("clearConfirmation.Unchecked") ||
+    !nativeHost.includes("deleteConfirmation.Unchecked")) fail("Clearing and deleting browser profiles must each require an independent explicit confirmation.");
+else pass("Profile data clearing and profile deletion are protected by separate explicit confirmations.");
 if (!nativeHost.includes("WorkspaceView.Loaded += MainWindow_Loaded")) fail("Native browser host must initialize WebView2 from its control Loaded event.");
 else pass("Native browser host starts initialization only after the WebView2 control is loaded.");
 if (!nativeHost.includes("surface.View.Close()") ||
