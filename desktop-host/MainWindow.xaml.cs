@@ -1200,11 +1200,25 @@ public sealed partial class MainWindow : Window
         catch { return ""; }
     }
 
-    private bool IsBookmarked(string rawUrl)
+    private static string ProfileLabel(string? profileName) =>
+        string.IsNullOrWhiteSpace(profileName) ? "Default" : profileName;
+
+    private static bool SameProfile(string? left, string? right) =>
+        StringComparer.OrdinalIgnoreCase.Equals(left ?? "", right ?? "");
+
+    private static string? NormalizeLibraryProfileName(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return "";
+        var clean = value.Trim();
+        return IsSafeProfileName(clean) ? clean : null;
+    }
+
+    private bool IsBookmarked(string rawUrl, string profileName)
     {
         var safeUrl = SanitizeLibraryUrl(rawUrl);
         return safeUrl.Length > 0 && _browserBookmarks.Any(item =>
-            StringComparer.Ordinal.Equals(item.Url, safeUrl));
+            StringComparer.Ordinal.Equals(item.Url, safeUrl) &&
+            SameProfile(item.ProfileName, profileName));
     }
 
     private void RecordBrowserHistory(BrowserSurface surface)
@@ -1225,6 +1239,7 @@ public sealed partial class MainWindow : Window
         var now = DateTimeOffset.UtcNow;
         var recent = _browserHistory.FirstOrDefault(item =>
             item.SurfaceId == surface.Id &&
+            SameProfile(item.ProfileName, surface.ProfileName) &&
             StringComparer.Ordinal.Equals(item.Url, url) &&
             now - item.VisitedAtUtc < TimeSpan.FromSeconds(4));
         if (recent is not null)
@@ -1238,6 +1253,7 @@ public sealed partial class MainWindow : Window
             {
                 Id = Guid.NewGuid().ToString("N"),
                 SurfaceId = surface.Id,
+                ProfileName = surface.ProfileName,
                 Url = url,
                 Title = title,
                 Host = SafeHost(url),
@@ -1256,15 +1272,17 @@ public sealed partial class MainWindow : Window
     {
         if (surface.IsPrivate) return;
         var core = surface.View.CoreWebView2;
-        ToggleBookmarkUrl(core.Source, core.DocumentTitle);
+        ToggleBookmarkUrl(core.Source, core.DocumentTitle, surface.ProfileName);
     }
 
-    private void ToggleBookmarkUrl(string rawUrl, string rawTitle)
+    private void ToggleBookmarkUrl(string rawUrl, string rawTitle, string profileName)
     {
         var url = SanitizeLibraryUrl(rawUrl);
         if (url.Length == 0) return;
 
-        var existing = _browserBookmarks.FindIndex(item => StringComparer.Ordinal.Equals(item.Url, url));
+        var existing = _browserBookmarks.FindIndex(item =>
+            StringComparer.Ordinal.Equals(item.Url, url) &&
+            SameProfile(item.ProfileName, profileName));
         if (existing >= 0)
         {
             _browserBookmarks.RemoveAt(existing);
@@ -1278,6 +1296,7 @@ public sealed partial class MainWindow : Window
             {
                 Id = Guid.NewGuid().ToString("N"),
                 Url = url,
+                ProfileName = profileName,
                 Title = string.IsNullOrWhiteSpace(title) ? SafeHost(url) : title,
                 Host = SafeHost(url),
                 SavedAtUtc = DateTimeOffset.UtcNow
@@ -1300,8 +1319,11 @@ public sealed partial class MainWindow : Window
             foreach (var item in document.Bookmarks.OrderByDescending(entry => entry.SavedAtUtc).Take(200))
             {
                 var url = SanitizeLibraryUrl(item.Url);
-                if (url.Length == 0 || _browserBookmarks.Any(saved => StringComparer.Ordinal.Equals(saved.Url, url))) continue;
+                var profileName = NormalizeLibraryProfileName(item.ProfileName);
+                if (url.Length == 0 || profileName is null ||
+                    _browserBookmarks.Any(saved => StringComparer.Ordinal.Equals(saved.Url, url) && SameProfile(saved.ProfileName, profileName))) continue;
                 item.Url = url;
+                item.ProfileName = profileName;
                 item.Title = StringRaw(item.Title, 180);
                 item.Host = SafeHost(url);
                 _browserBookmarks.Add(item);
@@ -1310,8 +1332,10 @@ public sealed partial class MainWindow : Window
             foreach (var item in document.History.OrderByDescending(entry => entry.VisitedAtUtc).Take(500))
             {
                 var url = SanitizeLibraryUrl(item.Url);
-                if (url.Length == 0) continue;
+                var profileName = NormalizeLibraryProfileName(item.ProfileName);
+                if (url.Length == 0 || profileName is null) continue;
                 item.Url = url;
+                item.ProfileName = profileName;
                 item.Title = StringRaw(item.Title, 180);
                 item.Host = SafeHost(url);
                 item.SurfaceId = StringRaw(item.SurfaceId, 128);
@@ -1334,9 +1358,9 @@ public sealed partial class MainWindow : Window
         {
             var document = new BrowserLibraryDocument
             {
-                SchemaVersion = 1,
+                SchemaVersion = 2,
                 ExportedAtUtc = DateTimeOffset.UtcNow,
-                History = _browserHistory.Take(500).ToList(),
+                History = _browserHistory.Take(MaxLibraryHistoryEntries).ToList(),
                 Bookmarks = _browserBookmarks.Take(200).ToList()
             };
             temporaryPath = _browserLibraryPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
@@ -1590,8 +1614,8 @@ public sealed partial class MainWindow : Window
             var backup = JsonSerializer.Deserialize<BrowserLibraryDocument>(json, DownloadJsonOptions)
                 ?? throw new InvalidDataException("The selected file is not a valid Nolane Library backup.");
 
-            if (backup.SchemaVersion != 1)
-                throw new InvalidDataException("This Library backup uses an unsupported schema version.");
+            if (backup.SchemaVersion is not (1 or 2))
+                throw new InvalidDataException("This Library backup uses an unsupported schema version. Version 1 backups remain supported and are assigned to Default.");
             if (backup.History is null || backup.Bookmarks is null ||
                 backup.History.Count > MaxLibraryHistoryEntries ||
                 backup.Bookmarks.Count > MaxLibraryBookmarkEntries)
@@ -1605,14 +1629,17 @@ public sealed partial class MainWindow : Window
             {
                 if (item is null || string.IsNullOrWhiteSpace(item.Url) || item.Url.Length > 4096) continue;
                 var safeUrl = SanitizeLibraryUrl(item.Url);
-                if (safeUrl.Length == 0) continue;
+                var profileName = NormalizeLibraryProfileName(item.ProfileName);
+                if (safeUrl.Length == 0 || profileName is null) continue;
                 var visitedAt = item.VisitedAtUtc == default || item.VisitedAtUtc > now.AddDays(1)
                     ? now : item.VisitedAtUtc;
                 var duplicate = _browserHistory.Any(existing =>
                     StringComparer.Ordinal.Equals(existing.Url, safeUrl) &&
+                    SameProfile(existing.ProfileName, profileName) &&
                     Math.Abs((existing.VisitedAtUtc - visitedAt).TotalSeconds) < 1) ||
                     stagedHistory.Any(existing =>
                     StringComparer.Ordinal.Equals(existing.Url, safeUrl) &&
+                    SameProfile(existing.ProfileName, profileName) &&
                     Math.Abs((existing.VisitedAtUtc - visitedAt).TotalSeconds) < 1);
                 if (duplicate) continue;
 
@@ -1620,6 +1647,7 @@ public sealed partial class MainWindow : Window
                 {
                     Id = Guid.NewGuid().ToString("N"),
                     SurfaceId = "",
+                    ProfileName = profileName,
                     Url = safeUrl,
                     Title = string.IsNullOrWhiteSpace(item.Title)
                         ? SafeHost(safeUrl) : StringRaw(item.Title, 180),
@@ -1632,9 +1660,10 @@ public sealed partial class MainWindow : Window
             {
                 if (item is null || string.IsNullOrWhiteSpace(item.Url) || item.Url.Length > 4096) continue;
                 var safeUrl = SanitizeLibraryUrl(item.Url);
-                if (safeUrl.Length == 0 ||
-                    _browserBookmarks.Any(existing => StringComparer.Ordinal.Equals(existing.Url, safeUrl)) ||
-                    stagedBookmarks.Any(existing => StringComparer.Ordinal.Equals(existing.Url, safeUrl)))
+                var profileName = NormalizeLibraryProfileName(item.ProfileName);
+                if (safeUrl.Length == 0 || profileName is null ||
+                    _browserBookmarks.Any(existing => StringComparer.Ordinal.Equals(existing.Url, safeUrl) && SameProfile(existing.ProfileName, profileName)) ||
+                    stagedBookmarks.Any(existing => StringComparer.Ordinal.Equals(existing.Url, safeUrl) && SameProfile(existing.ProfileName, profileName)))
                     continue;
 
                 var savedAt = item.SavedAtUtc == default || item.SavedAtUtc > now.AddDays(1)
@@ -1643,6 +1672,7 @@ public sealed partial class MainWindow : Window
                 {
                     Id = Guid.NewGuid().ToString("N"),
                     Url = safeUrl,
+                    ProfileName = profileName,
                     Title = string.IsNullOrWhiteSpace(item.Title)
                         ? SafeHost(safeUrl) : StringRaw(item.Title, 180),
                     Host = SafeHost(safeUrl),
@@ -1739,7 +1769,7 @@ public sealed partial class MainWindow : Window
                 canGoForward = core.CanGoForward,
                 isMuted = core.IsMuted,
                 isPlayingAudio = core.IsDocumentPlayingAudio,
-                isBookmarked = surface.IsPrivate ? false : IsBookmarked(core.Source),
+                isBookmarked = surface.IsPrivate ? false : IsBookmarked(core.Source, surface.ProfileName),
                 isPrivateMode = surface.IsPrivate,
                 profileName = surface.ProfileName
             });
@@ -1870,7 +1900,7 @@ public sealed partial class MainWindow : Window
 
     private sealed class BrowserLibraryDocument
     {
-        public int SchemaVersion { get; set; } = 1;
+        public int SchemaVersion { get; set; } = 2;
         public DateTimeOffset ExportedAtUtc { get; set; } = DateTimeOffset.UtcNow;
         public List<BrowserHistoryEntry> History { get; set; } = new();
         public List<BrowserBookmark> Bookmarks { get; set; } = new();
@@ -1880,6 +1910,7 @@ public sealed partial class MainWindow : Window
     {
         public string Id { get; set; } = "";
         public string SurfaceId { get; set; } = "";
+        public string ProfileName { get; set; } = "";
         public string Url { get; set; } = "";
         public string Title { get; set; } = "";
         public string Host { get; set; } = "";
@@ -1890,6 +1921,7 @@ public sealed partial class MainWindow : Window
     {
         public string Id { get; set; } = "";
         public string Url { get; set; } = "";
+        public string ProfileName { get; set; } = "";
         public string Title { get; set; } = "";
         public string Host { get; set; } = "";
         public DateTimeOffset SavedAtUtc { get; set; }

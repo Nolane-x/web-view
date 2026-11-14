@@ -341,7 +341,13 @@ if (!nativeHost.includes("core.HistoryChanged") || !nativeHost.includes("core.Is
 else pass("Native browser exposes per-surface navigation, audio controls and state telemetry.");
 if (!nativeHost.includes("RecordBrowserHistory") || !nativeHost.includes("SanitizeLibraryUrl") ||
     !nativeHost.includes("browser-library.json") || !nativeHost.includes("ToggleBookmark") ||
-    !nativeHost.includes("TimeSpan.FromSeconds(4)") || !nativeHost.includes("Take(500)")) fail("Native browser history and bookmark persistence/privacy safeguards are incomplete.");
+    !nativeHost.includes("TimeSpan.FromSeconds(4)") || !nativeHost.includes("Take(500)") ||
+    !nativeHost.includes("SameProfile(item.ProfileName, surface.ProfileName)") ||
+    !nativeHost.includes("ProfileName = surface.ProfileName") ||
+    !nativeHost.includes("IsBookmarked(core.Source, surface.ProfileName)") ||
+    !nativeHost.includes("SchemaVersion = 2") ||
+    !nativeHost.includes("backup.SchemaVersion is not (1 or 2)")) fail("Native Library must isolate history/bookmarks by profile and preserve v1 backup compatibility.");
+else pass("History and bookmarks are stored with named profile ownership; older schema-1 data remains importable as Default.");
 else pass("Native browser records bounded history, deduplicates navigation events, redacts sensitive query parameters and persists bookmarks locally.");
 if (!nativeHost.includes("BuildLibraryPanel()") || !nativeHost.includes("LibraryPanel = new Border") ||
     !nativeHost.includes("LibrarySearchBox = new TextBox") || !nativeHost.includes("LibraryItems = new StackPanel") ||
