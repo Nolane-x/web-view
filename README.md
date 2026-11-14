@@ -137,3 +137,6 @@ The native WebView2 surfaces have their own cookies and sign-in profiles; Chrome
 ## Background bridge validation boundary
 
 Windows CI compiles and packages the real WinUI/WebView2 host and runs JavaScript contract tests. It does not exercise Chrome's native child HWND detection, DPI alignment, focus transitions or click-through behavior on a user's desktop. Those need a manual Windows 11 + Chrome/Edge validation pass before calling the overlay production-verified.
+
+
+Windows background bridge download: [Nolane Native WebView2 Host (Windows x64)](https://github.com/Nolane-x/web-view/releases/download/native-latest/nolane-native-webview2-host-win-x64.zip). The stable asset is refreshed only after the native Windows workflow succeeds.
