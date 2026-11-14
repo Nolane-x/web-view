@@ -218,6 +218,8 @@ else pass("Original-tab focus remains tied to its browser profile.");
 
 
 const nativeHost = read("desktop-host/MainWindow.xaml.cs");
+if (!nativeHost.includes("using Microsoft.Web.WebView2.Core;") || nativeHost.includes("using Microsoft.WebView2.Core;")) fail("Native host must import the actual WebView2 Core namespace.");
+else pass("Native host imports the canonical Microsoft.Web.WebView2.Core namespace.");
 const nativeXaml = read("desktop-host/MainWindow.xaml");
 const nativePicker = read("desktop-host/WindowsShellFilePicker.cs");
 const smokeCs = read("native-diagnostics/ProjectionApi.cs");
