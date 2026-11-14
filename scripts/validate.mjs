@@ -512,7 +512,7 @@ else pass("Website toolbar owns Downloads, Library and Profiles commands; the Wi
 if (!trayIcon.includes("EnableStartupAfterFirstConnection") ||
     !trayIcon.includes('PreferencesKey = @"Software\\Nolane\\NolaneInfiniteBridge"') ||
     !trayIcon.includes('preferences?.SetValue(StartupChoiceValue, enabled ? "enabled" : "disabled")') ||
-    !trayIcon.includes('runKey.DeleteValue("NolaneInfiniteBridgeStartupChoice", false)') ||
+    !trayIcon.includes('runKey?.DeleteValue("NolaneInfiniteBridgeStartupChoice", false)') ||
     trayIcon.includes("runKey.SetValue(StartupChoiceValue")) fail("The startup preference must be outside Windows' executable Run key, and the old marker must be migrated.");
 else pass("Windows startup preference is stored outside Run, the old marker is migrated, and user opt-out is respected.");
 
