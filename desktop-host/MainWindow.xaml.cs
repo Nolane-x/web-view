@@ -42,6 +42,8 @@ public sealed partial class MainWindow : Window
     private readonly List<BrowserBookmark> _browserBookmarks = new();
     private bool _showingBookmarks;
     private string _focusedSurfaceId = "";
+    private string _libraryProfileFilter = AllLibraryProfilesFilter;
+    private bool _refreshingLibraryProfileFilter;
 
     // The Library is constructed in code to keep the shipping WinUI XAML graph small and deterministic.
     private Border LibraryPanel = null!;
@@ -50,6 +52,7 @@ public sealed partial class MainWindow : Window
     private Button BookmarksTabButton = null!;
     private Button ClearHistoryButton = null!;
     private TextBox LibrarySearchBox = null!;
+    private ComboBox LibraryProfileFilter = null!;
     private StackPanel LibraryItems = null!;
     private int _downloadRefreshQueued;
     private int _downloadHistoryDirty;
@@ -110,6 +113,14 @@ public sealed partial class MainWindow : Window
             Margin = new Thickness(0, 9, 0, 0)
         };
         LibrarySearchBox.TextChanged += LibrarySearch_TextChanged;
+        LibraryProfileFilter = new ComboBox
+        {
+            MinWidth = 150,
+            MaxWidth = 200,
+            Height = 30,
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        LibraryProfileFilter.SelectionChanged += LibraryProfileFilter_SelectionChanged;
 
         HistoryTabButton = new Button { Content = "History", Padding = new Thickness(9, 5, 9, 5), FontSize = 10 };
         HistoryTabButton.Click += ShowHistory_Click;
@@ -165,6 +176,7 @@ public sealed partial class MainWindow : Window
         headerGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         headerGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         headerGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        headerGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         headerGrid.Children.Add(titleStack);
         Grid.SetRow(tabs, 1);
         headerGrid.Children.Add(tabs);
@@ -172,6 +184,24 @@ public sealed partial class MainWindow : Window
         headerGrid.Children.Add(LibrarySearchBox);
         Grid.SetRow(backupActions, 3);
         headerGrid.Children.Add(backupActions);
+        var profileFilterRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Margin = new Thickness(0, 9, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        profileFilterRow.Children.Add(new TextBlock
+        {
+            Text = "PROFILE",
+            FontSize = 9,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = LibraryBrush(147, 160, 180),
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        profileFilterRow.Children.Add(LibraryProfileFilter);
+        Grid.SetRow(profileFilterRow, 4);
+        headerGrid.Children.Add(profileFilterRow);
 
         var header = new Border
         {
@@ -1380,27 +1410,80 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private BrowserSurface? GetLibraryTargetSurface()
+    private BrowserSurface? GetFocusedLibrarySurface()
     {
         if (!string.IsNullOrWhiteSpace(_focusedSurfaceId) &&
             _surfaces.TryGetValue(_focusedSurfaceId, out var focused) &&
-            focused.Initialized && focused.View.Visibility == Visibility.Visible)
+            focused.Initialized && !focused.IsPrivate && focused.View.Visibility == Visibility.Visible)
             return focused;
 
         return _surfaces.Values
-            .Where(surface => surface.Initialized && surface.View.Visibility == Visibility.Visible)
+            .Where(surface => surface.Initialized && !surface.IsPrivate && surface.View.Visibility == Visibility.Visible)
             .OrderByDescending(surface => surface.LastVisibleAt)
             .FirstOrDefault();
     }
 
-    private void OpenLibraryUrl(string rawUrl)
+    private BrowserSurface? GetLibraryTargetSurface(string profileName)
+    {
+        var focused = GetFocusedLibrarySurface();
+        if (focused is not null && SameProfile(focused.ProfileName, profileName)) return focused;
+        return _surfaces.Values
+            .Where(surface => surface.Initialized && !surface.IsPrivate &&
+                surface.View.Visibility == Visibility.Visible &&
+                SameProfile(surface.ProfileName, profileName))
+            .OrderByDescending(surface => surface.LastVisibleAt)
+            .FirstOrDefault();
+    }
+
+    private void RefreshLibraryProfileOptions()
+    {
+        var profiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "", "Work", "Personal", "Research" };
+        foreach (var name in _browserHistory.Select(item => item.ProfileName)
+                     .Concat(_browserBookmarks.Select(item => item.ProfileName))
+                     .Concat(_surfaces.Values.Select(surface => surface.ProfileName)))
+        {
+            var normalized = NormalizeLibraryProfileName(name);
+            if (normalized is not null) profiles.Add(normalized);
+        }
+
+        _refreshingLibraryProfileFilter = true;
+        try
+        {
+            LibraryProfileFilter.Items.Clear();
+            var all = new ComboBoxItem { Content = "All profiles", Tag = AllLibraryProfilesFilter };
+            LibraryProfileFilter.Items.Add(all);
+            LibraryProfileFilter.Items.Add(new ComboBoxItem { Content = "Default", Tag = "" });
+            foreach (var name in profiles.Where(name => name.Length > 0).OrderBy(name => name, StringComparer.OrdinalIgnoreCase))
+                LibraryProfileFilter.Items.Add(new ComboBoxItem { Content = name, Tag = name });
+
+            var selected = LibraryProfileFilter.Items.OfType<ComboBoxItem>()
+                .FirstOrDefault(item => StringComparer.OrdinalIgnoreCase.Equals(item.Tag as string ?? "", _libraryProfileFilter));
+            if (selected is null)
+            {
+                selected = all;
+                _libraryProfileFilter = AllLibraryProfilesFilter;
+            }
+            LibraryProfileFilter.SelectedItem = selected;
+        }
+        finally { _refreshingLibraryProfileFilter = false; }
+    }
+
+    private void LibraryProfileFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_refreshingLibraryProfileFilter || LibraryProfileFilter.SelectedItem is not ComboBoxItem selected) return;
+        _libraryProfileFilter = selected.Tag as string ?? "";
+        RefreshLibraryUi();
+    }
+
+    private void OpenLibraryUrl(string rawUrl, string profileName)
     {
         var safeUrl = SanitizeLibraryUrl(rawUrl);
         if (safeUrl.Length == 0) return;
-        var target = GetLibraryTargetSurface();
+        var target = GetLibraryTargetSurface(profileName);
         if (target is null)
         {
-            OpenExternal(safeUrl);
+            StatusText.Text = "No visible non-private website card is using the " + ProfileLabel(profileName) +
+                " profile. Bring a matching card into view before opening this item; Nolane did not send it to another browser profile.";
             return;
         }
         try
@@ -1471,21 +1554,27 @@ public sealed partial class MainWindow : Window
 
     private void RefreshLibraryUi()
     {
+        RefreshLibraryProfileOptions();
         var query = LibrarySearchBox.Text?.Trim() ?? "";
+        var profileLabel = _libraryProfileFilter == AllLibraryProfilesFilter
+            ? "All profiles" : ProfileLabel(_libraryProfileFilter);
+        var scopedBookmarks = _browserBookmarks.Where(item => MatchesLibraryProfile(item.ProfileName)).ToList();
+        var scopedHistory = _browserHistory.Where(item => MatchesLibraryProfile(item.ProfileName)).ToList();
         LibraryButton.Content = $"Library ({_browserHistory.Count + _browserBookmarks.Count})";
         HistoryTabButton.IsEnabled = _showingBookmarks;
         BookmarksTabButton.IsEnabled = !_showingBookmarks;
-        ClearHistoryButton.IsEnabled = !_showingBookmarks && _browserHistory.Count > 0;
+        ClearHistoryButton.IsEnabled = !_showingBookmarks && scopedHistory.Count > 0;
+        ClearHistoryButton.Content = _libraryProfileFilter == AllLibraryProfilesFilter ? "Clear history" : "Clear this history";
 
-        var bookmarkMatches = _browserBookmarks
+        var bookmarkMatches = scopedBookmarks
             .Where(item => MatchesLibraryQuery(item.Title, item.Host, item.Url, query))
             .ToList();
-        var historyMatches = _browserHistory
+        var historyMatches = scopedHistory
             .Where(item => MatchesLibraryQuery(item.Title, item.Host, item.Url, query))
             .ToList();
         LibrarySummaryText.Text = _showingBookmarks
-            ? $"{bookmarkMatches.Count} of {_browserBookmarks.Count} saved page(s)"
-            : $"{historyMatches.Count} of {_browserHistory.Count} visits · sensitive query values are removed";
+            ? $"{profileLabel} · {bookmarkMatches.Count} of {scopedBookmarks.Count} saved page(s)"
+            : $"{profileLabel} · {historyMatches.Count} of {scopedHistory.Count} visits · sensitive query values are removed";
 
         if (LibraryPanel.Visibility != Visibility.Visible) return;
         LibraryItems.Children.Clear();
@@ -1496,8 +1585,8 @@ public sealed partial class MainWindow : Window
             {
                 LibraryItems.Children.Add(new TextBlock
                 {
-                    Text = _browserBookmarks.Count == 0
-                        ? "No bookmarks yet. Use the star button on a native website card to save its current page."
+                    Text = scopedBookmarks.Count == 0
+                        ? "No bookmarks in this profile yet. Use the star button on a native website card to save its current page."
                         : "No bookmarks match this search.",
                     TextWrapping = TextWrapping.Wrap,
                     Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 145, 158, 180)),
@@ -1511,9 +1600,9 @@ public sealed partial class MainWindow : Window
                 var saved = item;
                 LibraryItems.Children.Add(CreateLibraryCard(
                     saved.Title,
-                    saved.Host + " · Saved " + saved.SavedAtUtc.ToLocalTime().ToString("g"),
-                    "Open in card",
-                    () => OpenLibraryUrl(saved.Url),
+                    saved.Host + " · " + ProfileLabel(saved.ProfileName) + " · Saved " + saved.SavedAtUtc.ToLocalTime().ToString("g"),
+                    "Open in matching profile",
+                    () => OpenLibraryUrl(saved.Url, saved.ProfileName),
                     "Remove",
                     () =>
                     {
@@ -1529,8 +1618,8 @@ public sealed partial class MainWindow : Window
             {
                 LibraryItems.Children.Add(new TextBlock
                 {
-                    Text = _browserHistory.Count == 0
-                        ? "Pages you visit in native website cards will appear here."
+                    Text = scopedHistory.Count == 0
+                        ? "Pages you visit in non-private native website cards will appear here, separated by profile."
                         : "No history entries match this search.",
                     TextWrapping = TextWrapping.Wrap,
                     Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 145, 158, 180)),
@@ -1542,17 +1631,17 @@ public sealed partial class MainWindow : Window
             foreach (var item in historyMatches.Take(100))
             {
                 var visited = item;
-                var bookmarked = IsBookmarked(visited.Url);
+                var bookmarked = IsBookmarked(visited.Url, visited.ProfileName);
                 LibraryItems.Children.Add(CreateLibraryCard(
                     visited.Title,
-                    visited.Host + " · " + visited.VisitedAtUtc.ToLocalTime().ToString("g"),
-                    "Open in card",
-                    () => OpenLibraryUrl(visited.Url),
+                    visited.Host + " · " + ProfileLabel(visited.ProfileName) + " · " + visited.VisitedAtUtc.ToLocalTime().ToString("g"),
+                    "Open in matching profile",
+                    () => OpenLibraryUrl(visited.Url, visited.ProfileName),
                     bookmarked ? "Saved" : "Bookmark",
                     () =>
                     {
-                        if (!IsBookmarked(visited.Url))
-                            ToggleBookmarkUrl(visited.Url, visited.Title);
+                        if (!IsBookmarked(visited.Url, visited.ProfileName))
+                            ToggleBookmarkUrl(visited.Url, visited.Title, visited.ProfileName);
                     }));
             }
         }
@@ -1560,10 +1649,13 @@ public sealed partial class MainWindow : Window
 
     private void ToggleLibrary_Click(object sender, RoutedEventArgs e)
     {
-        if (LibraryPanel.Visibility != Visibility.Visible)
+        var opening = LibraryPanel.Visibility != Visibility.Visible;
+        if (opening)
+        {
             DownloadsPanel.Visibility = Visibility.Collapsed;
-        LibraryPanel.Visibility = LibraryPanel.Visibility == Visibility.Visible
-            ? Visibility.Collapsed : Visibility.Visible;
+            _libraryProfileFilter = GetFocusedLibrarySurface()?.ProfileName ?? AllLibraryProfilesFilter;
+        }
+        LibraryPanel.Visibility = opening ? Visibility.Visible : Visibility.Collapsed;
         RefreshLibraryUi();
     }
 
@@ -1579,7 +1671,7 @@ public sealed partial class MainWindow : Window
 
             var document = new BrowserLibraryDocument
             {
-                SchemaVersion = 1,
+                SchemaVersion = 2,
                 ExportedAtUtc = DateTimeOffset.UtcNow,
                 History = _browserHistory.Take(MaxLibraryHistoryEntries).ToList(),
                 Bookmarks = _browserBookmarks.Take(MaxLibraryBookmarkEntries).ToList()
@@ -1734,7 +1826,8 @@ public sealed partial class MainWindow : Window
 
     private void ClearHistory_Click(object sender, RoutedEventArgs e)
     {
-        _browserHistory.Clear();
+        if (_libraryProfileFilter == AllLibraryProfilesFilter) _browserHistory.Clear();
+        else _browserHistory.RemoveAll(item => MatchesLibraryProfile(item.ProfileName));
         SaveBrowserLibrary();
         RefreshLibraryUi();
     }
