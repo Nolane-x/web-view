@@ -303,7 +303,7 @@ if (!nativeHost.includes("ExportLibrary_Click") || !nativeHost.includes("ImportL
     !nativeHost.includes("FileDialogOptions.FileMustExist") || !nativeHost.includes("SchemaVersion != 1") ||
     !nativeHost.includes("MaxLibraryBackupBytes") || !nativeHost.includes("stagedHistory") ||
     !nativeHost.includes("stagedBookmarks") || !nativeHost.includes("ContentDialogResult.Primary") ||
-    !nativeXaml.includes("Export backup") || !nativeXaml.includes("Import backup") ||
+    !nativeHost.includes('Content = "Export backup"') || !nativeHost.includes('Content = "Import backup"') ||
     !nativeProject.includes('Version="1.0.3179.45"')) fail("Native Library backup/restore picker integration or its pinned WebView2 dependency is invalid.");
 else pass("Native Library backup/restore uses the WinUI HWND file-picker bridge, versioned JSON, size/count limits, URL sanitization and a staged user-approved merge.");
 if (!nativeHost.includes("HandleDownloadStarting") || !nativeHost.includes("BytesReceivedChanged") ||
