@@ -581,3 +581,19 @@ if (!workflow.includes("Validate Windows installer scripts") ||
     !workflow.includes("Install-NolaneInfinite.ps1") ||
     !workflow.includes("Uninstall-NolaneInfinite.ps1")) fail("Windows CI must syntax-check and package the installer and uninstaller alongside the native host.");
 else pass("Windows CI validates and packages the current-user installer and uninstaller.");
+
+const overlayGeometry = read("desktop-host/OverlayGeometry.cs");
+const overlayGeometrySmoke = read("native-diagnostics/OverlayGeometrySmokeTest/Program.cs");
+const overlayGeometryProject = read("native-diagnostics/OverlayGeometrySmokeTest/OverlayGeometrySmokeTest.csproj");
+if (!mainWindow.includes("OverlayGeometry.TryCreateSurfaceRect") ||
+    !mainWindow.includes("OverlayGeometry.TryCreatePanelRect") ||
+    !overlayGeometry.includes("Math.Floor") || !overlayGeometry.includes("Math.Ceiling") ||
+    !overlayGeometry.includes("IsViewportUsable") ||
+    !overlayGeometrySmoke.includes("negative canvas positions") ||
+    !overlayGeometrySmoke.includes("150% DPI") ||
+    !overlayGeometryProject.includes("OverlayGeometry.cs")) fail("The overlay must use a shared tested CSS-to-native pixel geometry helper for surfaces and floating panels.");
+else pass("Native overlay surface and panel regions share a bounded, testable DPI-aware geometry helper.");
+
+if (!workflow.includes("Exercise overlay clipping and DPI geometry") ||
+    !workflow.includes("OverlayGeometrySmokeTest.csproj")) fail("Windows CI must execute the overlay geometry smoke test.");
+else pass("Windows CI executes overlay clipping, viewport-edge and DPI geometry tests.");

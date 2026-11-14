@@ -538,13 +538,10 @@ public sealed partial class MainWindow : Window
         {
             foreach (var item in visibleItems)
             {
-                if (!item.Visible || item.ClipWidth < 1 || item.ClipHeight < 1) continue;
-                var l = Math.Clamp((int)Math.Floor((item.X + item.ClipX) * _deviceScale), 0, _overlayWidth);
-                var t = Math.Clamp((int)Math.Floor((item.Y + item.ClipY) * _deviceScale), 0, _overlayHeight);
-                var r = Math.Clamp((int)Math.Ceiling((item.X + item.ClipX + item.ClipWidth) * _deviceScale), l, _overlayWidth);
-                var b = Math.Clamp((int)Math.Ceiling((item.Y + item.ClipY + item.ClipHeight) * _deviceScale), t, _overlayHeight);
-                if (r - l < 2 || b - t < 2) continue;
-                var rect = CreateRectRgn(l, t, r, b);
+                if (!item.Visible || !OverlayGeometry.TryCreateSurfaceRect(
+                    item.X, item.Y, item.ClipX, item.ClipY, item.ClipWidth, item.ClipHeight,
+                    _deviceScale, _overlayWidth, _overlayHeight, out var bounds)) continue;
+                var rect = CreateRectRgn(bounds.Left, bounds.Top, bounds.Right, bounds.Bottom);
                 if (rect == IntPtr.Zero) continue;
                 _ = CombineRgn(combined, combined, rect, RGN_OR);
                 DeleteObject(rect);
@@ -576,17 +573,11 @@ public sealed partial class MainWindow : Window
 
     private bool AddPanelRegionIfVisible(IntPtr combined, FrameworkElement panel)
     {
-        if (panel.Visibility != Visibility.Visible || panel.ActualWidth < 1 || panel.ActualHeight < 1) return false;
-        var right = _overlayWidth / _deviceScale;
-        var left = right - panel.ActualWidth - 10;
-        var top = 10d;
-        var bottom = Math.Min(_overlayHeight / _deviceScale - 10, top + panel.ActualHeight);
-        var l = Math.Clamp((int)Math.Floor(left * _deviceScale), 0, _overlayWidth);
-        var t = Math.Clamp((int)Math.Floor(top * _deviceScale), 0, _overlayHeight);
-        var r = Math.Clamp((int)Math.Ceiling((left + panel.ActualWidth) * _deviceScale), l, _overlayWidth);
-        var b = Math.Clamp((int)Math.Ceiling(bottom * _deviceScale), t, _overlayHeight);
-        if (r - l < 2 || b - t < 2) return false;
-        var rect = CreateRectRgn(l, t, r, b);
+        if (panel.Visibility != Visibility.Visible ||
+            !OverlayGeometry.TryCreatePanelRect(
+                _overlayWidth, _overlayHeight, _deviceScale,
+                panel.ActualWidth, panel.ActualHeight, out var bounds)) return false;
+        var rect = CreateRectRgn(bounds.Left, bounds.Top, bounds.Right, bounds.Bottom);
         if (rect == IntPtr.Zero) return false;
         _ = CombineRgn(combined, combined, rect, RGN_OR);
         DeleteObject(rect);

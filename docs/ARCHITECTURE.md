@@ -140,3 +140,8 @@ The uninstaller clears both the Run entry and its startup-choice marker, stops t
 
 
 The startup-choice marker is stored under `HKCU\Software\Nolane\NolaneInfiniteBridge`, not under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. The Run key contains only the executable command, so Windows never tries to launch a preference string as a program. On successful website connection, the host migrates the temporary legacy marker out of Run and refreshes the executable path unless the user opted out.
+
+
+## Native overlay geometry tests
+
+Card and panel clipping uses the same `OverlayGeometry` helper to convert CSS viewport rectangles into bounded native pixel regions. The conversion floors left/top edges, ceils right/bottom edges, clamps to the measured renderer HWND bounds, rejects unusable DPI scales and drops sub-two-pixel regions. A standalone .NET smoke test covers negative canvas positions, partial cards at the viewport edges, offscreen cards, 150% DPI and panels larger than the viewport. This tests the coordinate math but does not replace desktop-level validation of the actual Chromium renderer HWND and pointer/focus behavior.

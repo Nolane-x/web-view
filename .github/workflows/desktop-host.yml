@@ -64,6 +64,11 @@ jobs:
         run: |
           dotnet run --project native-diagnostics/LocalBridgeServerSmokeTest/LocalBridgeServerSmokeTest.csproj -c Release
 
+      - name: Exercise overlay clipping and DPI geometry
+        shell: pwsh
+        run: |
+          dotnet run --project native-diagnostics/OverlayGeometrySmokeTest/OverlayGeometrySmokeTest.csproj -c Release
+
       - name: Compile isolated WebView2 projection smoke test
         shell: pwsh
         run: |

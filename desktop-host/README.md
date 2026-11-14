@@ -26,3 +26,6 @@ Browser Local Network Access permission is required on first connection. The bro
 The self-contained ZIP includes `Install-NolaneInfinite.cmd` and `Uninstall-NolaneInfinite.cmd`. Run the installer from the extracted ZIP; it copies the host to the current user's Local AppData Programs folder, creates a website shortcut and starts the background bridge without elevation. The installer scripts themselves are not copied into the application folder. Uninstall defaults to retaining WebView2 profiles and Library/download history; `-RemoveUserData` removes that data explicitly.
 
 The startup preference lives in a separate per-user settings key. The Run key contains only the executable command; the host migrates the older development marker out of Run on the next successful website connection.
+
+
+Overlay geometry is implemented in `OverlayGeometry.cs` so card and panel regions use the same DPI-aware conversion. The Windows workflow runs a standalone smoke test for negative coordinates, clipped edges, offscreen cards, 150% display scale and panels larger than the viewport.
