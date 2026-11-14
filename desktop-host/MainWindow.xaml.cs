@@ -80,6 +80,16 @@ public sealed partial class MainWindow : Window
         Title = "Nolane Infinite — Native Browser Host";
         WorkspaceView.Loaded += MainWindow_Loaded;
         SizeChanged += (_, _) => BrowserSurfaceLayer.InvalidateArrange();
+        Closed += (_, _) =>
+        {
+            SaveDownloadHistory();
+            foreach (var surface in _surfaces.Values.ToArray())
+            {
+                try { surface.View.Close(); } catch { }
+            }
+            _surfaces.Clear();
+            try { WorkspaceView.Close(); } catch { }
+        };
     }
 
     private static Microsoft.UI.Xaml.Media.SolidColorBrush LibraryBrush(byte red, byte green, byte blue) =>
@@ -426,7 +436,11 @@ public sealed partial class MainWindow : Window
             var controllerOptions = _environment!.CreateCoreWebView2ControllerOptions();
             controllerOptions.IsInPrivateModeEnabled = item.PrivateMode;
             await view.EnsureCoreWebView2Async(_environment, controllerOptions);
-            if (!_surfaces.ContainsKey(item.Id)) return null;
+            if (!_surfaces.ContainsKey(item.Id))
+            {
+                try { view.Close(); } catch { }
+                return null;
+            }
             var core = view.CoreWebView2;
             core.Settings.AreDefaultContextMenusEnabled = true;
             core.Settings.IsZoomControlEnabled = true;
@@ -488,6 +502,7 @@ public sealed partial class MainWindow : Window
             StatusText.Text = "Could not create a website surface: " + ex.Message;
             BrowserSurfaceLayer.Children.Remove(view);
             _surfaces.Remove(item.Id);
+            try { view.Close(); } catch { }
             return null;
         }
     }
@@ -1008,30 +1023,24 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async Task RemoveSurfaceAsync(string id)
+    private Task RemoveSurfaceAsync(string id)
     {
-        if (!_surfaces.TryGetValue(id, out var surface)) return;
+        if (!_surfaces.TryGetValue(id, out var surface)) return Task.CompletedTask;
         if (HasRetainedDownload(id))
         {
             surface.PendingRemoval = true;
             surface.View.Visibility = Visibility.Collapsed;
             PublishSurfaceStatus(id, "suspended", "This card was removed, but Nolane is retaining its browser until the download completes or is canceled.");
-            return;
+            return Task.CompletedTask;
         }
-        if (!_surfaces.Remove(id)) return;
-        try
-        {
-            if (surface.Initialized)
-            {
-                surface.View.CoreWebView2.Stop();
-                surface.View.CoreWebView2.Navigate("about:blank");
-                await surface.View.CoreWebView2.TrySuspendAsync();
-            }
-        }
-        catch { }
-        BrowserSurfaceLayer.Children.Remove(surface.View);
+        if (!_surfaces.Remove(id)) return Task.CompletedTask;
+
         surface.View.Visibility = Visibility.Collapsed;
-        PublishSurfaceStatus(id, "suspended", "The browser surface was released from memory.");
+        try { surface.View.Close(); } catch { }
+        BrowserSurfaceLayer.Children.Remove(surface.View);
+        surface.Initialized = false;
+        PublishSurfaceStatus(id, "suspended", "The browser surface was closed and released from memory.");
+        return Task.CompletedTask;
     }
 
     private void ApplyBounds(WebView2 view, SurfaceDescriptor item)

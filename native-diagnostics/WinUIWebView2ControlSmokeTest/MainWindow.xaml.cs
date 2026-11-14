@@ -22,6 +22,8 @@ public sealed partial class MainWindow : Window
 
     public CoreWebView2? GetCore() => Browser.CoreWebView2;
 
+    public void CloseBrowserControl() => Browser.Close();
+
     public async Task InitializePrivateSessionAsync(CoreWebView2Environment environment)
     {
         var options = environment.CreateCoreWebView2ControllerOptions();

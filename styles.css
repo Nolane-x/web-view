@@ -405,3 +405,5 @@ kbd { font-family: var(--sans); font-size: 9px; border: 1px solid rgba(255,255,2
 .native-node-action[data-bookmarked="true"] { color: #f0c96c; }
 .native-node-action[data-private="true"] { color: #c0b3ff; background: rgba(139, 116, 255, .12); }
 .native-node-action[data-bookmarked="true"] .icon { fill: rgba(240,201,108,.28); }
+
+.native-private-status { display: inline-flex; align-items: center; flex: 0 0 auto; padding: 2px 5px; border: 1px solid rgba(181, 156, 255, .34); border-radius: 4px; color: #c8b8ff; background: rgba(139, 116, 255, .13); font-size: 6px; font-weight: 850; letter-spacing: .45px; white-space: nowrap; }

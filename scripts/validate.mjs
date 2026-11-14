@@ -11,6 +11,7 @@ const js = read("app.js");
 const css = read("styles.css");
 const manifest = JSON.parse(read("manifest.webmanifest"));
 const sw = read("sw.js");
+const workspaceStorage = read("workspace-storage.js");
 
 const ids = [...html.matchAll(/\bid=["']([^"']+)["']/g)].map((match) => match[1]);
 const idSet = new Set(ids);
@@ -37,7 +38,7 @@ else pass("All referenced interface icons have SVG symbols.");
 if (manifest.name !== "Nolane Infinite" || manifest.start_url !== "./" || manifest.scope !== "./") fail("PWA manifest identity or relative scope is invalid.");
 else pass("PWA manifest is valid and uses repository-relative paths.");
 
-for (const asset of ["index.html", "styles.css", "app.js", "manifest.webmanifest", "sw.js", "icon.svg"]) {
+for (const asset of ["index.html", "styles.css", "native-bridge.js", "workspace-storage.js", "app.js", "manifest.webmanifest", "sw.js", "icon.svg"]) {
   if (!fs.existsSync(path.join(root, asset))) fail("Required asset missing: " + asset);
 }
 if (sw.includes("https://") && !sw.includes("self.location.origin")) fail("Service worker contains an unexpected remote dependency.");
@@ -55,6 +56,12 @@ else pass("Compatibility Preview requires an explicit user confirmation.");
 if (!/clean\.embedMode = node\.embedMode === "compat" \? "compat" : "safe"/.test(js)) fail("Website preview mode is not normalized when loading or importing workspaces.");
 else pass("Website preview mode persists safely through workspace normalization.");
 
+if (!workspaceStorage.includes("sanitizeNodes") || !workspaceStorage.includes("sanitizeSpaces") ||
+    !js.includes("window.NolaneWorkspaceStorage.sanitizeNodes(nodes)") ||
+    !js.includes("window.NolaneWorkspaceStorage.sanitizeNodes(space.nodes)") ||
+    !html.includes('<script src="./workspace-storage.js" defer></script>') ||
+    !sw.includes('"workspace-storage.js"')) fail("Private workspace storage sanitizer must be loaded, used for active/all spaces and precached offline.");
+else pass("Private workspace addresses pass through the tested volatile-field sanitizer before IndexedDB, localStorage and export.");
 if (!/indexedDB\.open/.test(js) || !/localStorage\.setItem/.test(js)) fail("Local persistence or fallback is missing.");
 else pass("Local persistence and fallback are present.");
 
@@ -256,12 +263,18 @@ if (!nativeProject.includes("Microsoft.WindowsAppSDK") ||
 else pass("Native host pins its known-good WebView2 SDK, isolates smoke tests outside WinUI item discovery, and keeps Shell COM interop outside the XAML-backed window.");
 if (!smokeWindowXaml.includes("controls:WebView2") ||
     !smokeWindowCs.includes("using Microsoft.Web.WebView2.Core;") ||
-    !smokeWindowCs.includes("Browser.CoreWebView2")) fail("The XAML smoke test must bind a WinUI WebView2 control to its Core API.");
+    !smokeWindowCs.includes("Browser.CoreWebView2") ||
+    !smokeWindowCs.includes("Browser.Close();")) fail("The XAML smoke test must bind the WinUI WebView2 Core API and compile its explicit Close lifecycle.");
 else pass("An isolated WinUI executable compiles the XAML WebView2 control and its Core API together.");
 if (!workflow.includes("dotnet restore desktop-host/Nolane.DesktopHost.csproj -r win-x64") ||
     !workflow.includes("dotnet build desktop-host/Nolane.DesktopHost.csproj -c Release -r win-x64 --no-restore -p:WindowsAppSDKSelfContained=true -p:WebView2EnableCsWinRTProjection=true")) fail("Native CI must compile the exact shipping WinUI host project, not a parallel source-linked approximation.");
 else pass("Native CI compiles the exact shipping WinUI host project with the pinned WebView2 package graph.");
 if (!nativeHost.includes("WorkspaceView.Loaded += MainWindow_Loaded")) fail("Native browser host must initialize WebView2 from its control Loaded event.");
+if (!nativeHost.includes("surface.View.Close()") ||
+    !nativeHost.includes("WorkspaceView.Close()") ||
+    !nativeHost.includes("Closed += (_, _)") ||
+    nativeHost.includes('surface.View.CoreWebView2.Navigate("about:blank")')) fail("Removed native browser surfaces and the parent workspace control must explicitly close instead of leaving controller/event-handler references alive.");
+else pass("Native WebView2 controllers are explicitly closed on eviction, profile replacement, and host shutdown.");
 else pass("Native browser host starts initialization only after the WebView2 control is loaded.");
 if (!workflow.includes("Compile isolated WebView2 projection smoke test") ||
     !workflow.includes("native-diagnostics/WebView2ProjectionSmokeTest.csproj") ||

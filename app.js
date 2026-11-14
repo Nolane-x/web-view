@@ -109,10 +109,7 @@
   function syncActiveSpace() {
     const current = activeSpace();
     if (!current) return;
-    current.nodes = nodes.map((node) => {
-      const { transientUrl, ...savedNode } = node;
-      return savedNode;
-    });
+    current.nodes = window.NolaneWorkspaceStorage.sanitizeNodes(nodes);
     current.view = { x: view.x, y: view.y, scale: view.scale };
   }
 
@@ -374,10 +371,7 @@
         id: space.id,
         name: space.name,
         view: { ...space.view },
-        nodes: space.nodes.map((node) => {
-          const { transientUrl, ...savedNode } = node;
-          return savedNode;
-        })
+        nodes: window.NolaneWorkspaceStorage.sanitizeNodes(space.nodes)
       }))
     };
   }
@@ -551,6 +545,20 @@
       status.textContent = states[state.state] || "NATIVE WEB";
       status.title = state.detail || "Native WebView2 browser surface";
 
+      let privateBadge = card.querySelector(".native-private-status");
+      if (state.isPrivateMode === true) {
+        if (!privateBadge) {
+          privateBadge = document.createElement("span");
+          privateBadge.className = "native-private-status";
+          privateBadge.setAttribute("role", "status");
+          card.querySelector(".node-title-wrap")?.appendChild(privateBadge);
+        }
+        privateBadge.textContent = "PRIVATE";
+        privateBadge.title = "This card is using a temporary WebView2 InPrivate session. Its visited addresses are not saved by Nolane.";
+      } else if (state.isPrivateMode === false) {
+        privateBadge?.remove();
+      }
+
       const back = card.querySelector('[data-action="native-back"]');
       const forward = card.querySelector('[data-action="native-forward"]');
       const mute = card.querySelector('[data-action="native-mute"]');
@@ -697,6 +705,14 @@
         '<button class="node-action" data-action="delete" title="Remove"><svg class="icon"><use href="#i-x"/></svg></button>' +
       '</span>';
     article.appendChild(header);
+    if (nativeState.isPrivateMode === true) {
+      const privateBadge = document.createElement("span");
+      privateBadge.className = "native-private-status";
+      privateBadge.setAttribute("role", "status");
+      privateBadge.textContent = "PRIVATE";
+      privateBadge.title = "This card is using a temporary WebView2 InPrivate session.";
+      header.querySelector(".node-title-wrap")?.appendChild(privateBadge);
+    }
     const nativeAddressInput = header.querySelector(".native-address-input");
     if (nativeAddressInput) {
       nativeAddressInput.addEventListener("pointerdown", (event) => event.stopPropagation());

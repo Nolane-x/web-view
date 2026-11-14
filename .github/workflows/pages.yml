@@ -27,6 +27,7 @@ jobs:
         run: |
           node --check app.js
           node --check native-bridge.js
+          node --check workspace-storage.js
           node --check extension/background.js
           node --check extension/compatibility.js
           node --check extension/content.js
@@ -43,7 +44,7 @@ jobs:
       - name: Assemble site artifact
         run: |
           mkdir -p _site/downloads
-          cp index.html styles.css native-bridge.js app.js manifest.webmanifest sw.js icon.svg _site/
+          cp index.html styles.css native-bridge.js workspace-storage.js app.js manifest.webmanifest sw.js icon.svg _site/
           zip -rq _site/downloads/nolane-browser-companion-0.2.13.zip extension/
           touch _site/.nojekyll
 
