@@ -1998,7 +1998,7 @@
     nativeBridgeSocket = socket;
     socket.addEventListener("open", () => {
       nativeBridgeReconnectAttempts = 0;
-      socket.send(JSON.stringify({ type: "nolane.bridge.hello", protocol: 2, page: location.origin }));
+      socket.send(JSON.stringify({ type: "nolane.bridge.hello", protocol: 2, page: location.href }));
     }, { once: true });
     socket.addEventListener("message", (event) => {
       let message;

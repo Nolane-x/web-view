@@ -423,6 +423,8 @@ public sealed partial class MainWindow : Window
             if (type == "nolane.bridge.hello")
             {
                 if (!root.TryGetProperty("protocol", out var protocol) || protocol.GetInt32() != 2) return;
+                if (!root.TryGetProperty("page", out var pageElement) || pageElement.ValueKind != JsonValueKind.String ||
+                    !IsTrustedWorkspaceUri(pageElement.GetString() ?? "")) return;
                 _bridgeHandshakeComplete = true;
                 _workspaceReady = true;
                 BackgroundTrayIcon.EnableStartupAfterFirstConnection();
@@ -444,8 +446,14 @@ public sealed partial class MainWindow : Window
 
     private bool UpdateOverlayBounds(JsonElement root)
     {
+        // Invalidate the previous screen rectangle before measuring; a renderer swap must never reuse stale bounds.
+        _overlayWidth = 0;
+        _overlayHeight = 0;
         if (!root.TryGetProperty("viewport", out var viewport) || viewport.ValueKind != JsonValueKind.Object)
+        {
+            HideOverlayWindow();
             return false;
+        }
         var cssWidth = ReadNumber(viewport, "width");
         var cssHeight = ReadNumber(viewport, "height");
         var reportedScale = Math.Clamp(ReadNumber(viewport, "deviceScale"), 1, 4);
@@ -454,7 +462,10 @@ public sealed partial class MainWindow : Window
             HideOverlayWindow();
             return false;
         }
-        if (!IsSupportedBrowserWindow(_browserHwnd))
+        var foregroundBrowser = GetSupportedForegroundBrowserWindow();
+        if (foregroundBrowser != IntPtr.Zero && foregroundBrowser != _browserHwnd)
+            _browserHwnd = foregroundBrowser;
+        else if (!IsSupportedBrowserWindow(_browserHwnd))
         {
             var candidateBrowser = GetSupportedForegroundBrowserWindow();
             if (candidateBrowser != IntPtr.Zero) _browserHwnd = candidateBrowser;
@@ -2547,12 +2558,15 @@ public sealed partial class MainWindow : Window
     private static bool TryParseDescriptor(JsonElement element, out SurfaceDescriptor descriptor)
     {
         descriptor = default!;
-        if (!TryGetString(element, "id", out var id) || !TryGetString(element, "url", out var url) ||
+        if (!TryGetString(element, "id", out var id) || id.Length > 128 ||
+            !TryGetString(element, "url", out var url) || url.Length > 4096 ||
             !Uri.TryCreate(url, UriKind.Absolute, out var uri) || !IsSafeWebUri(url)) return false;
         var x = ReadNumber(element, "x");
         var y = ReadNumber(element, "y");
         var width = ReadNumber(element, "width");
         var height = ReadNumber(element, "height");
+        if (Math.Abs(x) > 100000 || Math.Abs(y) > 100000 ||
+            width < 80 || width > 8000 || height < 60 || height > 6000) return false;
         var clipX = ReadNumber(element, "clipX");
         var clipY = ReadNumber(element, "clipY");
         var clipWidth = ReadNumber(element, "clipWidth");
