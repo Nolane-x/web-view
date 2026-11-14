@@ -356,7 +356,15 @@ if (!nativeHost.includes("BuildLibraryPanel()") || !nativeHost.includes("Library
     !nativeXaml.includes('x:Name="WorkspaceRoot"') || nativeXaml.includes('x:Name="LibraryPanel"') ||
     !js.includes("native-bookmark") || !js.includes("toggle-bookmark")) fail("Native browser Library UI, per-card bookmark control, dynamic panel or instant search is incomplete.");
 else pass("Native Library opens history/bookmarks in the focused website card, supports per-card bookmarks and filters title/domain/address instantly.");
-if (!nativeHost.includes("ExportLibrary_Click") || !nativeHost.includes("ImportLibrary_Click") ||
+
+if (!nativeHost.includes("LibraryProfileFilter = new ComboBox") ||
+    !nativeHost.includes("LibraryProfileFilter_SelectionChanged") ||
+    !nativeHost.includes("GetLibraryTargetSurface(string profileName)") ||
+    !nativeHost.includes("MatchesLibraryProfile(item.ProfileName)") ||
+    !nativeHost.includes("did not send it to another browser profile") ||
+    !nativeHost.includes("OpenLibraryUrl(visited.Url, visited.ProfileName)") ||
+    !nativeHost.includes("OpenLibraryUrl(saved.Url, saved.ProfileName)")) fail("Library profile filter must open saved items only in a visible, non-private card using the item's originating profile.");
+else pass("Native Library defaults to the focused profile, offers All profiles, and never crosses login profiles when opening saved items.");if (!nativeHost.includes("ExportLibrary_Click") || !nativeHost.includes("ImportLibrary_Click") ||
     !nativeHost.includes("WindowsShellFilePicker.PickLibraryBackupPath") ||
     !nativePicker.includes("public static string? PickLibraryBackupPath(IntPtr ownerWindow, bool save)") ||
     !nativePicker.includes("Type.GetTypeFromCLSID(classId") || !nativePicker.includes("IFileDialog") ||
