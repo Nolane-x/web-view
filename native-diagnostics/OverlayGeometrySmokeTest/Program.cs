@@ -30,12 +30,12 @@ Rect(false, 10, 10, 0, 0, 100, 100, 1, 0, 600);
 
 Check(
     OverlayGeometry.TryCreatePanelRect(1800, 1200, 1.5, 400, 500, out var panel) &&
-    panel == new NativePixelRect(585, 15, 1185, 765),
+    panel == new NativePixelRect(1185, 15, 1785, 765),
     "Right-side panel rectangle was not aligned at 150% DPI.");
 
 Check(
     OverlayGeometry.TryCreatePanelRect(800, 500, 1, 1200, 600, out var narrowPanel) &&
-    narrowPanel.Left == 0 && narrowPanel.Top == 10 && narrowPanel.Right == 800 && narrowPanel.Bottom == 490,
+    narrowPanel.Left == 0 && narrowPanel.Top == 10 && narrowPanel.Right == 790 && narrowPanel.Bottom == 490,
     "A panel wider/taller than the viewport must be clipped to the viewport.");
 
 Check(

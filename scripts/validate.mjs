@@ -597,3 +597,7 @@ else pass("Native overlay surface and panel regions share a bounded, testable DP
 if (!workflow.includes("Exercise overlay clipping and DPI geometry") ||
     !workflow.includes("OverlayGeometrySmokeTest.csproj")) fail("Windows CI must execute the overlay geometry smoke test.");
 else pass("Windows CI executes overlay clipping, viewport-edge and DPI geometry tests.");
+
+if (!overlayGeometrySmoke.includes("new NativePixelRect(1185, 15, 1785, 765)") ||
+    !overlayGeometrySmoke.includes("narrowPanel.Right == 790")) fail("Panel region expected coordinates must include the 10 CSS-pixel viewport margin at all display scales.");
+else pass("Panel-region tests assert the same right/bottom inset used by the live overlay.");
