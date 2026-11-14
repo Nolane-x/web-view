@@ -78,8 +78,9 @@ test("native browser bridge allows bookmark toggles and normalizes saved state",
 test("browser profile names are trimmed, bounded and restricted to a safe ASCII subset", () => {
   assert.equal(bridge.normalizeProfileName("  Work  "), "Work");
   assert.equal(bridge.normalizeProfileName("Research_2"), "Research_2");
+  assert.equal(bridge.normalizeProfileName("two  "), "two");
   assert.equal(bridge.normalizeProfileName("A".repeat(64)), "A".repeat(64));
-  for (const value of ["", "bad/name", "trailing.", "two  ", "ümlaut", "x".repeat(65), null]) {
+  for (const value of ["", "bad/name", "trailing.", "ümlaut", "x".repeat(65), null]) {
     assert.equal(bridge.normalizeProfileName(value), null);
   }
 });
