@@ -515,3 +515,12 @@ else pass("Windows auto-start is enabled after first connection unless the user 
 
 if (process.exitCode) process.exit(process.exitCode);
 console.log("All static checks passed.");
+
+if (!nativeHost.includes("IsTrustedWorkspaceUri(pageElement.GetString() ?? \"\"") ||
+    !js.includes("page: location.href")) fail("The first local handshake must bind to the published /web-view workspace path, not just the shared GitHub Pages origin.");
+else pass("The local bridge handshake is bound to the exact Nolane workspace path.");
+
+if (!nativeHost.includes("_overlayWidth = 0;") ||
+    !nativeHost.includes("foregroundBrowser != IntPtr.Zero && foregroundBrowser != _browserHwnd") ||
+    !nativeHost.includes("width > 8000 || height < 60 || height > 6000")) fail("Overlay recovery must discard stale viewport bounds and validate native card geometry.");
+else pass("Renderer swaps cannot reuse stale overlay coordinates, and incoming card bounds are constrained.");
