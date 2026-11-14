@@ -121,7 +121,7 @@ internal sealed class LocalBridgeServer : IAsyncDisposable
     {
         key = "";
         var lines = rawHeaders.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
-        if (lines.Length < 2 || !lines[0].StartsWith("GET /bridge HTTP/1.1", StringComparison.Ordinal)) return false;
+        if (lines.Length < 2 || !string.Equals(lines[0], "GET /bridge HTTP/1.1", StringComparison.Ordinal)) return false;
         var headers = lines.Skip(1)
             .Select(line => line.IndexOf(':') is var index && index > 0
                 ? new KeyValuePair<string, string>(line[..index].Trim(), line[(index + 1)..].Trim())
