@@ -270,12 +270,12 @@ if (!workflow.includes("dotnet restore desktop-host/Nolane.DesktopHost.csproj -r
     !workflow.includes("dotnet build desktop-host/Nolane.DesktopHost.csproj -c Release -r win-x64 --no-restore -p:WindowsAppSDKSelfContained=true -p:WebView2EnableCsWinRTProjection=true")) fail("Native CI must compile the exact shipping WinUI host project, not a parallel source-linked approximation.");
 else pass("Native CI compiles the exact shipping WinUI host project with the pinned WebView2 package graph.");
 if (!nativeHost.includes("WorkspaceView.Loaded += MainWindow_Loaded")) fail("Native browser host must initialize WebView2 from its control Loaded event.");
+else pass("Native browser host starts initialization only after the WebView2 control is loaded.");
 if (!nativeHost.includes("surface.View.Close()") ||
     !nativeHost.includes("WorkspaceView.Close()") ||
     !nativeHost.includes("Closed += (_, _)") ||
     nativeHost.includes('surface.View.CoreWebView2.Navigate("about:blank")')) fail("Removed native browser surfaces and the parent workspace control must explicitly close instead of leaving controller/event-handler references alive.");
 else pass("Native WebView2 controllers are explicitly closed on eviction, profile replacement, and host shutdown.");
-else pass("Native browser host starts initialization only after the WebView2 control is loaded.");
 if (!workflow.includes("Compile isolated WebView2 projection smoke test") ||
     !workflow.includes("native-diagnostics/WebView2ProjectionSmokeTest.csproj") ||
     !workflow.includes("dotnet build desktop-host/Nolane.DesktopHost.csproj") ||
