@@ -74,3 +74,18 @@ test("native browser bridge allows bookmark toggles and normalizes saved state",
   });
   assert.equal(state.isBookmarked, true);
 });
+
+test("native surface state reports private mode only when the host sends a boolean", () => {
+  const privateState = bridge.normalizeSurfaceState({
+    type: "nolane.native.surface", id: "private-1", state: "ready", isPrivateMode: true
+  });
+  assert.equal(privateState.isPrivateMode, true);
+  const regularState = bridge.normalizeSurfaceState({
+    type: "nolane.native.surface", id: "regular-1", state: "ready", isPrivateMode: false
+  });
+  assert.equal(regularState.isPrivateMode, false);
+  const invalidState = bridge.normalizeSurfaceState({
+    type: "nolane.native.surface", id: "legacy-1", state: "ready", isPrivateMode: "true"
+  });
+  assert.equal(invalidState.isPrivateMode, null);
+});

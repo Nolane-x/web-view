@@ -7,13 +7,20 @@ on:
       - "desktop-host/**"
       - "native-diagnostics/**"
       - "app.js"
+      - "native-bridge.js"
+      - "tests/**"
+      - "scripts/validate.mjs"
       - "styles.css"
       - ".github/workflows/desktop-host.yml"
   pull_request:
     branches: ["main"]
     paths:
       - "desktop-host/**"
+      - "native-diagnostics/**"
       - "app.js"
+      - "native-bridge.js"
+      - "tests/**"
+      - "scripts/validate.mjs"
       - "styles.css"
       - ".github/workflows/desktop-host.yml"
   workflow_dispatch:
@@ -35,14 +42,23 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "8.0.x"
+      - name: Validate browser bridge and workspace contracts
+        shell: pwsh
+        run: |
+          node --version
+          node --check app.js
+          node --check native-bridge.js
+          node --test tests/*.test.mjs
+          node scripts/validate.mjs
+
       - name: Compile isolated WebView2 projection smoke test
         shell: pwsh
         run: |
-          $webView2Projection = Join-Path $env:USERPROFILE ".nuget/packages/microsoft.web.webview2/1.0.3179.45/lib_manual/net8.0-windows10.0.17763.0/Microsoft.Web.WebView2.Core.Projection.dll"
-          if (-not (Test-Path $webView2Projection)) { throw "WebView2 CsWinRT projection DLL not found: $webView2Projection" }
-          Write-Host "Using WebView2 CsWinRT projection: $webView2Projection"
           dotnet --version
           dotnet restore native-diagnostics/WebView2ProjectionSmokeTest.csproj -r win-x64
+          $webView2Projection = Join-Path $env:USERPROFILE ".nuget/packages/microsoft.web.webview2/1.0.3179.45/lib_manual/net8.0-windows10.0.17763.0/Microsoft.Web.WebView2.Core.Projection.dll"
+          if (-not (Test-Path $webView2Projection)) { throw "WebView2 CsWinRT projection DLL not found after restore: $webView2Projection" }
+          Write-Host "Using restored WebView2 CsWinRT projection: $webView2Projection"
           dotnet build native-diagnostics/WebView2ProjectionSmokeTest.csproj -c Release -r win-x64 --no-restore -p:WindowsAppSDKSelfContained=true -p:WebView2EnableCsWinRTProjection=true
           dotnet restore native-diagnostics/WinUIWebView2ControlSmokeTest/WinUIWebView2ControlSmokeTest.csproj -r win-x64
           dotnet build native-diagnostics/WinUIWebView2ControlSmokeTest/WinUIWebView2ControlSmokeTest.csproj -c Release -r win-x64 --no-restore -p:WindowsAppSDKSelfContained=true -p:WebView2EnableCsWinRTProjection=true

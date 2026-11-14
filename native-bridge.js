@@ -58,7 +58,8 @@
       canGoForward: message.canGoForward === true,
       isMuted: message.isMuted === true,
       isPlayingAudio: message.isPlayingAudio === true,
-      isBookmarked: message.isBookmarked === true
+      isBookmarked: message.isBookmarked === true,
+      isPrivateMode: typeof message.isPrivateMode === "boolean" ? message.isPrivateMode : null
     });
   }
 

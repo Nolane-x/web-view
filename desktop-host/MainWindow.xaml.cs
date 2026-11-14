@@ -378,6 +378,18 @@ public sealed partial class MainWindow : Window
                 }
 
                 activeCount++;
+                if (_surfaces.TryGetValue(item.Id, out var configured) && configured.IsPrivate != item.PrivateMode)
+                {
+                    if (HasRetainedDownload(item.Id))
+                    {
+                        ApplyBounds(configured.View, item);
+                        await SetSurfaceVisibleAsync(configured, true);
+                        PublishSurfaceState(configured, "ready",
+                            "Finish or cancel this card's active download before changing its browser session mode.");
+                        continue;
+                    }
+                    await RemoveSurfaceAsync(item.Id);
+                }
                 var surface = await GetOrCreateSurfaceAsync(item);
                 if (surface is null) continue;
                 surface.LastVisibleAt = DateTimeOffset.UtcNow;
@@ -405,13 +417,15 @@ public sealed partial class MainWindow : Window
             VerticalAlignment = VerticalAlignment.Stretch,
             Visibility = Visibility.Collapsed
         };
-        var surface = new BrowserSurface(item.Id, item.Url, view);
+        var surface = new BrowserSurface(item.Id, item.Url, view, item.PrivateMode);
         _surfaces[item.Id] = surface;
         BrowserSurfaceLayer.Children.Add(view);
         ApplyBounds(view, item);
         try
         {
-            await view.EnsureCoreWebView2Async(_environment);
+            var controllerOptions = _environment!.CreateCoreWebView2ControllerOptions();
+            controllerOptions.IsInPrivateModeEnabled = item.PrivateMode;
+            await view.EnsureCoreWebView2Async(_environment, controllerOptions);
             if (!_surfaces.ContainsKey(item.Id)) return null;
             var core = view.CoreWebView2;
             core.Settings.AreDefaultContextMenusEnabled = true;
@@ -491,6 +505,7 @@ public sealed partial class MainWindow : Window
         {
             Id = Guid.NewGuid().ToString("N"),
             Operation = operation,
+            IsPrivate = surface.IsPrivate,
             SurfaceId = surface.Id,
             SourceHost = SafeHost(operation.Uri),
             MimeType = StringRaw(operation.MimeType, 120),
@@ -641,7 +656,7 @@ public sealed partial class MainWindow : Window
         try
         {
             foreach (var entry in _downloads) UpdateDownloadEntry(entry);
-            var records = _downloads.Take(100).Select(entry => new DownloadHistoryRecord
+            var records = _downloads.Where(entry => !entry.IsPrivate).Take(100).Select(entry => new DownloadHistoryRecord
             {
                 Id = entry.Id,
                 FileName = StringRaw(entry.FileName, 180),
@@ -1072,6 +1087,11 @@ public sealed partial class MainWindow : Window
                     PublishSurfaceState(surface, "ready", core.IsMuted ? "Website audio muted" : "Website audio unmuted");
                     break;
                 case "toggle-bookmark":
+                    if (surface.IsPrivate)
+                    {
+                        PublishSurfaceState(surface, "ready", "Bookmarks are disabled during private browsing.");
+                        break;
+                    }
                     ToggleBookmark(surface);
                     PublishSurfaceState(surface, "ready", IsBookmarked(core.Source) ? "Page saved to Library" : "Bookmark removed");
                     break;
@@ -1177,7 +1197,7 @@ public sealed partial class MainWindow : Window
 
     private void RecordBrowserHistory(BrowserSurface surface)
     {
-        if (!surface.Initialized) return;
+        if (!surface.Initialized || surface.IsPrivate) return;
         string url;
         string title;
         try
@@ -1222,6 +1242,7 @@ public sealed partial class MainWindow : Window
 
     private void ToggleBookmark(BrowserSurface surface)
     {
+        if (surface.IsPrivate) return;
         var core = surface.View.CoreWebView2;
         ToggleBookmarkUrl(core.Source, core.DocumentTitle);
     }
@@ -1706,7 +1727,8 @@ public sealed partial class MainWindow : Window
                 canGoForward = core.CanGoForward,
                 isMuted = core.IsMuted,
                 isPlayingAudio = core.IsDocumentPlayingAudio,
-                isBookmarked = IsBookmarked(core.Source)
+                isBookmarked = surface.IsPrivate ? false : IsBookmarked(core.Source),
+                isPrivateMode = surface.IsPrivate
             });
         }
         catch
@@ -1744,8 +1766,10 @@ public sealed partial class MainWindow : Window
             clipX + clipWidth > width + 1 || clipY + clipHeight > height + 1) return false;
         var z = (int)Math.Clamp(ReadNumber(element, "zIndex"), -100000, 100000);
         var visible = element.TryGetProperty("visible", out var v) && v.ValueKind == JsonValueKind.True;
+        var privateMode = element.TryGetProperty("privateMode", out var privateProperty) &&
+            privateProperty.ValueKind == JsonValueKind.True;
         descriptor = new SurfaceDescriptor(id, uri.ToString(), x, y, width, height,
-            clipX, clipY, clipWidth, clipHeight, z, visible);
+            clipX, clipY, clipWidth, clipHeight, z, visible, privateMode);
         return true;
     }
 
@@ -1797,6 +1821,7 @@ public sealed partial class MainWindow : Window
         public CoreWebView2DownloadOperation? Operation { get; set; }
         public string SurfaceId { get; set; } = "";
         public string FileName { get; set; } = "Website download";
+        public bool IsPrivate { get; set; }
         public string SourceHost { get; set; } = "website";
         public string FilePath { get; set; } = "";
         public string MimeType { get; set; } = "";
@@ -1855,11 +1880,12 @@ public sealed partial class MainWindow : Window
         public DateTimeOffset UpdatedAtUtc { get; set; }
     }
 
-    private sealed class BrowserSurface(string id, string url, WebView2 view)
+    private sealed class BrowserSurface(string id, string url, WebView2 view, bool isPrivate)
     {
         public string Id { get; } = id;
         public string Url { get; set; } = url;
         public WebView2 View { get; } = view;
+        public bool IsPrivate { get; } = isPrivate;
         public bool Initialized { get; set; }
         public bool Suspended { get; set; }
         public bool PendingRemoval { get; set; }
@@ -1871,5 +1897,5 @@ public sealed partial class MainWindow : Window
     private sealed record SurfaceDescriptor(
         string Id, string Url, double X, double Y, double Width, double Height,
         double ClipX, double ClipY, double ClipWidth, double ClipHeight,
-        int ZIndex, bool Visible);
+        int ZIndex, bool Visible, bool PrivateMode);
 }

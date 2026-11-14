@@ -125,3 +125,10 @@ The native host pins `Microsoft.Web.WebView2 1.0.3179.45` as a direct package re
 Windows CI smoke projects live in the repository-level `native-diagnostics/` folder, outside the WinUI host's default item discovery. Each smoke project and the shipping host pins the same WebView2 SDK version.
 
 Windows Shell COM interop for Library backup dialogs is isolated in `WindowsShellFilePicker.cs`, outside the XAML-backed MainWindow partial class, so WinUI markup type discovery does not inspect COM-import declarations.
+
+
+## Per-card private browsing
+
+Native website cards can switch between the regular Nolane WebView2 profile and WebView2's temporary InPrivate mode. This uses WebView2 controller options instead of a visual-only privacy label.
+
+For private cards, Nolane does not add visited URLs to browser history, does not allow bookmarks, does not persist download metadata, and keeps the live address only in memory rather than writing it into the workspace or its export. When leaving private mode, the card returns to its last saved regular-profile URL. Files a user explicitly saves through the native download dialog remain on disk; private mode does not delete user-selected files. An active or resumable download must finish or be canceled before that card can switch profiles.

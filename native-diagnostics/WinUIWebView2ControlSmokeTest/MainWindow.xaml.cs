@@ -21,4 +21,11 @@ public sealed partial class MainWindow : Window
     }
 
     public CoreWebView2? GetCore() => Browser.CoreWebView2;
+
+    public async Task InitializePrivateSessionAsync(CoreWebView2Environment environment)
+    {
+        var options = environment.CreateCoreWebView2ControllerOptions();
+        options.IsInPrivateModeEnabled = true;
+        await Browser.EnsureCoreWebView2Async(environment, options);
+    }
 }

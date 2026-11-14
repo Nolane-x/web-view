@@ -277,6 +277,25 @@ if (!workflow.includes("Compile isolated WebView2 projection smoke test") ||
     !smokeCs.includes("typeof(CoreWebView2DownloadOperation)") ||
     !smokeProject.includes("Microsoft.WindowsAppSDK")) fail("Windows CI must independently compile the WebView2 CsWinRT API projection before building the native host.");
 else pass("Windows CI isolates the WinUI/WebView2 CsWinRT API projection in a minimal compile-smoke project before native host publish.");
+if (!js.includes("clean.privateMode = node.privateMode === true") ||
+    !js.includes("privateMode: node.privateMode === true") ||
+    !js.includes('data-action="native-private"') ||
+    !js.includes("node.privateMode && node.transientUrl") ||
+    !js.includes("const { transientUrl, ...savedNode } = node") ||
+    !nativeHost.includes("CreateCoreWebView2ControllerOptions") ||
+    !nativeHost.includes("IsInPrivateModeEnabled = item.PrivateMode") ||
+    !nativeHost.includes("EnsureCoreWebView2Async(_environment, controllerOptions)") ||
+    !nativeHost.includes("if (!surface.Initialized || surface.IsPrivate) return;") ||
+    !nativeHost.includes("_downloads.Where(entry => !entry.IsPrivate)") ||
+    !nativeHost.includes("if (surface.IsPrivate) return;") ||
+    !nativeBridge.includes('isPrivateMode: typeof message.isPrivateMode === "boolean"')) fail("Private sessions must use WebView2 InPrivate, keep private URLs volatile, and exclude history/bookmarks/download metadata from durable storage.");
+else pass("Per-card private mode uses the WebView2 InPrivate controller, and private browsing metadata is not persisted.");
+if (workflow.indexOf("dotnet restore native-diagnostics/WebView2ProjectionSmokeTest.csproj -r win-x64") < 0 ||
+    workflow.indexOf("WebView2 CsWinRT projection DLL not found after restore") < workflow.indexOf("dotnet restore native-diagnostics/WebView2ProjectionSmokeTest.csproj -r win-x64") ||
+    !workflow.includes('      - "native-bridge.js"') ||
+    !workflow.includes('      - "native-diagnostics/**"') ||
+    !workflow.includes("node --test tests/*.test.mjs")) fail("Native CI must run browser contract tests and restore WebView2 before checking the projection DLL.");
+else pass("Native Windows CI tests bridge contracts and restores WebView2 before checking its projection DLL.");
 if (!nativeHost.includes("GetAvailableBrowserVersionString") || !nativeHost.includes("NewBrowserVersionAvailable")) fail("Native host must detect the Evergreen WebView2 Runtime and newer runtime updates.");
 else pass("Native host checks runtime availability and detects browser-runtime updates.");
 if (!nativeHost.includes("HandleSurfaceProcessFailure") || !nativeHost.includes("RenderProcessExited") ||

@@ -403,4 +403,5 @@ kbd { font-family: var(--sans); font-size: 9px; border: 1px solid rgba(255,255,2
 .native-address-input:focus { border-color: rgba(167,139,250,.58); color: #edf2ff; background: rgba(5,8,13,.78); box-shadow: 0 0 0 2px rgba(167,139,250,.08); }
 
 .native-node-action[data-bookmarked="true"] { color: #f0c96c; }
+.native-node-action[data-private="true"] { color: #c0b3ff; background: rgba(139, 116, 255, .12); }
 .native-node-action[data-bookmarked="true"] .icon { fill: rgba(240,201,108,.28); }

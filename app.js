@@ -109,7 +109,10 @@
   function syncActiveSpace() {
     const current = activeSpace();
     if (!current) return;
-    current.nodes = nodes.map((node) => ({ ...node }));
+    current.nodes = nodes.map((node) => {
+      const { transientUrl, ...savedNode } = node;
+      return savedNode;
+    });
     current.view = { x: view.x, y: view.y, scale: view.scale };
   }
 
@@ -349,6 +352,7 @@
       try { clean.url = normalizeUrl(node.url); } catch (_) { return null; }
       clean.description = String(node.description || "A website in your workspace.").slice(0, 240);
       clean.embedMode = node.embedMode === "compat" ? "compat" : "safe";
+      clean.privateMode = node.privateMode === true;
       if (Number.isInteger(node.browserTabId) && node.browserTabId >= 0) clean.browserTabId = node.browserTabId;
       if (Number.isInteger(node.browserWindowId) && node.browserWindowId >= 0) clean.browserWindowId = node.browserWindowId;
       if (typeof node.browserSessionId === "string" && node.browserSessionId.length >= 20 && node.browserSessionId.length <= 80) clean.browserSessionId = node.browserSessionId;
@@ -370,7 +374,10 @@
         id: space.id,
         name: space.name,
         view: { ...space.view },
-        nodes: space.nodes.map((node) => ({ ...node }))
+        nodes: space.nodes.map((node) => {
+          const { transientUrl, ...savedNode } = node;
+          return savedNode;
+        })
       }))
     };
   }
@@ -470,7 +477,10 @@
         const visible = !uiBlocked && style.display !== "none" && style.visibility !== "hidden" &&
           rect.width >= 80 && rect.height >= 60 && clipWidth >= 80 && clipHeight >= 60;
         items.push({
-          id: node.id, url: node.url, title: node.title,
+          id: node.id,
+          url: node.privateMode && node.transientUrl ? node.transientUrl : node.url,
+          title: node.title,
+          privateMode: node.privateMode === true,
           x: Math.round(rect.left * 100) / 100,
           y: Math.round(rect.top * 100) / 100,
           width: Math.round(rect.width * 100) / 100,
@@ -506,10 +516,20 @@
       if (!state) return;
       nativeSurfaceStates.set(state.id, state);
       const node = nodes.find((item) => item.id === state.id);
+      if (node && state.isPrivateMode !== null && node.privateMode !== state.isPrivateMode) {
+        node.privateMode = state.isPrivateMode;
+        if (!state.isPrivateMode) delete node.transientUrl;
+        scheduleSave();
+      }
       if (node && state.url) {
         try {
           const currentUrl = normalizeUrl(state.url);
-          if (node.url !== currentUrl) {
+          if (node.privateMode) {
+            if (node.transientUrl !== currentUrl) {
+              node.transientUrl = currentUrl;
+              scheduleNativeSurfaceSync();
+            }
+          } else if (node.url !== currentUrl) {
             node.url = currentUrl;
             scheduleSave();
             scheduleNativeSurfaceSync();
@@ -543,10 +563,19 @@
         mute.dataset.muted = state.isMuted ? "true" : "false";
         mute.dataset.playing = state.isPlayingAudio ? "true" : "false";
       }
+      const privateButton = card.querySelector('[data-action="native-private"]');
+      if (privateButton) {
+        privateButton.dataset.private = state.isPrivateMode ? "true" : "false";
+        privateButton.setAttribute("aria-pressed", state.isPrivateMode ? "true" : "false");
+        privateButton.title = state.isPrivateMode ? "Switch back to your regular browser session" : "Open a temporary private session";
+        privateButton.setAttribute("aria-label", state.isPrivateMode ? "Switch back to regular session" : "Open private session");
+      }
       const bookmark = card.querySelector('[data-action="native-bookmark"]');
       if (bookmark) {
+        bookmark.disabled = state.isPrivateMode === true;
         bookmark.dataset.bookmarked = state.isBookmarked ? "true" : "false";
-        bookmark.title = state.isBookmarked ? "Remove bookmark" : "Bookmark this page";
+        bookmark.title = state.isPrivateMode ? "Bookmarks are disabled in private mode" :
+          (state.isBookmarked ? "Remove bookmark" : "Bookmark this page");
         bookmark.setAttribute("aria-label", bookmark.title);
       }
       if (state.state === "limit") toast("This device's memory budget allows " + nativeMaxVisibleSurfaces + " visible native websites at once. Bring another card forward or hide one.", "error");
@@ -652,14 +681,15 @@
         '<button class="node-action native-node-action" data-action="native-forward" title="Go forward" aria-label="Go forward"' + (nativeState.canGoForward ? "" : " disabled") + '><svg class="icon"><use href="#i-arrow-right"/></svg></button>' +
         '<button class="node-action native-node-action" data-action="native-reload" title="Reload website" aria-label="Reload website"><svg class="icon"><use href="#i-refresh"/></svg></button>' +
         '<button class="node-action native-node-action" data-action="native-mute" title="' + (nativeState.isMuted ? "Unmute this website" : "Mute this website") + '" aria-label="' + (nativeState.isMuted ? "Unmute this website" : "Mute this website") + '"><svg class="icon"><use href="#' + (nativeState.isMuted ? "i-volume-x" : "i-volume-2") + '"/></svg></button>' +
-        '<button class="node-action native-node-action" data-action="native-bookmark" data-bookmarked="' + (nativeState.isBookmarked ? "true" : "false") + '" title="' + (nativeState.isBookmarked ? "Remove bookmark" : "Bookmark this page") + '" aria-label="' + (nativeState.isBookmarked ? "Remove bookmark" : "Bookmark this page") + '"><svg class="icon"><use href="#i-star"/></svg></button>' +
+        '<button class="node-action native-node-action" data-action="native-private" data-private="' + (node.privateMode ? "true" : "false") + '" aria-pressed="' + (node.privateMode ? "true" : "false") + '" title="' + (node.privateMode ? "Switch back to your regular browser session" : "Open a temporary private session") + '" aria-label="' + (node.privateMode ? "Switch back to regular session" : "Open private session") + '"><svg class="icon"><use href="#i-shield"/></svg></button>' +
+        '<button class="node-action native-node-action" data-action="native-bookmark" data-bookmarked="' + (nativeState.isBookmarked ? "true" : "false") + '" title="' + (nativeState.isBookmarked ? "Remove bookmark" : "Bookmark this page") + '" aria-label="' + (nativeState.isBookmarked ? "Remove bookmark" : "Bookmark this page") + '"' + (node.privateMode ? " disabled" : "") + '><svg class="icon"><use href="#i-star"/></svg></button>' +
         '</span>'
       : "";
     header.innerHTML =
       '<span class="node-favicon">' + (node.type === "website" ? escapeHTML(initials(hostOf(node.url))) : '<svg class="icon"><use href="#i-sticky"/></svg>') + '</span>' +
       '<span class="node-title-wrap"><span class="node-title">' + escapeHTML(node.title) + '</span>' +
         (canUseNativeSurface(node)
-          ? '<input class="native-address-input" type="text" aria-label="Website address" title="Type an address and press Enter" spellcheck="false" autocomplete="off" value="' + escapeHTML(node.url) + '">'
+          ? '<input class="native-address-input" type="text" aria-label="Website address" title="Type an address and press Enter" spellcheck="false" autocomplete="off" value="' + escapeHTML(node.privateMode && node.transientUrl ? node.transientUrl : node.url) + '">'
           : '<span class="node-subtitle">' + escapeHTML(node.type === "website" ? ((node.browserTabId !== undefined ? "Chrome tab · " : "") + hostOf(node.url)) : "Personal note") + '</span>') +
       '</span>' +
       '<span class="node-actions">' + nativeTools +
@@ -1559,6 +1589,15 @@
     if (action === "native-forward") postNativeSurfaceCommand(node.id, "forward");
     if (action === "native-reload") postNativeSurfaceCommand(node.id, "reload");
     if (action === "native-mute") postNativeSurfaceCommand(node.id, "toggle-mute");
+    if (action === "native-private") {
+      node.privateMode = !node.privateMode;
+      if (!node.privateMode) delete node.transientUrl;
+      scheduleSave();
+      scheduleNativeSurfaceSync();
+      toast(node.privateMode
+        ? "Starting a temporary private session. Its visited URLs, history and download metadata will not be saved."
+        : "Returning to your regular browser profile.");
+    }
     if (action === "native-bookmark") postNativeSurfaceCommand(node.id, "toggle-bookmark");
     if (action === "open" && node.type === "website") openWebsite(node);
     if (action === "open-url" && node.type === "website") openWebsiteUrl(node);
