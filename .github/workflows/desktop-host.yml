@@ -39,6 +39,8 @@ jobs:
         run: |
           dotnet restore desktop-host/diagnostics/WebView2ProjectionSmokeTest.csproj -r win-x64
           dotnet build desktop-host/diagnostics/WebView2ProjectionSmokeTest.csproj -c Release -r win-x64 --no-restore -p:WindowsAppSDKSelfContained=true -p:WebView2EnableCsWinRTProjection=true
+          dotnet restore desktop-host/diagnostics/WinUIWebView2ControlSmokeTest/WinUIWebView2ControlSmokeTest.csproj -r win-x64
+          dotnet build desktop-host/diagnostics/WinUIWebView2ControlSmokeTest/WinUIWebView2ControlSmokeTest.csproj -c Release -r win-x64 --no-restore -p:WindowsAppSDKSelfContained=true -p:WebView2EnableCsWinRTProjection=true
 
       - name: Restore and publish native host
         shell: pwsh
@@ -97,6 +99,7 @@ jobs:
           path: |
             desktop-host/obj/project.assets.json
             desktop-host/diagnostics/obj/project.assets.json
+            desktop-host/diagnostics/WinUIWebView2ControlSmokeTest/obj/project.assets.json
             ${{ runner.temp }}/webview2-reference-diagnostic.txt
           if-no-files-found: warn
           retention-days: 7

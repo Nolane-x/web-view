@@ -221,6 +221,8 @@ const nativeHost = read("desktop-host/MainWindow.xaml.cs");
 const nativeXaml = read("desktop-host/MainWindow.xaml");
 const smokeCs = read("desktop-host/diagnostics/ProjectionApi.cs");
 const smokeProject = read("desktop-host/diagnostics/WebView2ProjectionSmokeTest.csproj");
+const smokeWindowXaml = read("desktop-host/diagnostics/WinUIWebView2ControlSmokeTest/MainWindow.xaml");
+const smokeWindowCs = read("desktop-host/diagnostics/WinUIWebView2ControlSmokeTest/MainWindow.xaml.cs");
 const workflow = read(".github/workflows/desktop-host.yml");
 const nativeProject = read("desktop-host/Nolane.DesktopHost.csproj");
 const nativeWorkflow = read(".github/workflows/desktop-host.yml");
@@ -243,10 +245,16 @@ if (!nativeProject.includes("Microsoft.WindowsAppSDK") ||
     !nativeHost.includes("FileDialogOptions.FileMustExist") ||
     !nativeHost.includes("ShellItemDisplayName.FileSystemPath")) fail("Native host must retain its verified WebView2 package graph and implement the HWND-owned Windows Shell Common Item Dialog.");
 else pass("Native host retains the verified WinUI/WebView2 dependency graph and uses the HWND-owned Windows Shell Common Item Dialog.");
+if (!smokeWindowXaml.includes("controls:WebView2") ||
+    !smokeWindowCs.includes("using Microsoft.Web.WebView2.Core;") ||
+    !smokeWindowCs.includes("Browser.CoreWebView2")) fail("The XAML smoke test must bind a WinUI WebView2 control to its Core API.");
+else pass("An isolated WinUI executable compiles the XAML WebView2 control and its Core API together.");
 if (!nativeHost.includes("WorkspaceView.Loaded += MainWindow_Loaded")) fail("Native browser host must initialize WebView2 from its control Loaded event.");
 else pass("Native browser host starts initialization only after the WebView2 control is loaded.");
 if (!workflow.includes("Compile isolated WebView2 projection smoke test") ||
     !workflow.includes("WebView2ProjectionSmokeTest.csproj") ||
+    !workflow.includes("WinUIWebView2ControlSmokeTest.csproj") ||
+    !smokeCs.includes("CoreWebView2Environment") ||
     !workflow.includes("WebView2EnableCsWinRTProjection=true") ||
     !smokeCs.includes("typeof(CoreWebView2Environment)") ||
     !smokeCs.includes("typeof(CoreWebView2DownloadOperation)") ||
