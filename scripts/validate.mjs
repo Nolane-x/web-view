@@ -227,7 +227,6 @@ const smokeWindowCs = read("native-diagnostics/WinUIWebView2ControlSmokeTest/Mai
 const workflow = read(".github/workflows/desktop-host.yml");
 const nativeProject = read("desktop-host/Nolane.DesktopHost.csproj");
 const nativeWorkflow = read(".github/workflows/desktop-host.yml");
-const hostCompileProbe = read("native-diagnostics/HostCompileProbe/HostCompileProbe.csproj");
 const nativeBridge = read("native-bridge.js");
 const nativeBridgeTests = read("tests/native-bridge.test.mjs");
 if (!nativeHost.includes("nolane.surfaces.sync") || !nativeHost.includes("EnsureCoreWebView2Async") || !nativeHost.includes("CreateWithOptionsAsync") ||
@@ -255,22 +254,18 @@ if (!smokeWindowXaml.includes("controls:WebView2") ||
     !smokeWindowCs.includes("using Microsoft.Web.WebView2.Core;") ||
     !smokeWindowCs.includes("Browser.CoreWebView2")) fail("The XAML smoke test must bind a WinUI WebView2 control to its Core API.");
 else pass("An isolated WinUI executable compiles the XAML WebView2 control and its Core API together.");
-if (!hostCompileProbe.includes('../../desktop-host/MainWindow.xaml.cs') ||
-    !hostCompileProbe.includes('../../desktop-host/MainWindow.xaml') ||
-    !hostCompileProbe.includes('../../desktop-host/App.xaml.cs') ||
-    !hostCompileProbe.includes('../../desktop-host/WindowsShellFilePicker.cs') ||
-    !hostCompileProbe.includes('<PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3179.45" />') ||
-    !workflow.includes("WebView2 CsWinRT projection DLL not found")) fail("Full-host compile probe must link the exact shipping WinUI/XAML/COM helper sources and pinned WebView2 projection.");
-else pass("Full-host compile probe links the shipping source files with the same WinUI/WebView2 package graph.");
+if (!workflow.includes("dotnet restore desktop-host/Nolane.DesktopHost.csproj -r win-x64") ||
+    !workflow.includes("dotnet build desktop-host/Nolane.DesktopHost.csproj -c Release -r win-x64 --no-restore -p:WindowsAppSDKSelfContained=true -p:WebView2EnableCsWinRTProjection=true")) fail("Native CI must compile the exact shipping WinUI host project, not a parallel source-linked approximation.");
+else pass("Native CI compiles the exact shipping WinUI host project with the pinned WebView2 package graph.");
 if (!nativeHost.includes("WorkspaceView.Loaded += MainWindow_Loaded")) fail("Native browser host must initialize WebView2 from its control Loaded event.");
 else pass("Native browser host starts initialization only after the WebView2 control is loaded.");
 if (!workflow.includes("Compile isolated WebView2 projection smoke test") ||
     !workflow.includes("native-diagnostics/WebView2ProjectionSmokeTest.csproj") ||
-    !workflow.includes("native-diagnostics/HostCompileProbe/HostCompileProbe.csproj") ||
+    !workflow.includes("dotnet build desktop-host/Nolane.DesktopHost.csproj") ||
     !workflow.includes("native-diagnostics/WinUIWebView2ControlSmokeTest/WinUIWebView2ControlSmokeTest.csproj") ||
     !smokeProject.includes('PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3179.45"') ||
     !smokeProject.includes("Microsoft.Web.WebView2.Core.Projection.dll") ||
-    !hostCompileProbe.includes("Microsoft.Web.WebView2.Core.Projection.dll") ||
+
     !smokeCs.includes("CoreWebView2Environment") ||
     !workflow.includes("WebView2EnableCsWinRTProjection=true") ||
     !smokeCs.includes("typeof(CoreWebView2Environment)") ||
