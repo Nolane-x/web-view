@@ -297,12 +297,15 @@ if (!nativeHost.includes("BuildLibraryPanel()") || !nativeHost.includes("Library
     !js.includes("native-bookmark") || !js.includes("toggle-bookmark")) fail("Native browser Library UI, per-card bookmark control, dynamic panel or instant search is incomplete.");
 else pass("Native Library opens history/bookmarks in the focused website card, supports per-card bookmarks and filters title/domain/address instantly.");
 if (!nativeHost.includes("ExportLibrary_Click") || !nativeHost.includes("ImportLibrary_Click") ||
-    !nativeHost.includes("PickLibraryBackupPath(save: true)") || !nativeHost.includes("PickLibraryBackupPath(save: false)") ||
-    !nativeHost.includes("Type.GetTypeFromCLSID(classId") || !nativeHost.includes("IFileSaveDialog") ||
-    !nativeHost.includes("IFileOpenDialog") || !nativeHost.includes("FileDialogOptions.OverwritePrompt") ||
-    !nativeHost.includes("FileDialogOptions.FileMustExist") || !nativeHost.includes("SchemaVersion != 1") ||
-    !nativeHost.includes("MaxLibraryBackupBytes") || !nativeHost.includes("stagedHistory") ||
-    !nativeHost.includes("stagedBookmarks") || !nativeHost.includes("ContentDialogResult.Primary") ||
+    !nativeHost.includes("WindowsShellFilePicker.PickLibraryBackupPath") ||
+    !nativePicker.includes("public static string? PickLibraryBackupPath(IntPtr ownerWindow, bool save)") ||
+    !nativePicker.includes("Type.GetTypeFromCLSID(classId") || !nativePicker.includes("IFileDialog") ||
+    !nativePicker.includes("FileDialogOptions.OverwritePrompt") || !nativePicker.includes("FileDialogOptions.FileMustExist") ||
+    !nativeHost.includes("SchemaVersion != 1") || !nativeHost.includes("MaxLibraryBackupBytes") ||
+    !nativeHost.includes("stagedHistory") || !nativeHost.includes("stagedBookmarks") ||
+    !nativeHost.includes("ContentDialogResult.Primary") ||
+    !nativePicker.includes('Name = "Nolane Library backup (*.json)"') ||
+    !nativePicker.includes("Export Nolane Library") || !nativePicker.includes("Import Nolane Library backup") ||
     !nativeHost.includes('Content = "Export backup"') || !nativeHost.includes('Content = "Import backup"') ||
     !nativeProject.includes('Version="1.0.3179.45"')) fail("Native Library backup/restore picker integration or its pinned WebView2 dependency is invalid.");
 else pass("Native Library backup/restore uses the WinUI HWND file-picker bridge, versioned JSON, size/count limits, URL sanitization and a staged user-approved merge.");

@@ -123,3 +123,5 @@ Library backup/restore uses the native Windows Shell file dialog, with a JSON fi
 The native host pins `Microsoft.Web.WebView2 1.0.3179.45` as a direct package reference. This is the exact SDK version found in the last known-good Windows release's `.deps.json`, instead of relying only on the Windows App SDK's transitive reference.
 
 Windows CI smoke projects live in the repository-level `native-diagnostics/` folder, outside the WinUI host's default item discovery. Each smoke project and the shipping host pins the same WebView2 SDK version.
+
+Windows Shell COM interop for Library backup dialogs is isolated in `WindowsShellFilePicker.cs`, outside the XAML-backed MainWindow partial class, so WinUI markup type discovery does not inspect COM-import declarations.

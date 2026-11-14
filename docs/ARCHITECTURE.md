@@ -126,3 +126,5 @@ The shipping host project excludes `diagnostics/**` from default MSBuild items a
 The shipping host declares `Microsoft.Web.WebView2 1.0.3179.45` directly. This version was recovered from the last known-good native Windows release's `.deps.json`; the explicit package reference makes the WebView2 projection dependency deterministic instead of relying on an implicit transitive package.
 
 WinUI/WebView2 compile smoke projects are kept outside `desktop-host/` under `native-diagnostics/`. The native app project therefore uses normal WinUI SDK default item discovery without custom excludes/removes for nested projects, avoiding interference from diagnostic XAML during markup compilation.
+
+The Shell file-picker COM declarations and `IFileDialog`/`IShellItem` interop now live in a dedicated non-XAML `WindowsShellFilePicker` type. `MainWindow` only passes its HWND to this helper; WinUI's XAML compiler no longer needs to inspect COM-import interfaces nested in the XAML-backed window class.

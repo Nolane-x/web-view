@@ -8,3 +8,5 @@ The host project explicitly excludes the nested `diagnostics/**` tree from SDK d
 The host pins `Microsoft.Web.WebView2 1.0.3179.45` directly. Keep this exact version synchronized with the SDK version verified in the native Windows release artifact.
 
 The shipping WinUI project contains no nested test projects or diagnostic XAML; all compile smoke tests live under the repository-level `native-diagnostics/` folder to keep XAML item discovery isolated.
+
+Windows Shell Common Item Dialog COM declarations are isolated in `WindowsShellFilePicker.cs`. The XAML-backed MainWindow passes only its HWND to the picker helper and contains no COM-import interfaces or structs.
