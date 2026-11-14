@@ -234,7 +234,7 @@ if (!nativeHost.includes("nolane.surfaces.sync") || !nativeHost.includes("Ensure
     !nativeHost.includes("RectangleGeometry") || !nativeHost.includes("item.ClipWidth")) fail("Native WebView2 host must create real browser surfaces, adapt its memory budget, bound the cache and clip child browsers to the canvas viewport.");
 else pass("Native WebView2 host creates real browser surfaces and bounds active renderers.");
 if (!nativeProject.includes("Microsoft.WindowsAppSDK") ||
-    nativeProject.includes("Microsoft.Web.WebView2") ||
+    !nativeProject.includes('<PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3179.45" />') ||
     !nativeProject.includes("net8.0-windows10.0.19041.0") || !nativeProject.includes("WindowsAppSDKSelfContained") ||
     !nativeProject.includes("WebView2EnableCsWinRTProjection>true") ||
     !nativeProject.includes("DefaultItemExcludes") || !nativeProject.includes("diagnostics/**") ||
@@ -301,7 +301,7 @@ if (!nativeHost.includes("ExportLibrary_Click") || !nativeHost.includes("ImportL
     !nativeHost.includes("MaxLibraryBackupBytes") || !nativeHost.includes("stagedHistory") ||
     !nativeHost.includes("stagedBookmarks") || !nativeHost.includes("ContentDialogResult.Primary") ||
     !nativeXaml.includes("Export backup") || !nativeXaml.includes("Import backup") ||
-    nativeProject.includes("Microsoft.Web.WebView2")) fail("Native Library backup/restore picker integration or its Windows App SDK WebView2 dependency is invalid.");
+    !nativeProject.includes('Version="1.0.3179.45"')) fail("Native Library backup/restore picker integration or its pinned WebView2 dependency is invalid.");
 else pass("Native Library backup/restore uses the WinUI HWND file-picker bridge, versioned JSON, size/count limits, URL sanitization and a staged user-approved merge.");
 if (!nativeHost.includes("HandleDownloadStarting") || !nativeHost.includes("BytesReceivedChanged") ||
     !nativeHost.includes("StateChanged") || !nativeHost.includes("operation?.Pause()") ||
