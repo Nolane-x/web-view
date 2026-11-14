@@ -46,6 +46,15 @@ public sealed partial class MainWindow : Window
     private readonly List<BrowserBookmark> _browserBookmarks = new();
     private bool _showingBookmarks;
     private string _focusedSurfaceId = "";
+
+    // The Library is constructed in code to keep the shipping WinUI XAML graph small and deterministic.
+    private Border LibraryPanel = null!;
+    private TextBlock LibrarySummaryText = null!;
+    private Button HistoryTabButton = null!;
+    private Button BookmarksTabButton = null!;
+    private Button ClearHistoryButton = null!;
+    private TextBox LibrarySearchBox = null!;
+    private StackPanel LibraryItems = null!;
     private int _downloadRefreshQueued;
     private int _downloadHistoryDirty;
 
@@ -71,9 +80,134 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        BuildLibraryPanel();
         Title = "Nolane Infinite — Native Browser Host";
         WorkspaceView.Loaded += MainWindow_Loaded;
         SizeChanged += (_, _) => BrowserSurfaceLayer.InvalidateArrange();
+    }
+
+    private static Microsoft.UI.Xaml.Media.SolidColorBrush LibraryBrush(byte red, byte green, byte blue) =>
+        new(Microsoft.UI.ColorHelper.FromArgb(255, red, green, blue));
+
+    private void BuildLibraryPanel()
+    {
+        LibraryItems = new StackPanel
+        {
+            Padding = new Thickness(10),
+            Spacing = 8
+        };
+
+        LibrarySearchBox = new TextBox
+        {
+            PlaceholderText = "Search title, domain or address",
+            MinHeight = 32,
+            Margin = new Thickness(0, 9, 0, 0)
+        };
+        LibrarySearchBox.TextChanged += LibrarySearch_TextChanged;
+
+        HistoryTabButton = new Button { Content = "History", Padding = new Thickness(9, 5), FontSize = 10 };
+        HistoryTabButton.Click += ShowHistory_Click;
+        BookmarksTabButton = new Button { Content = "Bookmarks", Padding = new Thickness(9, 5), FontSize = 10 };
+        BookmarksTabButton.Click += ShowBookmarks_Click;
+        ClearHistoryButton = new Button { Content = "Clear history", Padding = new Thickness(9, 5), FontSize = 10 };
+        ClearHistoryButton.Click += ClearHistory_Click;
+        var closeButton = new Button { Content = "Close", Padding = new Thickness(9, 5), FontSize = 10 };
+        closeButton.Click += CloseLibrary_Click;
+
+        var titleStack = new StackPanel { Spacing = 3 };
+        titleStack.Children.Add(new TextBlock
+        {
+            Text = "Library",
+            FontSize = 15,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = LibraryBrush(237, 242, 250)
+        });
+        LibrarySummaryText = new TextBlock
+        {
+            Text = "Your browsing history and saved pages",
+            FontSize = 10,
+            Foreground = LibraryBrush(147, 160, 180)
+        };
+        titleStack.Children.Add(LibrarySummaryText);
+
+        var tabs = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 5,
+            Margin = new Thickness(0, 10, 0, 0)
+        };
+        tabs.Children.Add(HistoryTabButton);
+        tabs.Children.Add(BookmarksTabButton);
+        tabs.Children.Add(ClearHistoryButton);
+        tabs.Children.Add(closeButton);
+
+        var backupActions = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            Margin = new Thickness(0, 9, 0, 0)
+        };
+        var exportButton = new Button { Content = "Export backup", Padding = new Thickness(9, 5), FontSize = 10 };
+        exportButton.Click += ExportLibrary_Click;
+        var importButton = new Button { Content = "Import backup", Padding = new Thickness(9, 5), FontSize = 10 };
+        importButton.Click += ImportLibrary_Click;
+        backupActions.Children.Add(exportButton);
+        backupActions.Children.Add(importButton);
+
+        var headerGrid = new Grid();
+        headerGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        headerGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        headerGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        headerGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        headerGrid.Children.Add(titleStack);
+        Grid.SetRow(tabs, 1);
+        headerGrid.Children.Add(tabs);
+        Grid.SetRow(LibrarySearchBox, 2);
+        headerGrid.Children.Add(LibrarySearchBox);
+        Grid.SetRow(backupActions, 3);
+        headerGrid.Children.Add(backupActions);
+
+        var header = new Border
+        {
+            Background = LibraryBrush(23, 31, 45),
+            BorderBrush = LibraryBrush(44, 55, 75),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            CornerRadius = new CornerRadius(12, 12, 0, 0),
+            Padding = new Thickness(14, 12),
+            Child = headerGrid
+        };
+
+        var listScroll = new ScrollViewer
+        {
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Content = LibraryItems
+        };
+        var panelGrid = new Grid();
+        panelGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        panelGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        panelGrid.Children.Add(header);
+        Grid.SetRow(listScroll, 1);
+        panelGrid.Children.Add(listScroll);
+
+        LibraryPanel = new Border
+        {
+            Width = 420,
+            MaxWidth = 520,
+            Margin = new Thickness(0, 10, 10, 10),
+            Padding = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            Background = LibraryBrush(17, 23, 34),
+            BorderBrush = LibraryBrush(52, 65, 88),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
+            Visibility = Visibility.Collapsed,
+            IsHitTestVisible = true,
+            Child = panelGrid
+        };
+        Grid.SetRow(LibraryPanel, 1);
+        WorkspaceRoot.Children.Add(LibraryPanel);
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)

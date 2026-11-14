@@ -288,11 +288,13 @@ if (!nativeHost.includes("RecordBrowserHistory") || !nativeHost.includes("Saniti
     !nativeHost.includes("browser-library.json") || !nativeHost.includes("ToggleBookmark") ||
     !nativeHost.includes("TimeSpan.FromSeconds(4)") || !nativeHost.includes("Take(500)")) fail("Native browser history and bookmark persistence/privacy safeguards are incomplete.");
 else pass("Native browser records bounded history, deduplicates navigation events, redacts sensitive query parameters and persists bookmarks locally.");
-if (!nativeHost.includes("OpenLibraryUrl") || !nativeHost.includes("GetLibraryTargetSurface") ||
+if (!nativeHost.includes("BuildLibraryPanel()") || !nativeHost.includes("LibraryPanel = new Border") ||
+    !nativeHost.includes("LibrarySearchBox = new TextBox") || !nativeHost.includes("LibraryItems = new StackPanel") ||
+    !nativeHost.includes("WorkspaceRoot.Children.Add(LibraryPanel)") ||
+    !nativeHost.includes("OpenLibraryUrl") || !nativeHost.includes("GetLibraryTargetSurface") ||
     !nativeHost.includes("MatchesLibraryQuery") || !nativeHost.includes("LibrarySearch_TextChanged") ||
-    !nativeXaml.includes('x:Name="LibraryPanel"') || !nativeXaml.includes('x:Name="LibraryItems"') ||
-    !nativeXaml.includes('x:Name="LibrarySearchBox"') ||
-    !js.includes("native-bookmark") || !js.includes("toggle-bookmark")) fail("Native browser Library UI, per-card bookmark control or instant search is incomplete.");
+    !nativeXaml.includes('x:Name="WorkspaceRoot"') || nativeXaml.includes('x:Name="LibraryPanel"') ||
+    !js.includes("native-bookmark") || !js.includes("toggle-bookmark")) fail("Native browser Library UI, per-card bookmark control, dynamic panel or instant search is incomplete.");
 else pass("Native Library opens history/bookmarks in the focused website card, supports per-card bookmarks and filters title/domain/address instantly.");
 if (!nativeHost.includes("ExportLibrary_Click") || !nativeHost.includes("ImportLibrary_Click") ||
     !nativeHost.includes("PickLibraryBackupPath(save: true)") || !nativeHost.includes("PickLibraryBackupPath(save: false)") ||

@@ -19,7 +19,7 @@
         </StackPanel>
       </Grid>
     </Border>
-    <Grid Grid.Row="1">
+    <Grid x:Name="WorkspaceRoot" Grid.Row="1">
       <controls:WebView2 x:Name="WorkspaceView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
       <Canvas x:Name="BrowserSurfaceLayer" Background="{x:Null}" IsHitTestVisible="True" />
       <Border x:Name="DownloadsPanel" Grid.Row="1" Width="420" MaxWidth="520"
@@ -44,40 +44,6 @@
           </Border>
           <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <StackPanel x:Name="DownloadsList" Padding="10" Spacing="8" />
-          </ScrollViewer>
-        </Grid>
-      </Border>
-      <Border x:Name="LibraryPanel" Grid.Row="1" Width="420" MaxWidth="520"
-              Margin="0,10,10,10" Padding="0" HorizontalAlignment="Right" VerticalAlignment="Stretch"
-              Background="#111722" BorderBrush="#344158" BorderThickness="1"
-              CornerRadius="12" Visibility="Collapsed" IsHitTestVisible="True">
-        <Grid>
-          <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-          <Border Background="#171F2D" BorderBrush="#2C374B" BorderThickness="0,0,0,1"
-                  CornerRadius="12,12,0,0" Padding="14,12">
-            <Grid>
-              <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-              <StackPanel Spacing="3">
-                <TextBlock Text="Library" FontSize="15" FontWeight="SemiBold" Foreground="#EDF2FA" />
-                <TextBlock x:Name="LibrarySummaryText" Text="Your browsing history and saved pages" FontSize="10" Foreground="#93A0B4" />
-              </StackPanel>
-              <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="5" Margin="0,10,0,0">
-                <Button x:Name="HistoryTabButton" Content="History" Click="ShowHistory_Click" Padding="9,5" FontSize="10" />
-                <Button x:Name="BookmarksTabButton" Content="Bookmarks" Click="ShowBookmarks_Click" Padding="9,5" FontSize="10" />
-                <Button x:Name="ClearHistoryButton" Content="Clear history" Click="ClearHistory_Click" Padding="9,5" FontSize="10" />
-                <Button Content="Close" Click="CloseLibrary_Click" Padding="9,5" FontSize="10" />
-              </StackPanel>
-              <TextBox x:Name="LibrarySearchBox" Grid.Row="2" Margin="0,9,0,0"
-                       PlaceholderText="Search title, domain or address"
-                       TextChanged="LibrarySearch_TextChanged" MinHeight="32" />
-              <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="6" Margin="0,9,0,0">
-                <Button Content="Export backup" Click="ExportLibrary_Click" Padding="9,5" FontSize="10" />
-                <Button Content="Import backup" Click="ImportLibrary_Click" Padding="9,5" FontSize="10" />
-              </StackPanel>
-            </Grid>
-          </Border>
-          <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <StackPanel x:Name="LibraryItems" Padding="10" Spacing="8" />
           </ScrollViewer>
         </Grid>
       </Border>
