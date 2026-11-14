@@ -219,10 +219,10 @@ else pass("Original-tab focus remains tied to its browser profile.");
 
 const nativeHost = read("desktop-host/MainWindow.xaml.cs");
 const nativeXaml = read("desktop-host/MainWindow.xaml");
-const smokeCs = read("desktop-host/diagnostics/ProjectionApi.cs");
-const smokeProject = read("desktop-host/diagnostics/WebView2ProjectionSmokeTest.csproj");
-const smokeWindowXaml = read("desktop-host/diagnostics/WinUIWebView2ControlSmokeTest/MainWindow.xaml");
-const smokeWindowCs = read("desktop-host/diagnostics/WinUIWebView2ControlSmokeTest/MainWindow.xaml.cs");
+const smokeCs = read("native-diagnostics/ProjectionApi.cs");
+const smokeProject = read("native-diagnostics/WebView2ProjectionSmokeTest.csproj");
+const smokeWindowXaml = read("native-diagnostics/WinUIWebView2ControlSmokeTest/MainWindow.xaml");
+const smokeWindowCs = read("native-diagnostics/WinUIWebView2ControlSmokeTest/MainWindow.xaml.cs");
 const workflow = read(".github/workflows/desktop-host.yml");
 const nativeProject = read("desktop-host/Nolane.DesktopHost.csproj");
 const nativeWorkflow = read(".github/workflows/desktop-host.yml");

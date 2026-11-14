@@ -124,3 +124,5 @@ The self-contained WinUI 3 host explicitly enables `WebView2EnableCsWinRTProject
 The shipping host project excludes `diagnostics/**` from default MSBuild items and explicitly removes nested diagnostic C#/XAML items. This is required because the diagnostic WinUI smoke-test projects live under the host repository folder; without the exclusion their generated `obj` files and `App.xaml`/window partial classes were auto-included into the shipping app, causing duplicate generated types and masking the real compiler diagnostics.
 
 The shipping host declares `Microsoft.Web.WebView2 1.0.3179.45` directly. This version was recovered from the last known-good native Windows release's `.deps.json`; the explicit package reference makes the WebView2 projection dependency deterministic instead of relying on an implicit transitive package.
+
+WinUI/WebView2 compile smoke projects are kept outside `desktop-host/` under `native-diagnostics/`. The native app project therefore uses normal WinUI SDK default item discovery without custom excludes/removes for nested projects, avoiding interference from diagnostic XAML during markup compilation.

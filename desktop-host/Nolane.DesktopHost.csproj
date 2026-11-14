@@ -17,13 +17,7 @@
     <PublishSingleFile>false</PublishSingleFile>
     <PublishTrimmed>false</PublishTrimmed>
     <EnableMsixTooling>false</EnableMsixTooling>
-    <DefaultItemExcludes>$(DefaultItemExcludes);diagnostics/**</DefaultItemExcludes>
   </PropertyGroup>
-  <ItemGroup>
-    <Compile Remove="diagnostics/**/*.cs" />
-    <Page Remove="diagnostics/**/*.xaml" />
-    <ApplicationDefinition Remove="diagnostics/**/*.xaml" />
-  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260921001" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3179.45" />
