@@ -345,6 +345,7 @@ if (!nativeHost.includes("RecordBrowserHistory") || !nativeHost.includes("Saniti
     !nativeHost.includes("SameProfile(item.ProfileName, surface.ProfileName)") ||
     !nativeHost.includes("ProfileName = surface.ProfileName") ||
     !nativeHost.includes("IsBookmarked(core.Source, surface.ProfileName)") ||
+    nativeHost.includes("IsBookmarked(core.Source)") ||
     !nativeHost.includes("SchemaVersion = 2") ||
     !nativeHost.includes("backup.SchemaVersion is not (1 or 2)")) fail("Native Library must isolate history/bookmarks by profile and preserve v1 backup compatibility.");
 else pass("Native browser stores bounded history and bookmarks with profile ownership, deduplicates visits, redacts sensitive query values and preserves schema-1 backup compatibility.");

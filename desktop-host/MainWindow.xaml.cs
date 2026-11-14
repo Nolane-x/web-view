@@ -1136,7 +1136,7 @@ public sealed partial class MainWindow : Window
                         break;
                     }
                     ToggleBookmark(surface);
-                    PublishSurfaceState(surface, "ready", IsBookmarked(core.Source) ? "Page saved to Library" : "Bookmark removed");
+                    PublishSurfaceState(surface, "ready", IsBookmarked(core.Source, surface.ProfileName) ? "Page saved to Library" : "Bookmark removed");
                     break;
                 case "open-external":
                     OpenExternal(core.Source);
