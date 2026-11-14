@@ -24,6 +24,10 @@ public sealed partial class MainWindow : Window
 
     public void CloseBrowserControl() => Browser.Close();
 
+    public Task ClearProfileDataAsync() => Browser.CoreWebView2!.Profile.ClearBrowsingDataAsync();
+
+    public void DeleteProfile() => Browser.CoreWebView2!.Profile.Delete();
+
     public async Task InitializePrivateSessionAsync(CoreWebView2Environment environment)
     {
         var options = environment.CreateCoreWebView2ControllerOptions();

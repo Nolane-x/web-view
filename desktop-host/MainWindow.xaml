@@ -15,6 +15,7 @@
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
           <Button x:Name="DownloadsButton" Content="Downloads (0)" Click="ToggleDownloads_Click" Padding="10,3" FontSize="10" />
           <Button x:Name="LibraryButton" Content="Library (0)" Click="ToggleLibrary_Click" Padding="10,3" FontSize="10" />
+          <Button x:Name="ProfilesButton" Content="Profiles" Click="ManageProfiles_Click" IsEnabled="False" Padding="10,3" FontSize="10" />
           <Button Content="Reload workspace" Click="ReloadWorkspace_Click" Padding="10,3" FontSize="10" />
         </StackPanel>
       </Grid>

@@ -30,6 +30,9 @@ public sealed partial class MainWindow : Window
 
     private CoreWebView2Environment? _environment;
     private readonly Dictionary<string, BrowserSurface> _surfaces = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _profileCardUsage = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _deletedProfileNames = new(StringComparer.OrdinalIgnoreCase);
+    private bool _profileUsageReceived;
     private bool _workspaceReady;
     private long _syncRevision;
     private List<SurfaceDescriptor>? _pendingSurfaceSync;
@@ -353,6 +356,7 @@ public sealed partial class MainWindow : Window
                 return;
             }
             if (type != "nolane.surfaces.sync") return;
+            UpdateProfileCardUsage(root);
             if (!root.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array) return;
             var parsed = new List<SurfaceDescriptor>();
             foreach (var item in items.EnumerateArray())
@@ -454,6 +458,12 @@ public sealed partial class MainWindow : Window
     private async Task<BrowserSurface?> GetOrCreateSurfaceAsync(SurfaceDescriptor item)
     {
         if (_surfaces.TryGetValue(item.Id, out var existing)) return existing;
+        if (_deletedProfileNames.Contains(item.ProfileName))
+        {
+            PublishSurfaceStatus(item.Id, "error",
+                "This browser profile was marked for deletion. Restart Nolane before creating or assigning it again.");
+            return null;
+        }
         var view = new WebView2
         {
             HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -1415,8 +1425,263 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private BrowserSurface? GetFocusedLibrarySurface()
+    private void UpdateProfileCardUsage(JsonElement root)
     {
+        if (!root.TryGetProperty("profileUsage", out var profiles) || profiles.ValueKind != JsonValueKind.Array) return;
+        var updated = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in profiles.EnumerateArray())
+        {
+            if (entry.ValueKind != JsonValueKind.Object ||
+                !entry.TryGetProperty("name", out var nameProperty) ||
+                nameProperty.ValueKind != JsonValueKind.String ||
+                !entry.TryGetProperty("count", out var countProperty) ||
+                !countProperty.TryGetInt32(out var count) || count < 1 || count > 1000) continue;
+            var name = NormalizeLibraryProfileName(nameProperty.GetString());
+            if (name is null) continue;
+            updated[name] = updated.TryGetValue(name, out var existing) ? existing + count : count;
+        }
+
+        _profileCardUsage.Clear();
+        foreach (var item in updated) _profileCardUsage[item.Key] = item.Value;
+        _profileUsageReceived = true;
+        ProfilesButton.IsEnabled = true;
+    }
+
+    private string[] GetKnownBrowserProfiles()
+    {
+        var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "Work", "Personal", "Research"
+        };
+        foreach (var name in _profileCardUsage.Keys
+                     .Concat(_browserHistory.Select(item => item.ProfileName))
+                     .Concat(_browserBookmarks.Select(item => item.ProfileName))
+                     .Concat(_surfaces.Values.Select(surface => surface.ProfileName)))
+        {
+            var normalized = NormalizeLibraryProfileName(name);
+            if (!string.IsNullOrEmpty(normalized) && !_deletedProfileNames.Contains(normalized))
+                names.Add(normalized);
+        }
+        return names.ToArray();
+    }
+
+    private int GetProfileCardUsage(string profileName) =>
+        _profileCardUsage.TryGetValue(profileName, out var count) ? count : 0;
+
+    private bool HasProfileDownload(string profileName) =>
+        _surfaces.Values.Any(surface =>
+            SameProfile(surface.ProfileName, profileName) && HasRetainedDownload(surface.Id));
+
+    private async Task<WebView2> CreateProfileMaintenanceViewAsync(string profileName)
+    {
+        if (_environment is null) throw new InvalidOperationException("The WebView2 environment is not ready.");
+        var view = new WebView2
+        {
+            Width = 1,
+            Height = 1,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            Visibility = Visibility.Collapsed
+        };
+        BrowserSurfaceLayer.Children.Add(view);
+        try
+        {
+            var options = _environment.CreateCoreWebView2ControllerOptions();
+            options.ProfileName = profileName;
+            options.IsInPrivateModeEnabled = false;
+            await view.EnsureCoreWebView2Async(_environment, options);
+            return view;
+        }
+        catch
+        {
+            try { view.Close(); } catch { }
+            BrowserSurfaceLayer.Children.Remove(view);
+            throw;
+        }
+    }
+
+    private void ReleaseProfileMaintenanceView(WebView2 view)
+    {
+        try { view.Close(); } catch { }
+        try { BrowserSurfaceLayer.Children.Remove(view); } catch { }
+    }
+
+    private async Task<(bool Success, string Message)> ClearBrowserProfileDataAsync(string profileName)
+    {
+        if (_deletedProfileNames.Contains(profileName))
+            return (false, "This profile is already marked for deletion. Restart Nolane before using it again.");
+        if (HasProfileDownload(profileName))
+            return (false, "Finish or cancel downloads in this profile before clearing its browsing data.");
+
+        WebView2? maintenanceView = null;
+        try
+        {
+            var existing = _surfaces.Values.FirstOrDefault(surface =>
+                surface.Initialized && !surface.IsPrivate && SameProfile(surface.ProfileName, profileName));
+            if (existing is not null)
+            {
+                await existing.View.CoreWebView2.Profile.ClearBrowsingDataAsync();
+            }
+            else
+            {
+                maintenanceView = await CreateProfileMaintenanceViewAsync(profileName);
+                await maintenanceView.CoreWebView2.Profile.ClearBrowsingDataAsync();
+            }
+
+            _browserHistory.RemoveAll(item => SameProfile(item.ProfileName, profileName));
+            _browserBookmarks.RemoveAll(item => SameProfile(item.ProfileName, profileName));
+            SaveBrowserLibrary();
+            RefreshLibraryUi();
+            return (true, "Browsing data, cookies and site storage were cleared for " + ProfileLabel(profileName) +
+                ". Library History and Bookmarks for this profile were also removed. Downloaded files and the Downloads list were kept.");
+        }
+        catch (Exception ex)
+        {
+            return (false, "Could not clear " + ProfileLabel(profileName) + ": " + StringRaw(ex.Message, 180));
+        }
+        finally
+        {
+            if (maintenanceView is not null) ReleaseProfileMaintenanceView(maintenanceView);
+        }
+    }
+
+    private async Task<(bool Success, string Message)> DeleteBrowserProfileAsync(string profileName)
+    {
+        if (string.IsNullOrWhiteSpace(profileName))
+            return (false, "The Default profile cannot be deleted. Use Clear browsing data to reset it.");
+        if (GetProfileCardUsage(profileName) > 0)
+            return (false, "This profile is still assigned to " + GetProfileCardUsage(profileName) +
+                " website card(s) across saved workspaces. Reassign or remove those cards first.");
+        if (_surfaces.Values.Any(surface => SameProfile(surface.ProfileName, profileName)))
+            return (false, "A browser surface still has this profile open. Close or remove those cards and try again.");
+        if (_deletedProfileNames.Contains(profileName))
+            return (false, "This profile is already marked for deletion. Restart Nolane before reusing its name.");
+
+        WebView2? maintenanceView = null;
+        try
+        {
+            maintenanceView = await CreateProfileMaintenanceViewAsync(profileName);
+            maintenanceView.CoreWebView2.Profile.Delete();
+            _deletedProfileNames.Add(profileName);
+            _browserHistory.RemoveAll(item => SameProfile(item.ProfileName, profileName));
+            _browserBookmarks.RemoveAll(item => SameProfile(item.ProfileName, profileName));
+            SaveBrowserLibrary();
+            RefreshLibraryUi();
+            return (true, profileName + " is marked for deletion. WebView2 removes its profile folder when the browser process exits; restart Nolane before reusing this name. Downloaded files are not deleted.");
+        }
+        catch (Exception ex)
+        {
+            return (false, "Could not delete " + profileName + ": " + StringRaw(ex.Message, 180));
+        }
+        finally
+        {
+            if (maintenanceView is not null) ReleaseProfileMaintenanceView(maintenanceView);
+        }
+    }
+
+    private async void ManageProfiles_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_profileUsageReceived || _environment is null)
+        {
+            StatusText.Text = "Wait until the workspace finishes syncing profile assignments before managing profiles.";
+            return;
+        }
+
+        var picker = new ComboBox { MinWidth = 210, MaxWidth = 280, Height = 32 };
+        picker.Items.Add(new ComboBoxItem { Content = "Default", Tag = "" });
+        foreach (var name in GetKnownBrowserProfiles())
+            picker.Items.Add(new ComboBoxItem { Content = name, Tag = name });
+        picker.SelectedIndex = 0;
+
+        var usageText = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap };
+        var feedback = new TextBlock
+        {
+            FontSize = 10,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = LibraryBrush(151, 164, 185)
+        };
+        var confirmation = new CheckBox
+        {
+            Content = "I understand that deleting a profile permanently removes its login and site data.",
+            TextWrapping = TextWrapping.Wrap,
+            IsChecked = false
+        };
+        var clearButton = new Button { Content = "Clear browsing data", Padding = new Thickness(10, 6), FontSize = 10 };
+        var deleteButton = new Button { Content = "Delete profile", Padding = new Thickness(10, 6), FontSize = 10 };
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        actions.Children.Add(clearButton);
+        actions.Children.Add(deleteButton);
+        var content = new StackPanel { Spacing = 10, Width = 430 };
+        content.Children.Add(new TextBlock { Text = "Choose a browser profile", FontSize = 11 });
+        content.Children.Add(picker);
+        content.Children.Add(usageText);
+        content.Children.Add(actions);
+        content.Children.Add(confirmation);
+        content.Children.Add(new TextBlock
+        {
+            Text = "Clear removes cookies, cache, site storage and this profile's Library History/Bookmarks. Delete is available only when no saved card in any workspace uses the profile. WebView2 removes its folder when the browser process exits; restart Nolane before reusing the name. Downloaded files are kept.",
+            FontSize = 10,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = LibraryBrush(147, 160, 180)
+        });
+        content.Children.Add(feedback);
+
+        string SelectedProfile() =>
+            picker.SelectedItem is ComboBoxItem selected ? selected.Tag as string ?? "" : "";
+
+        void RefreshState()
+        {
+            var name = SelectedProfile();
+            var usage = GetProfileCardUsage(name);
+            var live = _surfaces.Values.Count(surface => SameProfile(surface.ProfileName, name));
+            var downloadsBlocked = HasProfileDownload(name);
+            usageText.Text = ProfileLabel(name) + " · " + usage + " saved card assignment(s) · " +
+                live + " live/cached browser surface(s)" +
+                (downloadsBlocked ? " · active/resumable download" : "");
+            clearButton.IsEnabled = !_deletedProfileNames.Contains(name) && !downloadsBlocked;
+            deleteButton.IsEnabled = name.Length > 0 && usage == 0 && live == 0 &&
+                confirmation.IsChecked == true && !_deletedProfileNames.Contains(name);
+        }
+
+        picker.SelectionChanged += (_, _) => { confirmation.IsChecked = false; RefreshState(); };
+        confirmation.Checked += (_, _) => RefreshState();
+        confirmation.Unchecked += (_, _) => RefreshState();
+        clearButton.Click += async (_, _) =>
+        {
+            clearButton.IsEnabled = false;
+            var result = await ClearBrowserProfileDataAsync(SelectedProfile());
+            feedback.Text = result.Message;
+            RefreshState();
+        };
+        deleteButton.Click += async (_, _) =>
+        {
+            var name = SelectedProfile();
+            deleteButton.IsEnabled = false;
+            var result = await DeleteBrowserProfileAsync(name);
+            feedback.Text = result.Message;
+            if (result.Success)
+            {
+                var selected = picker.SelectedItem;
+                if (selected is not null) picker.Items.Remove(selected);
+                picker.SelectedIndex = 0;
+                confirmation.IsChecked = false;
+            }
+            RefreshState();
+        };
+        RefreshState();
+
+        var dialog = new ContentDialog
+        {
+            Title = "Manage browser profiles",
+            Content = content,
+            CloseButtonText = "Close",
+            XamlRoot = Content.XamlRoot
+        };
+        await dialog.ShowAsync();
+    }
+
+    private BrowserSurface? GetFocusedLibrarySurface()
+{
         if (!string.IsNullOrWhiteSpace(_focusedSurfaceId) &&
             _surfaces.TryGetValue(_focusedSurfaceId, out var focused) &&
             focused.Initialized && !focused.IsPrivate && focused.View.Visibility == Visibility.Visible)

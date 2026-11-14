@@ -281,6 +281,22 @@ if (!js.includes("clean.browserProfile = browserProfile") ||
     !nativeBridge.includes("function normalizeProfileName(value)") ||
     !nativeBridgeTests.includes("browser profile names are trimmed")) fail("Named browser profiles must flow from a validated card selection through the bridge into a dedicated WebView2 profile.");
 else pass("Website cards can select persistent named browser profiles with host-side validation and profile-aware controller recreation.");
+if (!js.includes("profileNodes = spaces.flatMap") ||
+    !js.includes("profileUsage: [...profileUsage]") ||
+    !js.includes("syncActiveSpace();") ||
+    !nativeHost.includes("UpdateProfileCardUsage(root)") ||
+    !nativeHost.includes("_profileUsageReceived = true") ||
+    !nativeHost.includes("ProfilesButton.IsEnabled = true") ||
+    !nativeHost.includes("GetProfileCardUsage(profileName) > 0") ||
+    !nativeHost.includes("_surfaces.Values.Any(surface => SameProfile(surface.ProfileName, profileName))") ||
+    !nativeHost.includes("maintenanceView.CoreWebView2.Profile.Delete()") ||
+    !nativeHost.includes("Profile.ClearBrowsingDataAsync()") ||
+    !nativeHost.includes("_deletedProfileNames.Contains(item.ProfileName)")) fail("Browser profile management must know all-space card usage, block deletion while assigned/open, and use WebView2's real clear/delete APIs.");
+else pass("Profile management uses an all-workspace assignment snapshot and the pinned WebView2 profile clear/delete APIs.");
+if (!smokeCs.includes("ClearProfileDataAsync") || !smokeCs.includes("DeleteProfile") ||
+    !smokeWindowCs.includes("Profile.ClearBrowsingDataAsync()") ||
+    !smokeWindowCs.includes("Profile.Delete()")) fail("The exact WebView2 profile maintenance APIs must compile in both isolated smoke projects.");
+else pass("Windows CI compiles the actual WebView2 profile clear and delete operations used by the manager.");
 if (!nativeHost.includes("WorkspaceView.Loaded += MainWindow_Loaded")) fail("Native browser host must initialize WebView2 from its control Loaded event.");
 else pass("Native browser host starts initialization only after the WebView2 control is loaded.");
 if (!nativeHost.includes("surface.View.Close()") ||

@@ -454,8 +454,16 @@
     if (!nativeHostAvailable || !window.chrome?.webview?.postMessage || nativeSyncFrame) return;
     nativeSyncFrame = requestAnimationFrame(() => {
       nativeSyncFrame = 0;
+      syncActiveSpace();
       const area = canvas.getBoundingClientRect();
       const items = [];
+      const profileUsage = new Map();
+      const profileNodes = spaces.flatMap((space) => Array.isArray(space.nodes) ? space.nodes : []);
+      for (const candidate of profileNodes) {
+        if (!candidate || candidate.type !== "website") continue;
+        const name = window.NolaneNativeBridge?.normalizeProfileName(candidate.browserProfile) || "";
+        profileUsage.set(name, (profileUsage.get(name) || 0) + 1);
+      }
       for (const node of nodes) {
         if (!canUseNativeSurface(node) || items.length >= 80) continue;
         const card = $('.node[data-id="' + CSS.escape(node.id) + '"]', world);
@@ -489,7 +497,14 @@
           zIndex: Number(node.z) || 1, visible
         });
       }
-      try { window.chrome.webview.postMessage({ type: "nolane.surfaces.sync", protocol: 1, items }); } catch (_) {}
+      try {
+        window.chrome.webview.postMessage({
+          type: "nolane.surfaces.sync",
+          protocol: 1,
+          items,
+          profileUsage: [...profileUsage].map(([name, count]) => ({ name, count }))
+        });
+      } catch (_) {}
     });
   }
 
