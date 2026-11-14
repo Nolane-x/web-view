@@ -1602,8 +1602,11 @@ public sealed partial class MainWindow : Window
         };
         var confirmation = new CheckBox
         {
-            Content = "I understand that deleting a profile permanently removes its login and site data.",
-            TextWrapping = TextWrapping.Wrap,
+            Content = new TextBlock
+            {
+                Text = "I understand that deleting a profile permanently removes its login and site data.",
+                TextWrapping = TextWrapping.Wrap
+            },
             IsChecked = false
         };
         var clearButton = new Button { Content = "Clear browsing data", Padding = new Thickness(10, 6), FontSize = 10 };
