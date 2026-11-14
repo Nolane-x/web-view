@@ -347,8 +347,7 @@ if (!nativeHost.includes("RecordBrowserHistory") || !nativeHost.includes("Saniti
     !nativeHost.includes("IsBookmarked(core.Source, surface.ProfileName)") ||
     !nativeHost.includes("SchemaVersion = 2") ||
     !nativeHost.includes("backup.SchemaVersion is not (1 or 2)")) fail("Native Library must isolate history/bookmarks by profile and preserve v1 backup compatibility.");
-else pass("History and bookmarks are stored with named profile ownership; older schema-1 data remains importable as Default.");
-else pass("Native browser records bounded history, deduplicates navigation events, redacts sensitive query parameters and persists bookmarks locally.");
+else pass("Native browser stores bounded history and bookmarks with profile ownership, deduplicates visits, redacts sensitive query values and preserves schema-1 backup compatibility.");
 if (!nativeHost.includes("BuildLibraryPanel()") || !nativeHost.includes("LibraryPanel = new Border") ||
     !nativeHost.includes("LibrarySearchBox = new TextBox") || !nativeHost.includes("LibraryItems = new StackPanel") ||
     !nativeHost.includes("WorkspaceRoot.Children.Add(LibraryPanel)") ||
