@@ -293,7 +293,7 @@ if (!js.includes("clean.privateMode = node.privateMode === true") ||
     !js.includes("privateMode: node.privateMode === true") ||
     !js.includes('data-action="native-private"') ||
     !js.includes("node.privateMode && node.transientUrl") ||
-    !js.includes("const { transientUrl, ...savedNode } = node") ||
+    !workspaceStorage.includes("const { transientUrl, ...persistedNode } = node") ||
     !nativeHost.includes("CreateCoreWebView2ControllerOptions") ||
     !nativeHost.includes("IsInPrivateModeEnabled = item.PrivateMode") ||
     !nativeHost.includes("EnsureCoreWebView2Async(_environment, controllerOptions)") ||
