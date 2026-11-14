@@ -526,9 +526,6 @@ if (!nativeHost.includes("_overlayWidth = 0;") ||
     !nativeHost.includes("width > 8000") || !nativeHost.includes("height > 6000")) fail("Overlay recovery must discard stale viewport bounds and validate native card geometry.");
 else pass("Renderer swaps cannot reuse stale overlay coordinates, and incoming card bounds are constrained.");
 
-if (process.exitCode) process.exit(process.exitCode);
-console.log("All static checks passed.");
-
 if (!localBridge.includes("CancelAfter(TimeSpan.FromSeconds(5))") ||
     !localBridge.includes('string.Equals(lines[0], "GET /bridge HTTP/1.1"')) fail("The local bridge handshake must have a bounded timeout and accept only the exact /bridge path.");
 else pass("The local bridge rejects alternate request paths and abandons incomplete handshakes after five seconds.");
@@ -536,9 +533,6 @@ else pass("The local bridge rejects alternate request paths and abandons incompl
 if (!bridgeSmoke.includes("client.CloseStatus == WebSocketCloseStatus.MessageTooBig") ||
     bridgeSmoke.includes("closed.CloseStatus")) fail("The Windows WebSocket smoke test must inspect the close status from ClientWebSocket.");
 else pass("The Windows bridge smoke test checks the server's 2 MiB close code through ClientWebSocket.");
-
-if (process.exitCode) process.exit(process.exitCode);
-console.log("All static checks passed.");
 
 if (!localBridge.includes("_activeClients") ||
     !localBridge.includes("_activeHandlers") ||
@@ -585,8 +579,8 @@ else pass("Windows CI validates and packages the current-user installer and unin
 const overlayGeometry = read("desktop-host/OverlayGeometry.cs");
 const overlayGeometrySmoke = read("native-diagnostics/OverlayGeometrySmokeTest/Program.cs");
 const overlayGeometryProject = read("native-diagnostics/OverlayGeometrySmokeTest/OverlayGeometrySmokeTest.csproj");
-if (!mainWindow.includes("OverlayGeometry.TryCreateSurfaceRect") ||
-    !mainWindow.includes("OverlayGeometry.TryCreatePanelRect") ||
+if (!nativeHost.includes("OverlayGeometry.TryCreateSurfaceRect") ||
+    !nativeHost.includes("OverlayGeometry.TryCreatePanelRect") ||
     !overlayGeometry.includes("Math.Floor") || !overlayGeometry.includes("Math.Ceiling") ||
     !overlayGeometry.includes("IsViewportUsable") ||
     !overlayGeometrySmoke.includes("negative canvas positions") ||
@@ -601,3 +595,6 @@ else pass("Windows CI executes overlay clipping, viewport-edge and DPI geometry 
 if (!overlayGeometrySmoke.includes("new NativePixelRect(1185, 15, 1785, 765)") ||
     !overlayGeometrySmoke.includes("narrowPanel.Right == 790")) fail("Panel region expected coordinates must include the 10 CSS-pixel viewport margin at all display scales.");
 else pass("Panel-region tests assert the same right/bottom inset used by the live overlay.");
+
+if (process.exitCode) process.exit(process.exitCode);
+console.log("All static checks passed.");
