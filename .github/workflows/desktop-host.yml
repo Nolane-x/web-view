@@ -5,6 +5,7 @@ on:
     branches: ["main"]
     paths:
       - "desktop-host/**"
+      - "native-diagnostics/**"
       - "app.js"
       - "styles.css"
       - ".github/workflows/desktop-host.yml"
@@ -37,10 +38,13 @@ jobs:
       - name: Compile isolated WebView2 projection smoke test
         shell: pwsh
         run: |
+          dotnet --version
           dotnet restore native-diagnostics/WebView2ProjectionSmokeTest.csproj -r win-x64
           dotnet build native-diagnostics/WebView2ProjectionSmokeTest.csproj -c Release -r win-x64 --no-restore -p:WindowsAppSDKSelfContained=true -p:WebView2EnableCsWinRTProjection=true
           dotnet restore native-diagnostics/WinUIWebView2ControlSmokeTest/WinUIWebView2ControlSmokeTest.csproj -r win-x64
           dotnet build native-diagnostics/WinUIWebView2ControlSmokeTest/WinUIWebView2ControlSmokeTest.csproj -c Release -r win-x64 --no-restore -p:WindowsAppSDKSelfContained=true -p:WebView2EnableCsWinRTProjection=true
+          dotnet restore native-diagnostics/HostCompileProbe/HostCompileProbe.csproj -r win-x64
+          dotnet build native-diagnostics/HostCompileProbe/HostCompileProbe.csproj -c Release -r win-x64 --no-restore -p:WindowsAppSDKSelfContained=true -p:WebView2EnableCsWinRTProjection=true
 
       - name: Restore and publish native host
         shell: pwsh
@@ -100,6 +104,7 @@ jobs:
             desktop-host/obj/project.assets.json
             native-diagnostics/obj/project.assets.json
             native-diagnostics/WinUIWebView2ControlSmokeTest/obj/project.assets.json
+            native-diagnostics/HostCompileProbe/obj/project.assets.json
             ${{ runner.temp }}/webview2-reference-diagnostic.txt
           if-no-files-found: warn
           retention-days: 7

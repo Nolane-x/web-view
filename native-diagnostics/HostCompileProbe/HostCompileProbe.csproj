@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>Nolane.DesktopHost</RootNamespace>
+    <AssemblyName>Nolane.DesktopHost</AssemblyName>
+    <ApplicationManifest>../../desktop-host/app.manifest</ApplicationManifest>
+    <Platforms>x64</Platforms>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <WebView2EnableCsWinRTProjection>true</WebView2EnableCsWinRTProjection>
+    <SelfContained>true</SelfContained>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PublishSingleFile>false</PublishSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+    <EnableMsixTooling>false</EnableMsixTooling>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260921001" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3179.45" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.9169" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <ApplicationDefinition Include="../../desktop-host/App.xaml" Link="App.xaml" />
+    <Compile Include="../../desktop-host/App.xaml.cs" Link="App.xaml.cs" />
+    <Page Include="../../desktop-host/MainWindow.xaml" Link="MainWindow.xaml" />
+    <Compile Include="../../desktop-host/MainWindow.xaml.cs" Link="MainWindow.xaml.cs" />
+    <Compile Include="../../desktop-host/WindowsShellFilePicker.cs" Link="WindowsShellFilePicker.cs" />
+  </ItemGroup>
+</Project>
