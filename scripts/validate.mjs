@@ -537,3 +537,20 @@ else pass("The Windows bridge smoke test checks the server's 2 MiB close code th
 
 if (process.exitCode) process.exit(process.exitCode);
 console.log("All static checks passed.");
+
+if (!localBridge.includes("_activeClients") ||
+    !localBridge.includes("_activeHandlers") ||
+    !localBridge.includes("client.Dispose()") ||
+    !localBridge.includes("WaitAsync(TimeSpan.FromSeconds(5))")) fail("The Windows background bridge must track and stop all accepted sockets/handlers during shutdown.");
+else pass("The background bridge tracks accepted clients and drains handlers on clean shutdown.");
+
+if (!bridgeSmoke.includes("bridge/extra") ||
+    !bridgeSmoke.includes("incomplete handshake open past its five-second deadline") ||
+    !localBridge.includes("if (_activeClients.Count >= 8)")) fail("The Windows bridge integration test must reject non-canonical paths, time out stalled clients and cap concurrent handshakes.");
+else pass("The Windows bridge rejects alternate paths, times out stalled handshakes and caps concurrent local clients.");
+
+if ((nativeHost.match(/if \(type == "nolane\.panel\.command"\)/g) || []).length !== 1) fail("The native panel command router must be defined exactly once.");
+else pass("The native panel command router has one unambiguous handler.");
+
+if (nativeHost.includes('"firefox"')) fail("The native overlay must not advertise Firefox while its viewport locator requires Chromium renderer HWNDs.");
+else pass("Native overlay browser detection matches the Chromium renderer-window implementation.");

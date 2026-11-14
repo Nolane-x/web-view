@@ -31,6 +31,34 @@ using (var rejected = new ClientWebSocket())
         "The loopback bridge accepted a WebSocket from an untrusted website Origin.");
 }
 
+using (var wrongPath = new ClientWebSocket())
+{
+    wrongPath.Options.AddSubProtocol("nolane.infinite.v2");
+    wrongPath.Options.SetRequestHeader("Origin", LocalBridgeServer.AllowedOrigin);
+    var blocked = false;
+    try
+    {
+        await wrongPath.ConnectAsync(new Uri($"ws://127.0.0.1:{LocalBridgeServer.Port}/bridge/extra"), timeout.Token);
+    }
+    catch (WebSocketException)
+    {
+        blocked = true;
+    }
+    Check(blocked && wrongPath.State != WebSocketState.Open,
+        "The loopback bridge accepted a non-canonical WebSocket path.");
+}
+
+using (var stalled = new System.Net.Sockets.TcpClient())
+{
+    await stalled.ConnectAsync(System.Net.IPAddress.Loopback, LocalBridgeServer.Port, timeout.Token);
+    var stream = stalled.GetStream();
+    var partialHeaders = Encoding.ASCII.GetBytes($"GET /bridge HTTP/1.1\r\nHost: 127.0.0.1:{LocalBridgeServer.Port}\r\n");
+    await stream.WriteAsync(partialHeaders.AsMemory(), timeout.Token);
+    using var readTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+    var eof = await stream.ReadAsync(new byte[1].AsMemory(), readTimeout.Token);
+    Check(eof == 0, "The loopback bridge kept an incomplete handshake open past its five-second deadline.");
+}
+
 using var client = new ClientWebSocket();
 client.Options.AddSubProtocol("nolane.infinite.v2");
 client.Options.SetRequestHeader("Origin", LocalBridgeServer.AllowedOrigin);

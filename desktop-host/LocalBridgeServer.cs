@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -22,9 +23,13 @@ internal sealed class LocalBridgeServer : IAsyncDisposable
     private readonly TcpListener _listener = new(IPAddress.Loopback, Port);
     private readonly SemaphoreSlim _sendGate = new(1, 1);
     private readonly CancellationTokenSource _stop = new();
+    private readonly ConcurrentDictionary<int, TcpClient> _activeClients = new();
+    private readonly ConcurrentDictionary<int, Task> _activeHandlers = new();
     private WebSocket? _client;
     private Task? _acceptTask;
     private int _started;
+    private int _nextClientId;
+    private int _disposed;
 
     public event Action? ClientConnected;
     public event Action? ClientDisconnected;
@@ -45,7 +50,20 @@ internal sealed class LocalBridgeServer : IAsyncDisposable
             try { client = await _listener.AcceptTcpClientAsync(_stop.Token).ConfigureAwait(false); }
             catch { if (_stop.IsCancellationRequested) break; else continue; }
             client.NoDelay = true;
-            _ = HandleClientAsync(client, _stop.Token);
+            if (_activeClients.Count >= 8)
+            {
+                client.Dispose();
+                continue;
+            }
+            var clientId = Interlocked.Increment(ref _nextClientId);
+            _activeClients[clientId] = client;
+            var handler = HandleClientAsync(client, _stop.Token);
+            _activeHandlers[clientId] = handler;
+            _ = handler.ContinueWith(completed =>
+            {
+                _activeHandlers.TryRemove(clientId, out var ignoredTask);
+                _activeClients.TryRemove(clientId, out var ignoredClient);
+            }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
         }
     }
 
@@ -193,12 +211,14 @@ internal sealed class LocalBridgeServer : IAsyncDisposable
 
     public async Task SendAsync(string json)
     {
+        if (Volatile.Read(ref _disposed) != 0) return;
         var socket = Volatile.Read(ref _client);
         if (socket is null || socket.State != WebSocketState.Open) return;
-        await _sendGate.WaitAsync().ConfigureAwait(false);
+        try { await _sendGate.WaitAsync().ConfigureAwait(false); }
+        catch (ObjectDisposedException) { return; }
         try
         {
-            if (socket.State == WebSocketState.Open)
+            if (Volatile.Read(ref _disposed) == 0 && socket.State == WebSocketState.Open)
                 await socket.SendAsync(Encoding.UTF8.GetBytes(json).AsMemory(), WebSocketMessageType.Text, true, _stop.Token).ConfigureAwait(false);
         }
         catch { }
@@ -207,17 +227,30 @@ internal sealed class LocalBridgeServer : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _stop.Cancel();
         try { _listener.Stop(); } catch { }
+
         var socket = Interlocked.Exchange(ref _client, null);
         if (socket is not null)
         {
-            try { await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Background bridge stopping.", CancellationToken.None).ConfigureAwait(false); }
-            catch { try { socket.Abort(); } catch { } }
-            socket.Dispose();
+            try { socket.Abort(); } catch { }
+            try { socket.Dispose(); } catch { }
         }
-        if (_acceptTask is not null) { try { await _acceptTask.ConfigureAwait(false); } catch { } }
-        _sendGate.Dispose();
-        _stop.Dispose();
+
+        foreach (var client in _activeClients.Values.ToArray())
+        {
+            try { client.Dispose(); } catch { }
+        }
+        if (_acceptTask is not null)
+        {
+            try { await _acceptTask.ConfigureAwait(false); } catch { }
+        }
+        var handlers = _activeHandlers.Values.ToArray();
+        if (handlers.Length > 0)
+        {
+            try { await Task.WhenAll(handlers).WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false); }
+            catch { }
+        }
     }
 }

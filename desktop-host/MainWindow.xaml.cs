@@ -402,7 +402,7 @@ public sealed partial class MainWindow : Window
     }
 
     private static bool IsSupportedBrowserName(string name) =>
-        new[] { "chrome", "msedge", "brave", "vivaldi", "opera", "firefox" }.Contains(name, StringComparer.OrdinalIgnoreCase);
+        new[] { "chrome", "msedge", "brave", "vivaldi", "opera", "chromium" }.Contains(name, StringComparer.OrdinalIgnoreCase);
 
     private static bool IsSupportedBrowserWindow(IntPtr hwnd)
     {
@@ -679,12 +679,6 @@ public sealed partial class MainWindow : Window
         {
             _workspaceReady = true;
             PostWorkspaceMessage(new { type = "nolane.native.ready", protocol = 2, engine = "WebView2-background", maxVisibleSurfaces = MaxVisibleSurfaces });
-            return;
-        }
-        if (type == "nolane.panel.command")
-        {
-            if (root.TryGetProperty("panel", out var panelValue) && panelValue.ValueKind == JsonValueKind.String)
-                ExecutePanelCommand(panelValue.GetString() ?? "");
             return;
         }
         if (type == "nolane.panel.command")
