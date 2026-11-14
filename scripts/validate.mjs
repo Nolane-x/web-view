@@ -219,6 +219,7 @@ else pass("Original-tab focus remains tied to its browser profile.");
 
 const nativeHost = read("desktop-host/MainWindow.xaml.cs");
 const nativeXaml = read("desktop-host/MainWindow.xaml");
+const nativePicker = read("desktop-host/WindowsShellFilePicker.cs");
 const smokeCs = read("native-diagnostics/ProjectionApi.cs");
 const smokeProject = read("native-diagnostics/WebView2ProjectionSmokeTest.csproj");
 const smokeWindowXaml = read("native-diagnostics/WinUIWebView2ControlSmokeTest/MainWindow.xaml");
@@ -237,18 +238,16 @@ if (!nativeProject.includes("Microsoft.WindowsAppSDK") ||
     !nativeProject.includes('<PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3179.45" />') ||
     !nativeProject.includes("net8.0-windows10.0.19041.0") || !nativeProject.includes("WindowsAppSDKSelfContained") ||
     !nativeProject.includes("WebView2EnableCsWinRTProjection>true") ||
-    nativeProject.includes("DefaultItemExcludes") ||
-    nativeProject.includes('Compile Remove="diagnostics/**/*.cs"') ||
-    nativeProject.includes('Page Remove="diagnostics/**/*.xaml"') ||
-    nativeProject.includes('ApplicationDefinition Remove="diagnostics/**/*.xaml"') ||
-    !nativeHost.includes("private string? PickLibraryBackupPath(bool save)") ||
-    !nativeHost.includes("Type.GetTypeFromCLSID(classId") ||
-    !nativeHost.includes("IFileSaveDialog") || !nativeHost.includes("IFileOpenDialog") ||
-    !nativeHost.includes("WinRT.Interop.WindowNative.GetWindowHandle(this)") ||
-    !nativeHost.includes("FileDialogOptions.OverwritePrompt") ||
-    !nativeHost.includes("FileDialogOptions.FileMustExist") ||
-    !nativeHost.includes("ShellItemDisplayName.FileSystemPath")) fail("Native host must retain its verified WebView2 package graph and implement the HWND-owned Windows Shell Common Item Dialog.");
-else pass("Native host retains the verified WinUI/WebView2 dependency graph and uses the HWND-owned Windows Shell Common Item Dialog.");
+    nativeProject.includes("DefaultItemExcludes") || nativeProject.includes("diagnostics/**") ||
+    !nativeHost.includes("WindowsShellFilePicker.PickLibraryBackupPath") ||
+    !nativePicker.includes("public static string? PickLibraryBackupPath(IntPtr ownerWindow, bool save)") ||
+    !nativePicker.includes("Type.GetTypeFromCLSID(classId") ||
+    !nativePicker.includes("IFileDialog") ||
+    !nativePicker.includes("FileDialogOptions.OverwritePrompt") ||
+    !nativePicker.includes("FileDialogOptions.FileMustExist") ||
+    !nativePicker.includes("ShellItemDisplayName.FileSystemPath") ||
+    nativeHost.includes("[ComImport]")) fail("Native host must retain its pinned WebView2 dependency, keep the WinUI project free of nested diagnostics, and isolate Shell COM interop outside the XAML window.");
+else pass("Native host pins its known-good WebView2 SDK, isolates smoke tests outside WinUI item discovery, and keeps Shell COM interop outside the XAML-backed window.");
 if (!smokeWindowXaml.includes("controls:WebView2") ||
     !smokeWindowCs.includes("using Microsoft.Web.WebView2.Core;") ||
     !smokeWindowCs.includes("Browser.CoreWebView2")) fail("The XAML smoke test must bind a WinUI WebView2 control to its Core API.");
@@ -308,7 +307,6 @@ if (!nativeHost.includes("ExportLibrary_Click") || !nativeHost.includes("ImportL
     !nativePicker.includes("Export Nolane Library") || !nativePicker.includes("Import Nolane Library backup") ||
     !nativeHost.includes('Content = "Export backup"') || !nativeHost.includes('Content = "Import backup"') ||
     !nativeProject.includes('Version="1.0.3179.45"')) fail("Native Library backup/restore picker integration or its pinned WebView2 dependency is invalid.");
-else pass("Native Library backup/restore uses the WinUI HWND file-picker bridge, versioned JSON, size/count limits, URL sanitization and a staged user-approved merge.");
 if (!nativeHost.includes("HandleDownloadStarting") || !nativeHost.includes("BytesReceivedChanged") ||
     !nativeHost.includes("StateChanged") || !nativeHost.includes("operation?.Pause()") ||
     !nativeHost.includes("operation?.Resume()") || !nativeHost.includes("operation?.Cancel()") ||
