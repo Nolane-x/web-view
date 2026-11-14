@@ -13,6 +13,10 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260921001" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3179.45" />
+    <Reference Include="Microsoft.Web.WebView2.Core.Projection">
+      <HintPath>$(NuGetPackageRoot)microsoft.web.webview2/1.0.3179.45/lib_manual/net8.0-windows10.0.17763.0/Microsoft.Web.WebView2.Core.Projection.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.9169" PrivateAssets="all" />
   </ItemGroup>
 </Project>

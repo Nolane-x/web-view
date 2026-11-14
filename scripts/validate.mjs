@@ -237,6 +237,8 @@ if (!nativeHost.includes("nolane.surfaces.sync") || !nativeHost.includes("Ensure
 else pass("Native WebView2 host creates real browser surfaces and bounds active renderers.");
 if (!nativeProject.includes("Microsoft.WindowsAppSDK") ||
     !nativeProject.includes('<PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3179.45" />') ||
+    !nativeProject.includes("Microsoft.Web.WebView2.Core.Projection.dll") ||
+    !nativeProject.includes("$(NuGetPackageRoot)microsoft.web.webview2/1.0.3179.45/lib_manual/net8.0-windows10.0.17763.0/") ||
     !nativeProject.includes("net8.0-windows10.0.19041.0") || !nativeProject.includes("WindowsAppSDKSelfContained") ||
     !nativeProject.includes("WebView2EnableCsWinRTProjection>true") ||
     nativeProject.includes("DefaultItemExcludes") || nativeProject.includes("diagnostics/**") ||
@@ -257,7 +259,8 @@ if (!hostCompileProbe.includes('../../desktop-host/MainWindow.xaml.cs') ||
     !hostCompileProbe.includes('../../desktop-host/MainWindow.xaml') ||
     !hostCompileProbe.includes('../../desktop-host/App.xaml.cs') ||
     !hostCompileProbe.includes('../../desktop-host/WindowsShellFilePicker.cs') ||
-    !hostCompileProbe.includes('<PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3179.45" />')) fail("Full-host compile probe must link the exact shipping WinUI/XAML/COM helper sources and pinned WebView2 projection.");
+    !hostCompileProbe.includes('<PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3179.45" />') ||
+    !workflow.includes("WebView2 CsWinRT projection DLL not found")) fail("Full-host compile probe must link the exact shipping WinUI/XAML/COM helper sources and pinned WebView2 projection.");
 else pass("Full-host compile probe links the shipping source files with the same WinUI/WebView2 package graph.");
 if (!nativeHost.includes("WorkspaceView.Loaded += MainWindow_Loaded")) fail("Native browser host must initialize WebView2 from its control Loaded event.");
 else pass("Native browser host starts initialization only after the WebView2 control is loaded.");
@@ -266,6 +269,8 @@ if (!workflow.includes("Compile isolated WebView2 projection smoke test") ||
     !workflow.includes("native-diagnostics/HostCompileProbe/HostCompileProbe.csproj") ||
     !workflow.includes("native-diagnostics/WinUIWebView2ControlSmokeTest/WinUIWebView2ControlSmokeTest.csproj") ||
     !smokeProject.includes('PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3179.45"') ||
+    !smokeProject.includes("Microsoft.Web.WebView2.Core.Projection.dll") ||
+    !hostCompileProbe.includes("Microsoft.Web.WebView2.Core.Projection.dll") ||
     !smokeCs.includes("CoreWebView2Environment") ||
     !workflow.includes("WebView2EnableCsWinRTProjection=true") ||
     !smokeCs.includes("typeof(CoreWebView2Environment)") ||

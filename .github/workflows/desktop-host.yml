@@ -38,6 +38,9 @@ jobs:
       - name: Compile isolated WebView2 projection smoke test
         shell: pwsh
         run: |
+          $webView2Projection = Join-Path $env:USERPROFILE ".nuget/packages/microsoft.web.webview2/1.0.3179.45/lib_manual/net8.0-windows10.0.17763.0/Microsoft.Web.WebView2.Core.Projection.dll"
+          if (-not (Test-Path $webView2Projection)) { throw "WebView2 CsWinRT projection DLL not found: $webView2Projection" }
+          Write-Host "Using WebView2 CsWinRT projection: $webView2Projection"
           dotnet --version
           dotnet restore native-diagnostics/WebView2ProjectionSmokeTest.csproj -r win-x64
           dotnet build native-diagnostics/WebView2ProjectionSmokeTest.csproj -c Release -r win-x64 --no-restore -p:WindowsAppSDKSelfContained=true -p:WebView2EnableCsWinRTProjection=true
