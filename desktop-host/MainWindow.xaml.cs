@@ -22,6 +22,7 @@ public sealed partial class MainWindow : Window
     private const int MaxLibraryHistoryEntries = 500;
     private const int MaxLibraryBookmarkEntries = 200;
     private const long MaxLibraryBackupBytes = 5L * 1024 * 1024;
+    private const string AllLibraryProfilesFilter = "\0all";
     private readonly int _maxVisibleSurfaces = DetermineVisibleSurfaceBudget();
 
     private int MaxVisibleSurfaces => _maxVisibleSurfaces;
@@ -1235,6 +1236,10 @@ public sealed partial class MainWindow : Window
 
     private static bool SameProfile(string? left, string? right) =>
         StringComparer.OrdinalIgnoreCase.Equals(left ?? "", right ?? "");
+
+    private bool MatchesLibraryProfile(string? profileName) =>
+        _libraryProfileFilter == AllLibraryProfilesFilter ||
+        SameProfile(profileName, _libraryProfileFilter);
 
     private static string? NormalizeLibraryProfileName(string? value)
     {
