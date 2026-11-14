@@ -59,6 +59,11 @@ jobs:
           node --test tests/*.test.mjs
           node scripts/validate.mjs
 
+      - name: Exercise the loopback bridge protocol on Windows
+        shell: pwsh
+        run: |
+          dotnet run --project native-diagnostics/LocalBridgeServerSmokeTest/LocalBridgeServerSmokeTest.csproj -c Release
+
       - name: Compile isolated WebView2 projection smoke test
         shell: pwsh
         run: |

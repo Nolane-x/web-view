@@ -435,7 +435,12 @@ public sealed partial class MainWindow : Window
             if (type == "nolane.workspace.visibility")
             {
                 _workspaceVisible = root.TryGetProperty("visible", out var visible) && visible.ValueKind == JsonValueKind.True;
-                if (!_workspaceVisible) HideOverlayWindow();
+                if (!_workspaceVisible)
+                {
+                    HideOverlayWindow();
+                    foreach (var surface in _surfaces.Values.ToArray())
+                        _ = SetSurfaceVisibleAsync(surface, false);
+                }
                 return;
             }
             ProcessWorkspaceMessage(root);
@@ -699,8 +704,22 @@ public sealed partial class MainWindow : Window
             return;
         }
         if (type != "nolane.surfaces.sync") return;
-        UpdateOverlayBounds(root);
         UpdateProfileCardUsage(root);
+        if (!UpdateOverlayBounds(root))
+        {
+            foreach (var surface in _surfaces.Values.ToArray())
+                _ = SetSurfaceVisibleAsync(surface, false);
+            if (root.TryGetProperty("items", out var waitingItems) && waitingItems.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in waitingItems.EnumerateArray())
+                {
+                    if (item.TryGetProperty("visible", out var visible) && visible.ValueKind == JsonValueKind.True &&
+                        TryGetString(item, "id", out var waitingId))
+                        PublishSurfaceStatus(waitingId, "error", "Waiting for the active Chrome/Edge page viewport. Switch back to the Nolane tab or resize the browser.");
+                }
+            }
+            return;
+        }
         if (!root.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array) return;
         var parsed = new List<SurfaceDescriptor>();
         foreach (var item in items.EnumerateArray())

@@ -525,3 +525,6 @@ if (!nativeHost.includes("_overlayWidth = 0;") ||
     !nativeHost.includes("foregroundBrowser != IntPtr.Zero && foregroundBrowser != _browserHwnd") ||
     !nativeHost.includes("width > 8000") || !nativeHost.includes("height > 6000")) fail("Overlay recovery must discard stale viewport bounds and validate native card geometry.");
 else pass("Renderer swaps cannot reuse stale overlay coordinates, and incoming card bounds are constrained.");
+
+if (process.exitCode) process.exit(process.exitCode);
+console.log("All static checks passed.");
