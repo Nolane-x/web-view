@@ -237,10 +237,10 @@ if (!nativeProject.includes("Microsoft.WindowsAppSDK") ||
     !nativeProject.includes('<PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3179.45" />') ||
     !nativeProject.includes("net8.0-windows10.0.19041.0") || !nativeProject.includes("WindowsAppSDKSelfContained") ||
     !nativeProject.includes("WebView2EnableCsWinRTProjection>true") ||
-    !nativeProject.includes("DefaultItemExcludes") || !nativeProject.includes("diagnostics/**") ||
-    !nativeProject.includes('Compile Remove="diagnostics/**/*.cs"') ||
-    !nativeProject.includes('Page Remove="diagnostics/**/*.xaml"') ||
-    !nativeProject.includes('ApplicationDefinition Remove="diagnostics/**/*.xaml"') ||
+    nativeProject.includes("DefaultItemExcludes") ||
+    nativeProject.includes('Compile Remove="diagnostics/**/*.cs"') ||
+    nativeProject.includes('Page Remove="diagnostics/**/*.xaml"') ||
+    nativeProject.includes('ApplicationDefinition Remove="diagnostics/**/*.xaml"') ||
     !nativeHost.includes("private string? PickLibraryBackupPath(bool save)") ||
     !nativeHost.includes("Type.GetTypeFromCLSID(classId") ||
     !nativeHost.includes("IFileSaveDialog") || !nativeHost.includes("IFileOpenDialog") ||
@@ -256,8 +256,9 @@ else pass("An isolated WinUI executable compiles the XAML WebView2 control and i
 if (!nativeHost.includes("WorkspaceView.Loaded += MainWindow_Loaded")) fail("Native browser host must initialize WebView2 from its control Loaded event.");
 else pass("Native browser host starts initialization only after the WebView2 control is loaded.");
 if (!workflow.includes("Compile isolated WebView2 projection smoke test") ||
-    !workflow.includes("WebView2ProjectionSmokeTest.csproj") ||
-    !workflow.includes("WinUIWebView2ControlSmokeTest.csproj") ||
+    !workflow.includes("native-diagnostics/WebView2ProjectionSmokeTest.csproj") ||
+    !workflow.includes("native-diagnostics/WinUIWebView2ControlSmokeTest/WinUIWebView2ControlSmokeTest.csproj") ||
+    !smokeProject.includes('PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3179.45"') ||
     !smokeCs.includes("CoreWebView2Environment") ||
     !workflow.includes("WebView2EnableCsWinRTProjection=true") ||
     !smokeCs.includes("typeof(CoreWebView2Environment)") ||
