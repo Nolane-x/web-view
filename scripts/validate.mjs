@@ -227,7 +227,7 @@ else pass("Original-tab focus remains tied to its browser profile.");
 const nativeHost = read("desktop-host/MainWindow.xaml.cs");
 if (!nativeHost.includes("using Microsoft.Web.WebView2.Core;") || nativeHost.includes("using Microsoft.WebView2.Core;")) fail("Native host must import the actual WebView2 Core namespace.");
 else pass("Native host imports the canonical Microsoft.Web.WebView2.Core namespace.");
-if (/\\bnew Thickness\\(\\s*[^,()]+,\\s*[^,()]+\\s*\\)/.test(nativeHost)) fail("WinUI Thickness constructors must use the one-value or four-value overload.");
+if (/\bnew Thickness\(\s*[^,()]+,\s*[^,()]+\s*\)/.test(nativeHost)) fail("WinUI Thickness constructors must use the one-value or four-value overload.");
 else pass("Native WinUI Thickness constructors use supported overloads.");
 const nativeXaml = read("desktop-host/MainWindow.xaml");
 const nativePicker = read("desktop-host/WindowsShellFilePicker.cs");

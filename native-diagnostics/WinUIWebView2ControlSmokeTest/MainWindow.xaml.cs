@@ -24,7 +24,10 @@ public sealed partial class MainWindow : Window
 
     public void CloseBrowserControl() => Browser.Close();
 
-    public Task ClearProfileDataAsync() => Browser.CoreWebView2!.Profile.ClearBrowsingDataAsync();
+    public async Task ClearProfileDataAsync()
+    {
+        await Browser.CoreWebView2!.Profile.ClearBrowsingDataAsync();
+    }
 
     public void DeleteProfile() => Browser.CoreWebView2!.Profile.Delete();
 

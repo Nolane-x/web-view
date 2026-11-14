@@ -17,8 +17,10 @@ public static class ProjectionApi
         return options;
     }
 
-    public static Task ClearProfileDataAsync(CoreWebView2Profile profile) =>
-        profile.ClearBrowsingDataAsync();
+    public static async Task ClearProfileDataAsync(CoreWebView2Profile profile)
+    {
+        await profile.ClearBrowsingDataAsync();
+    }
 
     public static void DeleteProfile(CoreWebView2Profile profile) =>
         profile.Delete();
