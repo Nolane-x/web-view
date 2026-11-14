@@ -6,6 +6,9 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Runtime.InteropServices;
+using System.Text;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -48,6 +51,53 @@ public sealed partial class MainWindow : Window
     private string _focusedSurfaceId = "";
     private string _libraryProfileFilter = AllLibraryProfilesFilter;
     private bool _refreshingLibraryProfileFilter;
+    private LocalBridgeServer? _bridgeServer;
+    private DispatcherQueueTimer? _overlayTimer;
+    private IntPtr _overlayHwnd;
+    private IntPtr _browserHwnd;
+    private int _overlayScreenX, _overlayScreenY, _overlayWidth, _overlayHeight;
+    private double _deviceScale = 1;
+    private bool _overlayShown, _workspaceVisible, _bridgeHandshakeComplete, _profilesDialogOpen;
+    private List<SurfaceDescriptor> _activeOverlayItems = new();
+
+    private const int GWL_STYLE = -16, GWL_EXSTYLE = -20;
+    private const long WS_POPUP = unchecked((long)0x80000000);
+    private const long WS_EX_TOOLWINDOW = 0x00000080, WS_EX_APPWINDOW = 0x00040000;
+    private const uint SWP_NOACTIVATE = 0x0010, SWP_NOOWNERZORDER = 0x0200, SWP_SHOWWINDOW = 0x0040, SWP_FRAMECHANGED = 0x0020;
+    private const int SW_HIDE = 0, RGN_OR = 2;
+    private const uint GA_ROOT = 2, GA_ROOTOWNER = 3;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct DwmMargins { public int Left, Right, Top, Bottom; }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRect { public int Left, Top, Right, Bottom; public int Width => Right - Left; public int Height => Bottom - Top; }
+    private delegate bool EnumChildProc(IntPtr hwnd, IntPtr parameter);
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
+    private static extern IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr value);
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
+    private static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int index);
+    [DllImport("user32.dll", EntryPoint = "EnumChildWindows", SetLastError = true)]
+    private static extern bool EnumChildWindows(IntPtr parent, EnumChildProc callback, IntPtr parameter);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "GetClassNameW", SetLastError = true)]
+    private static extern int GetClassName(IntPtr hwnd, StringBuilder className, int maxCount);
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool GetWindowRect(IntPtr hwnd, out NativeRect rect);
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr hwnd);
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hwnd, int command);
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetWindowPos(IntPtr hwnd, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+    [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+    [DllImport("user32.dll")] private static extern IntPtr CreateRectRgn(int left, int top, int right, int bottom);
+    [DllImport("gdi32.dll")] private static extern int CombineRgn(IntPtr dest, IntPtr src1, IntPtr src2, int mode);
+    [DllImport("user32.dll", SetLastError = true)] private static extern int SetWindowRgn(IntPtr hwnd, IntPtr region, bool redraw);
+    [DllImport("gdi32.dll")] private static extern bool DeleteObject(IntPtr handle);
+    [DllImport("dwmapi.dll")] private static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref DwmMargins margins);
 
     // The Library is constructed in code to keep the shipping WinUI XAML graph small and deterministic.
     private Border LibraryPanel = null!;
@@ -85,17 +135,20 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         BuildLibraryPanel();
         Title = "Nolane Infinite — Native Browser Host";
-        WorkspaceView.Loaded += MainWindow_Loaded;
+        BrowserSurfaceLayer.Loaded += MainWindow_Loaded;
         SizeChanged += (_, _) => BrowserSurfaceLayer.InvalidateArrange();
-        Closed += (_, _) =>
+        InitializeOverlayWindow();
+        Closed += async (_, _) =>
         {
+            _overlayTimer?.Stop();
+            HideOverlayWindow();
             SaveDownloadHistory();
             foreach (var surface in _surfaces.Values.ToArray())
             {
                 try { surface.View.Close(); } catch { }
             }
             _surfaces.Clear();
-            try { WorkspaceView.Close(); } catch { }
+            if (_bridgeServer is not null) await _bridgeServer.DisposeAsync();
         };
     }
 
@@ -246,7 +299,7 @@ public sealed partial class MainWindow : Window
             IsHitTestVisible = true,
             Child = panelGrid
         };
-        Grid.SetRow(LibraryPanel, 1);
+        Grid.SetRow(LibraryPanel, 0);
         WorkspaceRoot.Children.Add(LibraryPanel);
     }
 
@@ -256,15 +309,12 @@ public sealed partial class MainWindow : Window
         {
             string runtimeVersion;
             try { runtimeVersion = CoreWebView2Environment.GetAvailableBrowserVersionString(); }
-            catch (Exception runtimeError)
+            catch (Exception error)
             {
-                await ShowErrorAsync(
-                    "The Microsoft Edge WebView2 Runtime is missing or unavailable. Install the Evergreen Runtime, then reopen Nolane.",
-                    runtimeError.Message + Environment.NewLine + "https://go.microsoft.com/fwlink/p/?LinkId=2124703");
-                StatusText.Text = "WebView2 Runtime required";
+                StatusText.Text = "WebView2 Runtime missing: " + error.Message;
+                HideOverlayWindow();
                 return;
             }
-
             var userData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "Nolane", "NativeWebView2", "UserData");
             Directory.CreateDirectory(userData);
@@ -275,40 +325,308 @@ public sealed partial class MainWindow : Window
             RefreshDownloadsUi();
             RefreshLibraryUi();
             _environment = await CoreWebView2Environment.CreateWithOptionsAsync(null, userData, new CoreWebView2EnvironmentOptions());
-            _environment.NewBrowserVersionAvailable += (_, _) =>
+            _environment.NewBrowserVersionAvailable += (_, _) => _runtimeUpdateAvailable = true;
+            _environment.BrowserProcessExited += (_, _) => DispatcherQueue.TryEnqueue(() =>
             {
-                _runtimeUpdateAvailable = true;
-                StatusText.Text = "A WebView2 security/runtime update is ready. Save your workspace and restart Nolane to apply it.";
-            };
-            _environment.BrowserProcessExited += (_, _) =>
-            {
-                DispatcherQueue.TryEnqueue(() =>
-                {
-                    StatusText.Text = "WebView2 browser process exited. Restart Nolane to restore all browser surfaces.";
-                    foreach (var surface in _surfaces.Values.ToArray())
-                        PublishSurfaceStatus(surface.Id, "error", "The shared WebView2 browser process exited. Restart Nolane to restore this website.");
-                });
-            };
-            await WorkspaceView.EnsureCoreWebView2Async(_environment);
-            WorkspaceView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
-            WorkspaceView.CoreWebView2.Settings.IsStatusBarEnabled = false;
-            WorkspaceView.CoreWebView2.NavigationStarting += Workspace_NavigationStarting;
-            WorkspaceView.CoreWebView2.NavigationCompleted += Workspace_NavigationCompleted;
-            WorkspaceView.CoreWebView2.NewWindowRequested += Workspace_NewWindowRequested;
-            WorkspaceView.CoreWebView2.WebMessageReceived += Workspace_WebMessageReceived;
-            WorkspaceView.CoreWebView2.ProcessFailed += (_, args) =>
-                StatusText.Text = "Workspace browser process failed: " + args.ProcessFailedKind + ". Use Reload workspace.";
-            WorkspaceView.Source = new Uri(WorkspaceUrl);
-            StatusText.Text = "WebView2 " + runtimeVersion + " · Loading private workspace…";
+                foreach (var surface in _surfaces.Values.ToArray())
+                    PublishSurfaceStatus(surface.Id, "error", "The shared WebView2 process exited. Restart the background bridge.");
+                HideOverlayWindow();
+            });
+            _bridgeServer = new LocalBridgeServer();
+            _bridgeServer.ClientConnected += () => DispatcherQueue.TryEnqueue(OnBridgeClientConnected);
+            _bridgeServer.ClientDisconnected += () => DispatcherQueue.TryEnqueue(OnBridgeClientDisconnected);
+            _bridgeServer.MessageReceived += json => DispatcherQueue.TryEnqueue(() => HandleBridgeMessage(json));
+            _bridgeServer.Start();
+            _overlayTimer = DispatcherQueue.CreateTimer();
+            _overlayTimer.Interval = TimeSpan.FromMilliseconds(250);
+            _overlayTimer.Tick += (_, _) => RefreshOverlayActivation();
+            _overlayTimer.Start();
+            StatusText.Text = $"Nolane background bridge ready · WebView2 {runtimeVersion}";
+            HideOverlayWindow();
         }
         catch (Exception ex)
         {
-            StatusText.Text = "WebView2 could not start";
-            await ShowErrorAsync("The native browser host could not initialize. Make sure the Microsoft Edge WebView2 Runtime is installed, then restart Nolane.", ex.Message);
+            StatusText.Text = "Background bridge startup failed: " + ex.Message;
+            HideOverlayWindow();
         }
     }
 
-    private void Workspace_NavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
+    private void InitializeOverlayWindow()
+    {
+        _overlayHwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        if (_overlayHwnd == IntPtr.Zero) return;
+        SetWindowLongPtr(_overlayHwnd, GWL_STYLE, new IntPtr(WS_POPUP));
+        var exStyle = GetWindowLongPtr(_overlayHwnd, GWL_EXSTYLE).ToInt64();
+        exStyle = (exStyle | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW;
+        SetWindowLongPtr(_overlayHwnd, GWL_EXSTYLE, new IntPtr(exStyle));
+        var margins = new DwmMargins { Left = -1, Right = -1, Top = -1, Bottom = -1 };
+        _ = DwmExtendFrameIntoClientArea(_overlayHwnd, ref margins);
+        _ = SetWindowPos(_overlayHwnd, IntPtr.Zero, -32000, -32000, 1, 1,
+            SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+    }
+
+    private void OnBridgeClientConnected()
+    {
+        _bridgeHandshakeComplete = false;
+        _workspaceReady = false;
+        _workspaceVisible = true;
+        _browserHwnd = GetSupportedForegroundBrowserWindow();
+        if (_browserHwnd != IntPtr.Zero) SetWindowLongPtr(_overlayHwnd, -8, _browserHwnd);
+        HideOverlayWindow();
+    }
+
+    private void OnBridgeClientDisconnected()
+    {
+        _bridgeHandshakeComplete = false;
+        _workspaceReady = false;
+        _workspaceVisible = false;
+        DownloadsPanel.Visibility = Visibility.Collapsed;
+        LibraryPanel.Visibility = Visibility.Collapsed;
+        HideOverlayWindow();
+        foreach (var surface in _surfaces.Values.ToArray()) _ = SetSurfaceVisibleAsync(surface, false);
+    }
+
+    private IntPtr GetSupportedForegroundBrowserWindow()
+    {
+        var foreground = GetForegroundWindow();
+        if (foreground == IntPtr.Zero || foreground == _overlayHwnd) return IntPtr.Zero;
+        _ = GetWindowThreadProcessId(foreground, out var pid);
+        if (pid == 0) return IntPtr.Zero;
+        try
+        {
+            using var process = Process.GetProcessById((int)pid);
+            if (!IsSupportedBrowserName(process.ProcessName)) return IntPtr.Zero;
+            return GetAncestor(foreground, GA_ROOT);
+        }
+        catch { return IntPtr.Zero; }
+    }
+
+    private static bool IsSupportedBrowserName(string name) =>
+        new[] { "chrome", "msedge", "brave", "vivaldi", "opera", "firefox" }.Contains(name, StringComparer.OrdinalIgnoreCase);
+
+    private static bool IsSupportedBrowserWindow(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero || !IsWindow(hwnd)) return false;
+        _ = GetWindowThreadProcessId(hwnd, out var pid);
+        if (pid == 0) return false;
+        try { using var process = Process.GetProcessById((int)pid); return IsSupportedBrowserName(process.ProcessName); }
+        catch { return false; }
+    }
+
+    private void HandleBridgeMessage(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (!TryGetString(root, "type", out var type)) return;
+            if (type == "nolane.bridge.hello")
+            {
+                if (!root.TryGetProperty("protocol", out var protocol) || protocol.GetInt32() != 2) return;
+                _bridgeHandshakeComplete = true;
+                _workspaceReady = true;
+                BackgroundTrayIcon.EnableStartupAfterFirstConnection();
+                PostWorkspaceMessage(new { type = "nolane.native.ready", protocol = 2, engine = "WebView2-background", maxVisibleSurfaces = MaxVisibleSurfaces });
+                return;
+            }
+            if (!_bridgeHandshakeComplete) return;
+            if (type == "nolane.workspace.visibility")
+            {
+                _workspaceVisible = root.TryGetProperty("visible", out var visible) && visible.ValueKind == JsonValueKind.True;
+                if (!_workspaceVisible) HideOverlayWindow();
+                return;
+            }
+            ProcessWorkspaceMessage(root);
+        }
+        catch (JsonException) { }
+        catch (InvalidOperationException) { }
+    }
+
+    private bool UpdateOverlayBounds(JsonElement root)
+    {
+        if (!root.TryGetProperty("viewport", out var viewport) || viewport.ValueKind != JsonValueKind.Object)
+            return false;
+        var cssWidth = ReadNumber(viewport, "width");
+        var cssHeight = ReadNumber(viewport, "height");
+        var reportedScale = Math.Clamp(ReadNumber(viewport, "deviceScale"), 1, 4);
+        if (cssWidth < 100 || cssWidth > 12000 || cssHeight < 100 || cssHeight > 12000)
+        {
+            HideOverlayWindow();
+            return false;
+        }
+        if (!IsSupportedBrowserWindow(_browserHwnd))
+        {
+            var candidateBrowser = GetSupportedForegroundBrowserWindow();
+            if (candidateBrowser != IntPtr.Zero) _browserHwnd = candidateBrowser;
+        }
+        if (_browserHwnd == IntPtr.Zero)
+        {
+            HideOverlayWindow();
+            return false;
+        }
+
+        NativeRect bestRect = default;
+        var bestScore = double.MaxValue;
+        var found = false;
+        EnumChildProc visitor = (child, _) =>
+        {
+            if (!IsWindowVisible(child)) return true;
+            var className = new StringBuilder(128);
+            _ = GetClassName(child, className, className.Capacity);
+            if (!string.Equals(className.ToString(), "Chrome_RenderWidgetHostHWND", StringComparison.Ordinal))
+                return true;
+            if (!GetWindowRect(child, out var candidate) || candidate.Width < 100 || candidate.Height < 100)
+                return true;
+            var ratioX = candidate.Width / cssWidth;
+            var ratioY = candidate.Height / cssHeight;
+            var averageScale = (ratioX + ratioY) / 2;
+            var mismatch = Math.Abs(ratioX - ratioY) / Math.Max(0.01, averageScale);
+            if (mismatch > 0.06 || averageScale < 0.75 || averageScale > 4) return true;
+            var score = Math.Abs(Math.Log(averageScale / reportedScale)) + mismatch * 4;
+            if (score < bestScore) { bestScore = score; bestRect = candidate; found = true; }
+            return true;
+        };
+        _ = EnumChildWindows(_browserHwnd, visitor, IntPtr.Zero);
+        if (!found)
+        {
+            HideOverlayWindow();
+            StatusText.Text = "Waiting for the active Chrome/Edge page viewport.";
+            return false;
+        }
+        _overlayScreenX = bestRect.Left;
+        _overlayScreenY = bestRect.Top;
+        _overlayWidth = bestRect.Width;
+        _overlayHeight = bestRect.Height;
+        var scaleX = bestRect.Width / cssWidth;
+        var scaleY = bestRect.Height / cssHeight;
+        if (Math.Abs(scaleX - scaleY) > 0.08) { HideOverlayWindow(); return false; }
+        _deviceScale = (scaleX + scaleY) / 2;
+        SetWindowLongPtr(_overlayHwnd, -8, _browserHwnd);
+        return true;
+    }
+
+    private void UpdateOverlayRegion(IReadOnlyList<SurfaceDescriptor> visibleItems)
+    {
+        _activeOverlayItems = visibleItems.ToList();
+        if (_overlayHwnd == IntPtr.Zero || _overlayWidth <= 0 || _overlayHeight <= 0 ||
+            (visibleItems.Count == 0 && DownloadsPanel.Visibility != Visibility.Visible &&
+             LibraryPanel.Visibility != Visibility.Visible && !_profilesDialogOpen))
+        {
+            HideOverlayWindow();
+            return;
+        }
+        var combined = CreateRectRgn(0, 0, 0, 0);
+        if (combined == IntPtr.Zero) { HideOverlayWindow(); return; }
+        var hasRegion = false;
+        try
+        {
+            foreach (var item in visibleItems)
+            {
+                if (!item.Visible || item.ClipWidth < 1 || item.ClipHeight < 1) continue;
+                var l = Math.Clamp((int)Math.Floor((item.X + item.ClipX) * _deviceScale), 0, _overlayWidth);
+                var t = Math.Clamp((int)Math.Floor((item.Y + item.ClipY) * _deviceScale), 0, _overlayHeight);
+                var r = Math.Clamp((int)Math.Ceiling((item.X + item.ClipX + item.ClipWidth) * _deviceScale), l, _overlayWidth);
+                var b = Math.Clamp((int)Math.Ceiling((item.Y + item.ClipY + item.ClipHeight) * _deviceScale), t, _overlayHeight);
+                if (r - l < 2 || b - t < 2) continue;
+                var rect = CreateRectRgn(l, t, r, b);
+                if (rect == IntPtr.Zero) continue;
+                _ = CombineRgn(combined, combined, rect, RGN_OR);
+                DeleteObject(rect);
+                hasRegion = true;
+            }
+            hasRegion |= AddPanelRegionIfVisible(combined, DownloadsPanel);
+            hasRegion |= AddPanelRegionIfVisible(combined, LibraryPanel);
+            if (_profilesDialogOpen)
+            {
+                var fullRegion = CreateRectRgn(0, 0, _overlayWidth, _overlayHeight);
+                if (fullRegion != IntPtr.Zero)
+                {
+                    _ = CombineRgn(combined, combined, fullRegion, RGN_OR);
+                    DeleteObject(fullRegion);
+                    hasRegion = true;
+                }
+            }
+            if (!hasRegion) { DeleteObject(combined); HideOverlayWindow(); return; }
+            if (SetWindowRgn(_overlayHwnd, combined, true) == 0)
+            {
+                DeleteObject(combined);
+                HideOverlayWindow();
+                return;
+            }
+            ShowOverlayWindow();
+        }
+        catch { DeleteObject(combined); HideOverlayWindow(); }
+    }
+
+    private bool AddPanelRegionIfVisible(IntPtr combined, FrameworkElement panel)
+    {
+        if (panel.Visibility != Visibility.Visible || panel.ActualWidth < 1 || panel.ActualHeight < 1) return false;
+        var right = _overlayWidth / _deviceScale;
+        var left = right - panel.ActualWidth - 10;
+        var top = 10d;
+        var bottom = Math.Min(_overlayHeight / _deviceScale - 10, top + panel.ActualHeight);
+        var l = Math.Clamp((int)Math.Floor(left * _deviceScale), 0, _overlayWidth);
+        var t = Math.Clamp((int)Math.Floor(top * _deviceScale), 0, _overlayHeight);
+        var r = Math.Clamp((int)Math.Ceiling((left + panel.ActualWidth) * _deviceScale), l, _overlayWidth);
+        var b = Math.Clamp((int)Math.Ceiling(bottom * _deviceScale), t, _overlayHeight);
+        if (r - l < 2 || b - t < 2) return false;
+        var rect = CreateRectRgn(l, t, r, b);
+        if (rect == IntPtr.Zero) return false;
+        _ = CombineRgn(combined, combined, rect, RGN_OR);
+        DeleteObject(rect);
+        return true;
+    }
+
+    private void ExecutePanelCommand(string panel)
+    {
+        switch (panel)
+        {
+            case "downloads":
+                LibraryPanel.Visibility = Visibility.Collapsed;
+                DownloadsPanel.Visibility = Visibility.Visible;
+                RefreshDownloadsUi();
+                break;
+            case "library":
+                DownloadsPanel.Visibility = Visibility.Collapsed;
+                _libraryProfileFilter = GetFocusedLibrarySurface()?.ProfileName ?? AllLibraryProfilesFilter;
+                LibraryPanel.Visibility = Visibility.Visible;
+                RefreshLibraryUi();
+                break;
+            case "profiles":
+                _ = OpenProfilesManagerAsync();
+                break;
+            case "close":
+                DownloadsPanel.Visibility = Visibility.Collapsed;
+                LibraryPanel.Visibility = Visibility.Collapsed;
+                break;
+        }
+        UpdateOverlayRegion(_activeOverlayItems);
+    }
+
+    private void ShowOverlayWindow()
+    {
+        if (!_workspaceVisible || !_bridgeHandshakeComplete || _browserHwnd == IntPtr.Zero ||
+            _overlayWidth <= 0 || _overlayHeight <= 0) return;
+        _ = SetWindowPos(_overlayHwnd, IntPtr.Zero, _overlayScreenX, _overlayScreenY,
+            _overlayWidth, _overlayHeight, SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
+        _overlayShown = true;
+    }
+
+    private void HideOverlayWindow()
+    {
+        if (_overlayHwnd != IntPtr.Zero) _ = ShowWindow(_overlayHwnd, SW_HIDE);
+        _overlayShown = false;
+    }
+
+    private void RefreshOverlayActivation()
+    {
+        if (!_overlayShown || !_workspaceVisible || !_bridgeHandshakeComplete || _browserHwnd == IntPtr.Zero) return;
+        if (!IsWindow(_browserHwnd) || IsIconic(_browserHwnd)) { HideOverlayWindow(); return; }
+        var foreground = GetForegroundWindow();
+        var rootOwner = foreground == IntPtr.Zero ? IntPtr.Zero : GetAncestor(foreground, GA_ROOTOWNER);
+        if (foreground != _browserHwnd && foreground != _overlayHwnd && rootOwner != _browserHwnd)
+            HideOverlayWindow();
+    }    private void Workspace_NavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
     {
         if (IsTrustedWorkspaceUri(e.Uri)) return;
         e.Cancel = true;
@@ -332,47 +650,53 @@ public sealed partial class MainWindow : Window
     private void Workspace_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
         if (!IsTrustedWorkspaceUri(e.Source)) return;
-        try
+        try { ProcessWorkspaceMessage(JsonDocument.Parse(e.WebMessageAsJson).RootElement); }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException) { }
+    }
+
+    private void ProcessWorkspaceMessage(JsonElement root)
+    {
+        if (!TryGetString(root, "type", out var type)) return;
+        if (!root.TryGetProperty("protocol", out var protocol) ||
+            (protocol.GetInt32() != 1 && protocol.GetInt32() != 2)) return;
+        if (type == "nolane.host.hello")
         {
-            using var document = JsonDocument.Parse(e.WebMessageAsJson);
-            var root = document.RootElement;
-            if (!TryGetString(root, "type", out var type)) return;
-            if (!root.TryGetProperty("protocol", out var protocol) || protocol.GetInt32() != 1) return;
-            if (type == "nolane.host.hello")
-            {
-                _workspaceReady = true;
-                PostWorkspaceMessage(new { type = "nolane.native.ready", protocol = 1, engine = "WebView2", maxVisibleSurfaces = MaxVisibleSurfaces });
-                return;
-            }
-            if (type == "nolane.surface.command")
-            {
-                if (TryGetString(root, "id", out var surfaceId) && TryGetString(root, "action", out var action))
-                {
-                    string? targetUrl = null;
-                    if (root.TryGetProperty("url", out var urlElement) && urlElement.ValueKind == JsonValueKind.String)
-                        targetUrl = urlElement.GetString();
-                    ExecuteSurfaceCommand(surfaceId, action, targetUrl);
-                }
-                return;
-            }
-            if (type != "nolane.surfaces.sync") return;
-            UpdateProfileCardUsage(root);
-            if (!root.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array) return;
-            var parsed = new List<SurfaceDescriptor>();
-            foreach (var item in items.EnumerateArray())
-                if (TryParseDescriptor(item, out var descriptor)) parsed.Add(descriptor);
-            _pendingSurfaceSync = parsed;
-            _syncRevision++;
-            if (!_surfaceSyncRunning)
-            {
-                _surfaceSyncRunning = true;
-                _ = DrainSurfaceSyncQueueAsync();
-            }
+            _workspaceReady = true;
+            PostWorkspaceMessage(new { type = "nolane.native.ready", protocol = 2, engine = "WebView2-background", maxVisibleSurfaces = MaxVisibleSurfaces });
+            return;
         }
-        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+        if (type == "nolane.panel.command")
         {
-            StatusText.Text = "Ignored an invalid workspace surface message.";
+            if (root.TryGetProperty("panel", out var panelValue) && panelValue.ValueKind == JsonValueKind.String)
+                ExecutePanelCommand(panelValue.GetString() ?? "");
+            return;
         }
+        if (type == "nolane.panel.command")
+        {
+            if (root.TryGetProperty("panel", out var panelValue) && panelValue.ValueKind == JsonValueKind.String)
+                ExecutePanelCommand(panelValue.GetString() ?? "");
+            return;
+        }
+        if (type == "nolane.surface.command")
+        {
+            if (TryGetString(root, "id", out var surfaceId) && TryGetString(root, "action", out var action))
+            {
+                string? targetUrl = null;
+                if (root.TryGetProperty("url", out var urlElement) && urlElement.ValueKind == JsonValueKind.String) targetUrl = urlElement.GetString();
+                ExecuteSurfaceCommand(surfaceId, action, targetUrl);
+            }
+            return;
+        }
+        if (type != "nolane.surfaces.sync") return;
+        UpdateOverlayBounds(root);
+        UpdateProfileCardUsage(root);
+        if (!root.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array) return;
+        var parsed = new List<SurfaceDescriptor>();
+        foreach (var item in items.EnumerateArray())
+            if (TryParseDescriptor(item, out var descriptor)) parsed.Add(descriptor);
+        _pendingSurfaceSync = parsed;
+        _syncRevision++;
+        if (!_surfaceSyncRunning) { _surfaceSyncRunning = true; _ = DrainSurfaceSyncQueueAsync(); }
     }
 
     private async Task DrainSurfaceSyncQueueAsync()
@@ -402,6 +726,7 @@ public sealed partial class MainWindow : Window
     private async Task SynchronizeSurfacesAsync(List<SurfaceDescriptor> items, long revision)
     {
         if (revision != _syncRevision) return;
+            var activeItems = new List<SurfaceDescriptor>();
             var present = items.Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
             foreach (var staleId in _surfaces.Keys.Where(id => !present.Contains(id)).ToArray())
                 await RemoveSurfaceAsync(staleId);
@@ -443,6 +768,7 @@ public sealed partial class MainWindow : Window
                 surface.PendingRemoval = false;
                 ApplyBounds(surface.View, item);
                 await SetSurfaceVisibleAsync(surface, true);
+                activeItems.Add(item);
                 if (!StringComparer.Ordinal.Equals(surface.Url, item.Url))
                 {
                     surface.Url = item.Url;
@@ -451,8 +777,8 @@ public sealed partial class MainWindow : Window
                 }
             }
             await EvictHiddenSurfacesAsync();
-        StatusText.Text = $"WebView2 · {activeCount}/{MaxVisibleSurfaces} active · {MaxCachedSurfaces} cached max · adaptive memory budget" +
-            (_runtimeUpdateAvailable ? " · Runtime update ready; restart Nolane to apply" : "");
+            UpdateOverlayRegion(activeItems);
+        StatusText.Text = $"Background WebView2 · {activeCount}/{MaxVisibleSurfaces} active · {MaxCachedSurfaces} cached max";
     }
 
     private async Task<BrowserSurface?> GetOrCreateSurfaceAsync(SurfaceDescriptor item)
@@ -932,15 +1258,17 @@ public sealed partial class MainWindow : Window
 
     private void ToggleDownloads_Click(object sender, RoutedEventArgs e)
     {
-        if (DownloadsPanel.Visibility != Visibility.Visible)
-            LibraryPanel.Visibility = Visibility.Collapsed;
-        DownloadsPanel.Visibility = DownloadsPanel.Visibility == Visibility.Visible
-            ? Visibility.Collapsed : Visibility.Visible;
+        if (DownloadsPanel.Visibility != Visibility.Visible) LibraryPanel.Visibility = Visibility.Collapsed;
+        DownloadsPanel.Visibility = DownloadsPanel.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
         RefreshDownloadsUi();
+        UpdateOverlayRegion(_activeOverlayItems);
     }
 
-    private void CloseDownloads_Click(object sender, RoutedEventArgs e) =>
+    private void CloseDownloads_Click(object sender, RoutedEventArgs e)
+    {
         DownloadsPanel.Visibility = Visibility.Collapsed;
+        UpdateOverlayRegion(_activeOverlayItems);
+    }
 
     private void ClearFinishedDownloads_Click(object sender, RoutedEventArgs e)
     {
@@ -1603,7 +1931,9 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async void ManageProfiles_Click(object sender, RoutedEventArgs e)
+    private async void ManageProfiles_Click(object sender, RoutedEventArgs e) => await OpenProfilesManagerAsync();
+
+    private async Task OpenProfilesManagerAsync()
     {
         if (!_profileUsageReceived || _environment is null)
         {
@@ -1724,7 +2054,14 @@ public sealed partial class MainWindow : Window
             CloseButtonText = "Close",
             XamlRoot = Content.XamlRoot
         };
-        await dialog.ShowAsync();
+        _profilesDialogOpen = true;
+        UpdateOverlayRegion(_activeOverlayItems);
+        try { await dialog.ShowAsync(); }
+        finally
+        {
+            _profilesDialogOpen = false;
+            UpdateOverlayRegion(_activeOverlayItems);
+        }
     }
 
     private BrowserSurface? GetFocusedLibrarySurface()
@@ -1974,6 +2311,7 @@ public sealed partial class MainWindow : Window
         }
         LibraryPanel.Visibility = opening ? Visibility.Visible : Visibility.Collapsed;
         RefreshLibraryUi();
+        UpdateOverlayRegion(_activeOverlayItems);
     }
 
     private void LibrarySearch_TextChanged(object sender, TextChangedEventArgs e) =>
@@ -2149,15 +2487,18 @@ public sealed partial class MainWindow : Window
         RefreshLibraryUi();
     }
 
-    private void CloseLibrary_Click(object sender, RoutedEventArgs e) =>
+    private void CloseLibrary_Click(object sender, RoutedEventArgs e)
+    {
         LibraryPanel.Visibility = Visibility.Collapsed;
+        UpdateOverlayRegion(_activeOverlayItems);
+    }
 
     private void PostWorkspaceMessage(object message)
     {
         try
         {
-            if (_workspaceReady && WorkspaceView.CoreWebView2 is not null)
-                WorkspaceView.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(message));
+            if (_workspaceReady && _bridgeServer is not null)
+                _ = _bridgeServer.SendAsync(JsonSerializer.Serialize(message));
         }
         catch { }
     }
@@ -2170,6 +2511,7 @@ public sealed partial class MainWindow : Window
             PostWorkspaceMessage(new
             {
                 type = "nolane.native.surface",
+                protocol = 2,
                 id = surface.Id,
                 state,
                 detail = StringRaw(detail, 240),

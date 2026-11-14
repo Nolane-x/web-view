@@ -5,6 +5,9 @@ on:
     branches: ["main"]
     paths:
       - "desktop-host/**"
+      - "index.html"
+      - "README.md"
+      - "docs/ARCHITECTURE.md"
       - "native-diagnostics/**"
       - "app.js"
       - "native-bridge.js"
@@ -17,6 +20,9 @@ on:
     branches: ["main"]
     paths:
       - "desktop-host/**"
+      - "index.html"
+      - "README.md"
+      - "docs/ARCHITECTURE.md"
       - "native-diagnostics/**"
       - "app.js"
       - "native-bridge.js"

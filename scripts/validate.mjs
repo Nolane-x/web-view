@@ -75,16 +75,15 @@ else pass("Workspace import is staged and applied atomically.");
 if (/chrome\.cookies|chrome\.debugger|chrome\.tabs\.capture/i.test(js)) fail("Static workspace unexpectedly accesses privileged extension APIs.");
 else pass("Static workspace does not access privileged browser APIs.");
 
-if (!html.includes('id="bridgeDialog"') || !html.includes("Companion not detected")) fail("Browser Companion status UI is missing.");
-else pass("Browser Companion status is explicit and does not imply a working extension.");
-if (!js.includes("Chrome Companion and Native Host connected") || !js.includes("Native WebView2 host connected") || !js.includes("setBridgeConnected(bridgeConnected, bridgeSessionId)")) fail("Browser status UI must distinguish Chrome Companion and the native WebView2 host.");
-else pass("Browser status distinguishes the Chrome Companion, native host and combined mode.");
+if (!html.includes('id="bridgeDialog"') || !html.includes('id="connectWindowsBridgeButton"')) fail("Windows background bridge connection UI is missing.");
+else pass("Website has an explicit one-time Windows bridge connection action.");
+if (!js.includes("Nolane Windows Bridge connected") || !js.includes('new WebSocket("ws://127.0.0.1:43172/bridge", "nolane.infinite.v2")')) fail("Website does not identify and connect to the native Windows background bridge.");
+else pass("Website exposes the Windows background bridge state and local WebSocket connection.");
 if (!html.includes('<script src="./native-bridge.js" defer></script>') ||
     !html.includes("i-arrow-left") || !html.includes("i-volume-2")) fail("Native bridge script or browser-toolbar icons are missing.");
 else pass("Native bridge contract loads before the workspace and its control icons exist.");
-if (!html.includes("https://github.com/Nolane-x/web-view/releases/download/native-latest/nolane-native-webview2-host-win-x64.zip") || !html.includes("Native WebView2 Host (Windows x64)") ||
-    !html.includes("does not copy Chrome cookies")) fail("The native Windows browser host download and separate-profile disclosure are missing.");
-else pass("The website exposes the direct native Windows host download and Chrome-profile separation warning.");
+if (!html.includes("Windows background bridge") || !html.includes("No Chrome extension or browser debugger permission is required")) fail("Website onboarding must describe the Windows background bridge as the primary integration.");
+else pass("Website onboarding presents the Windows background bridge rather than extension installation.");
 
 const extensionManifest = JSON.parse(read("extension/manifest.json"));
 const extensionBridge = read("extension/content.js");
@@ -307,13 +306,14 @@ if (!nativeHost.includes("clearConfirmation.IsChecked == true") ||
     !nativeHost.includes("clearConfirmation.Unchecked") ||
     !nativeHost.includes("deleteConfirmation.Unchecked")) fail("Clearing and deleting browser profiles must each require an independent explicit confirmation.");
 else pass("Profile data clearing and profile deletion are protected by separate explicit confirmations.");
-if (!nativeHost.includes("WorkspaceView.Loaded += MainWindow_Loaded")) fail("Native browser host must initialize WebView2 from its control Loaded event.");
-else pass("Native browser host starts initialization only after the WebView2 control is loaded.");
+if (!nativeHost.includes("BrowserSurfaceLayer.Loaded += MainWindow_Loaded")) fail("Native background host must initialize its surface layer from the loaded XAML root.");
+else pass("Native background host starts from its surface layer without opening a workspace WebView.");
+
 if (!nativeHost.includes("surface.View.Close()") ||
-    !nativeHost.includes("WorkspaceView.Close()") ||
-    !nativeHost.includes("Closed += (_, _)") ||
-    nativeHost.includes('surface.View.CoreWebView2.Navigate("about:blank")')) fail("Removed native browser surfaces and the parent workspace control must explicitly close instead of leaving controller/event-handler references alive.");
-else pass("Native WebView2 controllers are explicitly closed on eviction, profile replacement, and host shutdown.");
+    !nativeHost.includes("Closed +=") ||
+    nativeHost.includes('surface.View.CoreWebView2.Navigate("about:blank")') ||
+    !nativeXaml.includes('x:Name="WorkspaceView" Visibility="Collapsed"')) fail("Background host must close all native browser surfaces and must not create a visible second workspace.");
+else pass("Native WebView2 surfaces are explicitly released and the legacy parent workspace view stays hidden.");
 if (!workflow.includes("Compile isolated WebView2 projection smoke test") ||
     !workflow.includes("native-diagnostics/WebView2ProjectionSmokeTest.csproj") ||
     !workflow.includes("dotnet build desktop-host/Nolane.DesktopHost.csproj") ||
@@ -444,7 +444,7 @@ if (!nativeSyncFunction.includes("canUseNativeSurface(node)") ||
     !js.includes("function clearUnavailableChromeTabBindings") ||
     !js.includes("clearUnavailableChromeTabBindings();")) fail("Native WebView2 must preserve current Chrome sessions and convert stale imported tab IDs.");
 else pass("Native WebView2 surfaces preserve Chrome-owned tabs and active Chrome live streams.");
-if (!js.includes("scheduleNativeSurfaceSync") || !js.includes("chrome.webview.postMessage") ||
+if (!js.includes("scheduleNativeSurfaceSync") || !js.includes("sendNativeBridgeMessage") ||
     !js.includes("postNativeSurfaceCommand") || !js.includes("native-back") ||
     !js.includes("native-forward") || !js.includes("native-mute") ||
     !js.includes("nolane.native.ready") || !js.includes("nolane.native.surface") ||
@@ -455,6 +455,63 @@ if (!nativeHost.includes("_pendingSurfaceSync") || !nativeHost.includes("DrainSu
 else pass("Native surface synchronization coalesces stale layouts and uses an explicit ready handshake.");
 if (!nativeHost.includes('uri.AbsolutePath.Equals("/web-view"') || !nativeHost.includes('uri.AbsolutePath.StartsWith("/web-view/"')) fail("Native host workspace origin/path allowlist is too broad.");
 else pass("Native host accepts only the exact Nolane workspace path family.");
+
+const localBridge = read("desktop-host/LocalBridgeServer.cs");
+const trayIcon = read("desktop-host/BackgroundTrayIcon.cs");
+if (!localBridge.includes("IPAddress.Loopback") ||
+    !localBridge.includes("Port = 43172") ||
+    !localBridge.includes('"127.0.0.1:" + Port') ||
+    !localBridge.includes("https://nolane-x.github.io") ||
+    !localBridge.includes('RequiredProtocol = "nolane.infinite.v2"') ||
+    !localBridge.includes("MaxMessageBytes = 2 * 1024 * 1024") ||
+    localBridge.includes("IPAddress.Any")) fail("Windows background bridge must be loopback-only, origin-locked and bounded.");
+else pass("Windows bridge is loopback-only, validates the exact website Origin and caps message size.");
+
+if (!nativeHost.includes("UpdateOverlayBounds(root)") ||
+    !nativeHost.includes("Chrome_RenderWidgetHostHWND") ||
+    !nativeHost.includes("UpdateOverlayRegion(activeItems)") ||
+    !nativeHost.includes("DwmExtendFrameIntoClientArea") ||
+    !nativeHost.includes("SetWindowRgn") ||
+    !nativeHost.includes("RefreshOverlayActivation") ||
+    !nativeHost.includes("BrowserSurfaceLayer.Loaded += MainWindow_Loaded")) fail("Native host must create the transparent browser-aligned overlay and manage focus/visibility.");
+else pass("Native host builds a transparent click-through overlay over the active browser viewport.");
+
+if (!nativeHost.includes("BackgroundTrayIcon.EnableStartupAfterFirstConnection()") ||
+    !trayIcon.includes("CurrentVersion\\Run") ||
+    !trayIcon.includes("Exit background bridge") ||
+    !read("desktop-host/App.xaml.cs").includes("NolaneInfiniteBackgroundBridge")) fail("Background host startup, single-instance protection or tray exit path is missing.");
+else pass("Background bridge is single-instance, registers startup after connection and exposes a tray exit action.");
+
+if (!js.includes('new WebSocket("ws://127.0.0.1:43172/bridge", "nolane.infinite.v2")') ||
+    !js.includes('navigator.permissions.query({ name: "loopback-network" })') ||
+    !js.includes("connectWindowsBridge") ||
+    !js.includes("nolane.workspace.visibility") ||
+    !html.includes('id="connectWindowsBridgeButton"')) fail("Website must request loopback access from a user gesture, reconnect when granted and expose the Windows bridge connection control.");
+else pass("Website connects to the Windows background bridge through the browser's Loopback Network Access permission.");
+
+if (!js.includes("screenLeft") || !js.includes("screenTop") || !js.includes("deviceScale") ||
+    !nativeBridge.includes("function normalizeViewport(value)") ||
+    !nativeBridgeTests.includes("viewport metadata is bounded")) fail("Viewport screen geometry must be validated before native overlay positioning.");
+else pass("Workspace sends bounded screen viewport geometry for native overlay positioning.");
+
+if (html.includes("Download Browser Companion 0.2.13") ||
+    html.includes("Stream this tab to Nolane") ||
+    html.includes("Chrome Companion →") ||
+    html.includes("Companion not detected")) fail("The primary website experience must not require or promote the Chrome extension.");
+else pass("Primary website onboarding no longer promotes or requires the Chrome Companion extension.");
+
+if (!nativeHost.includes("ExecutePanelCommand") ||
+    !nativeHost.includes("OpenProfilesManagerAsync") ||
+    !js.includes("sendNativePanelCommand") ||
+    !html.includes('id="downloadsButton"') ||
+    !html.includes('id="libraryButton"') ||
+    !html.includes('id="profilesButton"')) fail("Downloads, Library and Profiles must be operated from the Nolane website rather than the hidden host window.");
+else pass("Website toolbar owns Downloads, Library and Profiles commands; the Windows process only renders their native panels.");
+
+if (!trayIcon.includes("EnableStartupAfterFirstConnection") ||
+    !trayIcon.includes("StartupChoiceValue") ||
+    !trayIcon.includes('key.SetValue(StartupChoiceValue, "disabled")')) fail("First connection startup registration must respect an explicit user decision to disable auto-start.");
+else pass("Windows auto-start is enabled after first connection unless the user has explicitly disabled it.");
 
 if (process.exitCode) process.exit(process.exitCode);
 console.log("All static checks passed.");

@@ -41,6 +41,10 @@
   let nativeMaxVisibleSurfaces = 2;
   let nativeSyncFrame = 0;
   let nativeHostReadyNotified = false;
+  let nativeBridgeSocket = null;
+  let nativeBridgePermission = "unknown";
+  let nativeBridgeReconnectTimer = 0;
+  let nativeBridgeReconnectAttempts = 0;
   let bridgeConnected = false;
   let bridgeSessionId = "";
   const liveSurfaces = new Map();
@@ -420,14 +424,20 @@
       !isChromeOwnedNode(node) && !liveSurfaces.has(node.id));
   }
 
+  function sendNativePanelCommand(panel) {
+    if (!sendNativeBridgeMessage({ type: "nolane.panel.command", protocol: 2, panel }))
+      toast("Windows background bridge is not connected.", "error");
+  }
+
+  function sendNativeBridgeMessage(message) {
+    if (!nativeBridgeSocket || nativeBridgeSocket.readyState !== WebSocket.OPEN) return false;
+    try { nativeBridgeSocket.send(JSON.stringify(message)); return true; }
+    catch (_) { return false; }
+  }
+
   function postNativeSurfaceCommand(surfaceId, action) {
     const command = window.NolaneNativeBridge?.createCommand(surfaceId, action);
-    if (!command || !window.chrome?.webview?.postMessage) {
-      toast("Native browser controls are not connected.", "error");
-      return;
-    }
-    try { window.chrome.webview.postMessage(command); }
-    catch (_) { toast("Could not send the browser command to Native Host.", "error"); }
+    if (!command || !sendNativeBridgeMessage(command)) toast("Windows background bridge is not connected.", "error");
   }
 
   function navigateNativeSurface(surfaceId, rawUrl) {
@@ -438,20 +448,15 @@
       return;
     }
     const command = window.NolaneNativeBridge?.createNavigationCommand(surfaceId, url);
-    if (!command || !window.chrome?.webview?.postMessage) {
-      toast("Native browser is not connected or this address is not supported.", "error");
+    if (!command || !sendNativeBridgeMessage(command)) {
+      toast("Windows background bridge is not connected or this address is not supported.", "error");
       return;
     }
-    try {
-      window.chrome.webview.postMessage(command);
-      toast("Navigating to " + hostOf(url) + ".");
-    } catch (_) {
-      toast("Could not navigate this website card.", "error");
-    }
+    toast("Navigating to " + hostOf(url) + ".");
   }
 
   function scheduleNativeSurfaceSync() {
-    if (!nativeHostAvailable || !window.chrome?.webview?.postMessage || nativeSyncFrame) return;
+    if (!nativeHostAvailable || !nativeBridgeSocket || nativeBridgeSocket.readyState !== WebSocket.OPEN || nativeSyncFrame) return;
     nativeSyncFrame = requestAnimationFrame(() => {
       nativeSyncFrame = 0;
       syncActiveSpace();
@@ -491,28 +496,38 @@
           zIndex: Number(node.z) || 1, visible
         });
       }
-      try {
-        window.chrome.webview.postMessage({
-          type: "nolane.surfaces.sync",
-          protocol: 1,
-          items,
-          profileUsage
-        });
-      } catch (_) {}
+      const outerWidth = Number(window.outerWidth) || window.innerWidth;
+      const outerHeight = Number(window.outerHeight) || window.innerHeight;
+      const viewport = {
+        screenLeft: (Number(window.screenX) || 0) + Math.max(0, (outerWidth - window.innerWidth) / 2),
+        screenTop: (Number(window.screenY) || 0) + Math.max(0, outerHeight - window.innerHeight - 8),
+        width: window.innerWidth,
+        height: window.innerHeight,
+        deviceScale: window.devicePixelRatio || 1
+      };
+      sendNativeBridgeMessage({
+        type: "nolane.surfaces.sync",
+        protocol: 2,
+        viewport,
+        workspaceVisible: document.visibilityState === "visible",
+        items: items.map((item) => document.visibilityState === "visible" ? item : { ...item, visible: false }),
+        profileUsage
+      });
     });
   }
 
   function handleNativeHostMessage(event) {
-    const message = event?.data;
+    const message = event?.data ?? event;
     if (!message || typeof message !== "object") return;
     if (message.type === "nolane.native.ready") {
       nativeHostAvailable = true;
+      nativeBridgeReconnectAttempts = 0;
       const reportedBudget = Number(message.maxVisibleSurfaces);
       nativeMaxVisibleSurfaces = Number.isInteger(reportedBudget) ? clamp(reportedBudget, 1, 8) : 2;
-      setBridgeConnected(bridgeConnected, bridgeSessionId);
+      setBridgeConnected(false, "");
       if (!nativeHostReadyNotified) {
         nativeHostReadyNotified = true;
-        toast("Native WebView2 is connected. This device can keep up to " + nativeMaxVisibleSurfaces + " website surfaces active at once.");
+        toast("Nolane Windows Bridge connected. Website cards now use native browser surfaces.");
       }
       renderNodes();
       return;
@@ -617,15 +632,26 @@
     }
   }
 
-  if (window.chrome?.webview?.addEventListener) {
-    window.chrome.webview.addEventListener("message", handleNativeHostMessage);
-    window.addEventListener("resize", scheduleNativeSurfaceSync, { passive: true });
-    window.chrome.webview.postMessage({ type: "nolane.host.hello", protocol: 1 });
-    const nativeUiObserver = new MutationObserver(scheduleNativeSurfaceSync);
-    document.querySelectorAll("dialog, #sidebar").forEach((element) => {
-      nativeUiObserver.observe(element, { attributes: true, attributeFilter: ["open", "class"] });
-    });
-  }
+  window.addEventListener("resize", scheduleNativeSurfaceSync, { passive: true });
+  window.addEventListener("scroll", scheduleNativeSurfaceSync, { passive: true, capture: true });
+  document.addEventListener("visibilitychange", () => {
+    sendNativeBridgeMessage({ type: "nolane.workspace.visibility", protocol: 2, visible: document.visibilityState === "visible" });
+    scheduleNativeSurfaceSync();
+  });
+  window.addEventListener("focus", () => {
+    sendNativeBridgeMessage({ type: "nolane.workspace.visibility", protocol: 2, visible: true });
+    scheduleNativeSurfaceSync();
+  });
+  window.addEventListener("blur", () => {
+    sendNativeBridgeMessage({ type: "nolane.workspace.visibility", protocol: 2, visible: document.visibilityState === "visible" });
+  });
+  const nativeUiObserver = new MutationObserver(scheduleNativeSurfaceSync);
+  document.querySelectorAll("dialog, #sidebar").forEach((element) => {
+    nativeUiObserver.observe(element, { attributes: true, attributeFilter: ["open", "class"] });
+  });
+  window.addEventListener("pagehide", () => {
+    try { nativeBridgeSocket?.close(1000, "Workspace page closed"); } catch (_) {}
+  });
 
   function worldPoint(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
@@ -1797,35 +1823,29 @@
   }
 
   function setBridgeConnected(connected, sessionId) {
-    bridgeConnected = !!connected;
-    bridgeSessionId = bridgeConnected && typeof sessionId === "string" ? sessionId : "";
+    bridgeConnected = false;
+    bridgeSessionId = "";
     const title = $("#bridgeStatusTitle");
     const detail = $("#bridgeStatusText");
     const pill = $("#bridgeStatusPill");
     const panel = $(".bridge-status-large");
     const sidebar = $("#bridgeSidebarState");
-    const nativeConnected = nativeHostAvailable;
-    const anyConnected = bridgeConnected || nativeConnected;
-    const connectionLabel = bridgeConnected && nativeConnected ? "Chrome + Native" :
-      bridgeConnected ? "Chrome Companion" : nativeConnected ? "Native WebView2" : "Not connected";
-    if (title) title.textContent = bridgeConnected && nativeConnected
-      ? "Chrome Companion and Native Host connected"
-      : bridgeConnected ? "Browser Companion connected"
-        : nativeConnected ? "Native WebView2 host connected" : "Browser integrations not detected";
-    if (detail) detail.textContent = bridgeConnected && nativeConnected
-      ? "Chrome tabs keep their original sessions; standalone website cards use native WebView2 surfaces."
-      : bridgeConnected ? "Import Chrome tabs or stream an authenticated Chrome page into a card."
-        : nativeConnected ? "Website cards use real WebView2 browsers. This device's adaptive resource budget allows up to " + nativeMaxVisibleSurfaces + " active pages at once; logins are stored in the native profile."
-          : "Install the Chrome Companion or open the Windows Native WebView2 Host.";
-    if (pill) pill.textContent = bridgeConnected && nativeConnected ? "Both" :
-      bridgeConnected ? "Chrome" : nativeConnected ? "Native" : "Not connected";
-    if (panel) panel.classList.toggle("connected", anyConnected);
-    if (sidebar) sidebar.innerHTML = '<i class="status-dot' + (anyConnected ? ' green' : '') + '"></i> ' + connectionLabel;
+    const connectedNow = nativeHostAvailable;
+    if (title) title.textContent = connectedNow ? "Nolane Windows Bridge connected" : "Windows bridge not connected";
+    if (detail) detail.textContent = connectedNow
+      ? "Windows is running in the background. Website cards use real WebView2 surfaces; no extension is needed."
+      : "Start the Windows background bridge, then allow this website to connect to the local companion once.";
+    if (pill) pill.textContent = connectedNow ? "Connected" : "Not connected";
+    if (panel) panel.classList.toggle("connected", connectedNow);
+    if (sidebar) sidebar.innerHTML = '<i class="status-dot' + (connectedNow ? ' green' : '') + '"></i> ' + (connectedNow ? "Windows bridge" : "Connect Windows");
     const footer = $("#bridgeFooterState");
-    if (footer) footer.textContent = bridgeConnected && nativeConnected
-      ? "Chrome Companion + Native WebView2 · Connected"
-      : bridgeConnected ? "Chrome Companion · Connected"
-        : nativeConnected ? "Native WebView2 · Connected" : "Optional local browser integration";
+    if (footer) footer.textContent = connectedNow ? "Windows background bridge · Connected" : "No extension required · Windows bridge";
+    const connectButton = $("#connectWindowsBridgeButton");
+    if (connectButton) {
+      connectButton.disabled = connectedNow || nativeBridgePermission === "denied";
+      connectButton.textContent = connectedNow ? "Connected" :
+        nativeBridgePermission === "denied" ? "Enable loopback access in site settings" : "Connect Windows bridge";
+    }
   }
 
   function addBrowserTabsToWorkspace(tabs, sessionId) {
@@ -1955,8 +1975,72 @@
     }
   }
 
-  function pingCompanion() {
-    window.postMessage({ source: "nolane-workspace", type: "PING_COMPANION" }, location.origin);
+  async function refreshWindowsBridgePermission() {
+    try {
+      const permission = await navigator.permissions.query({ name: "loopback-network" });
+      nativeBridgePermission = permission.state;
+      permission.onchange = () => {
+        nativeBridgePermission = permission.state;
+        setBridgeConnected(false, "");
+        if (nativeBridgePermission === "granted" && !nativeHostAvailable) connectWindowsBridge();
+      };
+    } catch (_) { nativeBridgePermission = "unknown"; }
+    setBridgeConnected(false, "");
+  }
+
+  function connectWindowsBridge() {
+    if (nativeHostAvailable || nativeBridgeSocket?.readyState === WebSocket.CONNECTING ||
+        nativeBridgeSocket?.readyState === WebSocket.OPEN) return;
+    if (!window.isSecureContext) return toast("The Windows bridge requires the secure HTTPS Nolane website.", "error");
+    let socket;
+    try { socket = new WebSocket("ws://127.0.0.1:43172/bridge", "nolane.infinite.v2"); }
+    catch (_) { return toast("Could not open the local connection. Check that the Windows bridge is running.", "error"); }
+    nativeBridgeSocket = socket;
+    socket.addEventListener("open", () => {
+      nativeBridgeReconnectAttempts = 0;
+      socket.send(JSON.stringify({ type: "nolane.bridge.hello", protocol: 2, page: location.origin }));
+    }, { once: true });
+    socket.addEventListener("message", (event) => {
+      let message;
+      try { message = JSON.parse(event.data); } catch (_) { return; }
+      handleNativeHostMessage(message);
+      if (message.type === "nolane.native.ready") {
+        sendNativeBridgeMessage({ type: "nolane.workspace.visibility", protocol: 2, visible: document.visibilityState === "visible" });
+        scheduleNativeSurfaceSync();
+      }
+    });
+    socket.addEventListener("error", () => {
+      if (!nativeHostAvailable) setBridgeConnected(false, "");
+    });
+    socket.addEventListener("close", () => {
+      if (nativeBridgeSocket === socket) nativeBridgeSocket = null;
+      const wasConnected = nativeHostAvailable;
+      nativeHostAvailable = false;
+      nativeHostReadyNotified = false;
+      nativeSurfaceStates.clear();
+      renderNodes();
+      setBridgeConnected(false, "");
+      if (wasConnected) toast("Windows background bridge disconnected.", "error");
+      queueWindowsBridgeReconnect();
+    }, { once: true });
+  }
+
+  function queueWindowsBridgeReconnect() {
+    if (nativeBridgeReconnectTimer || nativeBridgePermission !== "granted" ||
+        document.visibilityState !== "visible" || nativeBridgeReconnectAttempts >= 8) return;
+    const delay = Math.min(15000, 800 * Math.pow(1.7, nativeBridgeReconnectAttempts++));
+    nativeBridgeReconnectTimer = window.setTimeout(() => {
+      nativeBridgeReconnectTimer = 0;
+      connectWindowsBridge();
+    }, delay);
+  }
+
+  async function initializeWindowsBridge() {
+    await refreshWindowsBridgePermission();
+    if (nativeBridgePermission === "granted") connectWindowsBridge();
+    window.setInterval(() => {
+      if (nativeHostAvailable) scheduleNativeSurfaceSync();
+    }, 220);
   }
 
   function deleteNode(id) {
@@ -2243,9 +2327,13 @@
   function initEvents() {
     addForm.addEventListener("submit", (event) => event.preventDefault());
     $("#addButton").addEventListener("click", () => openAddDialog("website"));
-    $("#bridgeButton").addEventListener("click", () => { $("#bridgeDialog").showModal(); pingCompanion(); });
+    $("#downloadsButton")?.addEventListener("click", () => sendNativePanelCommand("downloads"));
+    $("#libraryButton")?.addEventListener("click", () => sendNativePanelCommand("library"));
+    $("#profilesButton")?.addEventListener("click", () => sendNativePanelCommand("profiles"));
+    $("#bridgeButton").addEventListener("click", () => { $("#bridgeDialog").showModal(); refreshWindowsBridgePermission(); });
+    $("#connectWindowsBridgeButton")?.addEventListener("click", connectWindowsBridge);
     window.addEventListener("message", handleCompanionMessage);
-    pingCompanion();
+    initializeWindowsBridge();
     $("#helpButton").addEventListener("click", () => $("#helpDialog").showModal());
     $("#importButton").addEventListener("click", () => fileInput.click());
     $("#exportButton").addEventListener("click", exportWorkspace);

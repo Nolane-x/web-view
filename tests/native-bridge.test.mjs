@@ -10,7 +10,7 @@ const bridge = window.NolaneNativeBridge;
 
 test("native browser commands use a versioned allow-listed protocol", () => {
   assert.deepEqual(JSON.parse(JSON.stringify(bridge.createCommand("node-1", "back"))), {
-    type: "nolane.surface.command", protocol: 1, id: "node-1", action: "back"
+    type: "nolane.surface.command", protocol: 2, id: "node-1", action: "back"
   });
   assert.equal(bridge.createCommand("node-1", "execute-script"), null);
   assert.equal(bridge.createCommand("", "reload"), null);
@@ -132,4 +132,11 @@ test("native surface state reports private mode only when the host sends a boole
     type: "nolane.native.surface", id: "profile-2", state: "ready", profileName: "bad/name"
   });
   assert.equal(invalidProfile.profileName, null);
+});
+
+test("viewport metadata is bounded and normalized for the Windows overlay", () => {
+  const viewport = bridge.normalizeViewport({ screenLeft: 10, screenTop: 50, width: 1440, height: 900, deviceScale: 1.5 });
+  assert.deepEqual(JSON.parse(JSON.stringify(viewport)), { screenLeft: 10, screenTop: 50, width: 1440, height: 900, deviceScale: 1.5 });
+  assert.equal(bridge.normalizeViewport({ screenLeft: 0, screenTop: 0, width: 20, height: 900, deviceScale: 1 }), null);
+  assert.equal(bridge.normalizeViewport({ screenLeft: "NaN", screenTop: 0, width: 1440, height: 900, deviceScale: 1 }), null);
 });

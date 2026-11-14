@@ -24,6 +24,7 @@
     <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
     <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
     <symbol id="i-maximize" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M3 16v3a2 2 0 0 0 2 2h3"/></symbol>
+    <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M6 3.5h12v17l-6-4-6 4z"/></symbol>
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3"/></symbol>
     <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4m-5 5 5-5 5 5M4 17v3h16v-3"/></symbol>
     <symbol id="i-command" viewBox="0 0 24 24"><path d="M9 7V5a2.5 2.5 0 1 0-2.5 2.5H9Zm0 0h6m0 0h2.5A2.5 2.5 0 1 0 15 5v2Zm0 0v10m0 0v2a2.5 2.5 0 1 0 2.5-2.5H15Zm0 0H9m0 0H6.5A2.5 2.5 0 1 0 9 19v-2Zm0 0V7"/></symbol>
@@ -77,7 +78,7 @@
       </div>
       <button class="bridge-card" id="bridgeButton" type="button">
         <span class="bridge-icon"><svg class="icon"><use href="#i-puzzle"/></svg></span>
-        <span class="bridge-copy"><strong>Browser Companion</strong><small id="bridgeSidebarState"><i class="status-dot"></i> Not connected</small></span>
+        <span class="bridge-copy"><strong>Windows background bridge</strong><small id="bridgeSidebarState"><i class="status-dot"></i> Not connected</small></span>
         <svg class="icon bridge-arrow"><use href="#i-chevron"/></svg>
       </button>
       <div class="sidebar-footer"><span>Preview build · 0.1.0</span><button class="icon-button tiny" id="helpButton" title="Help"><svg class="icon"><use href="#i-help"/></svg></button></div>
@@ -92,6 +93,9 @@
         </div>
         <div class="topbar-actions">
           <label class="search-box" for="searchInput"><svg class="icon"><use href="#i-search"/></svg><input id="searchInput" type="search" placeholder="Find anything..." autocomplete="off"><kbd>/</kbd></label>
+          <button class="icon-button top-action" id="downloadsButton" title="Downloads" aria-label="Downloads"><svg class="icon"><use href="#i-download"/></svg></button>
+          <button class="icon-button top-action" id="libraryButton" title="History and bookmarks" aria-label="History and bookmarks"><svg class="icon"><use href="#i-bookmark"/></svg></button>
+          <button class="icon-button top-action" id="profilesButton" title="Browser profiles" aria-label="Browser profiles"><svg class="icon"><use href="#i-shield"/></svg></button>
           <button class="icon-button top-action" id="importButton" title="Import workspace"><svg class="icon"><use href="#i-upload"/></svg></button>
           <button class="icon-button top-action" id="exportButton" title="Export workspace"><svg class="icon"><use href="#i-download"/></svg></button>
           <span class="top-divider"></span>
@@ -133,7 +137,7 @@
       <section class="modal-panel active" id="websitePanel">
         <label class="field-label" for="websiteUrl">Website address</label>
         <div class="url-input"><svg class="icon"><use href="#i-globe"/></svg><input id="websiteUrl" type="text" placeholder="https://example.com" autocomplete="url" spellcheck="false"><span class="input-lock">↗</span></div>
-        <p class="field-help">For the most compatible view, open the website in a normal Chrome tab, then use Nolane Companion → Stream this tab to Nolane. This renders the actual tab instead of embedding it in an iframe.</p>
+        <p class="field-help">Add any HTTP or HTTPS website. When the Windows background bridge is connected, the page opens in a real native browser surface on this canvas.</p>
         <label class="field-label" for="websiteTitle">Display name <span>Optional</span></label>
         <input class="text-input" id="websiteTitle" type="text" placeholder="e.g. Product research">
         <div class="suggestion-label">QUICK ADD</div>
@@ -155,16 +159,17 @@
 
   <dialog class="modal info-modal" id="bridgeDialog">
     <form method="dialog" class="modal-frame">
-      <div class="modal-head"><div><span class="modal-eyebrow">LOCAL BROWSER INTEGRATION</span><h2>Browser integrations</h2><p>Use your Chrome sessions or real native browser surfaces inside the workspace.</p></div><button class="icon-button" value="cancel" aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button></div>
-      <div class="bridge-status-large"><span class="bridge-orbit"><svg class="icon"><use href="#i-puzzle"/></svg></span><div><strong id="bridgeStatusTitle">Companion not detected</strong><small id="bridgeStatusText">Install the local extension, then refresh this page.</small></div><span class="status-pill" id="bridgeStatusPill">Not connected</span></div>
-      <div class="info-callout"><svg class="icon"><use href="#i-info"/></svg><p><strong>Live Chrome Surface:</strong> open a website in Chrome, then click the Companion toolbar icon on that active tab and choose “Stream this tab to Nolane”. The actual Chrome tab is captured as a local video stream; mouse and keyboard input from the canvas are sent back to that tab. No frame relay or server is used.</p></div>
-      <div class="info-callout"><svg class="icon"><use href="#i-info"/></svg><p><strong>Permission warning:</strong> version 0.2.13 requires Chrome’s debugger and tab-capture permissions. Chrome warns that debugger can access the page debugger backend and read/change data on all websites. The implementation uses fixed input commands and viewport metrics, but the permission itself is broad. Install only if you trust the source code.</p></div>
-      <div class="bridge-capabilities"><div><svg class="icon"><use href="#i-check"/></svg><span>Live capture begins only after you explicitly start it from the active source tab</span></div><div><svg class="icon"><use href="#i-check"/></svg><span>The captured stream is consumed directly in this workspace tab</span></div><div><svg class="icon"><use href="#i-check"/></svg><span>Cookies, passwords and page HTML are not sent to a server</span></div></div>
-      <div class="info-callout"><svg class="icon"><use href="#i-info"/></svg><p><strong>Native Windows browser surfaces:</strong> the standard GitHub Pages site cannot create real embedded browser controls inside Chrome. For direct in-canvas website interaction, download and run the Windows host below. It places real WebView2 browsers over ordinary website cards. The host keeps its own login profile and does not copy Chrome cookies; a currently connected Chrome tab continues using the original Chrome session.</p></div>
-      <div class="info-callout"><svg class="icon"><use href="#i-info"/></svg><p><strong>Move your workspace:</strong> workspace data in Chrome and the Windows host live in separate browser profiles. Before switching, use the top-bar Export button in Chrome to save a workspace JSON file. Open the Windows host, then use Import to load that file. Sign in to websites again inside the native host; its website logins will then be kept there.</p></div>
-      <div class="bridge-install-row"><a class="button button-primary" href="https://github.com/Nolane-x/web-view/releases/download/native-latest/nolane-native-webview2-host-win-x64.zip" target="_blank" rel="noopener noreferrer">Download Native WebView2 Host (Windows x64) <svg class="icon"><use href="#i-download"/></svg></a></div>
-      <div class="bridge-install-row"><a class="button button-secondary" href="https://nolane-x.github.io/web-view/downloads/nolane-browser-companion-0.2.13.zip" target="_blank" rel="noopener noreferrer">Download Browser Companion 0.2.13 <svg class="icon"><use href="#i-download"/></svg></a></div>
-      <div class="modal-foot"><span class="private-foot" id="bridgeFooterState">Optional local companion · MV3</span><button class="button button-secondary" value="cancel">Close</button></div>
+      <div class="modal-head"><div><span class="modal-eyebrow">WINDOWS BACKGROUND BRIDGE</span><h2>Connect your Windows device.</h2><p>The Windows host works quietly in the background. You continue using this website as your workspace.</p></div><button class="icon-button" value="cancel" aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button></div>
+      <div class="bridge-status-large"><span class="bridge-orbit"><svg class="icon"><use href="#i-monitor"/></svg></span><div><strong id="bridgeStatusTitle">Windows bridge not connected</strong><small id="bridgeStatusText">Start the Windows background bridge, then connect once.</small></div><span class="status-pill" id="bridgeStatusPill">Not connected</span></div>
+      <div class="info-callout"><svg class="icon"><use href="#i-info"/></svg><p><strong>One-time browser permission:</strong> Chrome/Edge asks to let Nolane connect to its local Windows companion. This is a browser security control. Approve it once; future visits reconnect automatically while the Windows bridge is running.</p></div>
+      <div class="bridge-capabilities">
+        <div><svg class="icon"><use href="#i-check"/></svg><span>No Chrome extension or browser debugger permission is required</span></div>
+        <div><svg class="icon"><use href="#i-check"/></svg><span>Real WebView2 browser surfaces are positioned over website cards</span></div>
+        <div><svg class="icon"><use href="#i-check"/></svg><span>The local service binds only to 127.0.0.1 and accepts the Nolane website origin</span></div>
+      </div>
+      <div class="bridge-install-row"><a class="button button-primary" href="https://github.com/Nolane-x/web-view/releases/download/native-latest/nolane-native-webview2-host-win-x64.zip" target="_blank" rel="noopener noreferrer">Download Windows background bridge <svg class="icon"><use href="#i-download"/></svg></a></div>
+      <div class="bridge-install-row"><button class="button button-primary" id="connectWindowsBridgeButton" type="button">Connect Windows bridge</button></div>
+      <div class="modal-foot"><span class="private-foot" id="bridgeFooterState">No extension required · Local Windows service</span><button class="button button-secondary" value="cancel">Close</button></div>
     </form>
   </dialog>
 
@@ -179,8 +184,8 @@
         <div><kbd>N</kbd><span>Create a note from anywhere on the canvas.</span></div>
         <div><kbd>⌘ / Ctrl + S</kbd><span>Save your current workspace locally.</span></div>
       </div>
-      <div class="info-callout"><svg class="icon"><use href="#i-info"/></svg><p>Some websites block iframe embedding. Run the Windows Native WebView2 Host for real in-canvas browser surfaces; it uses a separate login profile from Chrome. Use the Browser Companion when an existing Chrome tab and its current login session must be preserved.</p></div>
-      <div class="modal-foot"><span class="private-foot">Nolane Infinite · Live Surface preview 0.2.13</span><button class="button button-primary" value="cancel">Let's go</button></div>
+      <div class="info-callout"><svg class="icon"><use href="#i-info"/></svg><p>Some websites block iframe embedding. The Windows background bridge opens these websites as native WebView2 surfaces directly over the cards on this canvas. The Windows host keeps its own sign-in profiles.</p></div>
+      <div class="modal-foot"><span class="private-foot">Nolane Infinite · Windows background bridge</span><button class="button button-primary" value="cancel">Let's go</button></div>
     </form>
   </dialog>
 

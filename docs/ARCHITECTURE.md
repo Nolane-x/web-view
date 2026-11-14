@@ -48,9 +48,9 @@ The code deliberately does not expose a generic CDP command bridge and does not 
 - Chrome-only; minimum supported version is 116.
 - Each source tab must be explicitly streamed while it is active. It is not a silent background-tab capture tool.
 
-## Native Windows browser host: long-term endpoint
+## Native Windows browser host
 
-For a true composited browser child, the strongest documented Windows route is WebView2 Composition Controller. It combines a real WebView2 surface with the native visual tree and exposes mouse/pointer/focus APIs. It avoids iframe anti-framing headers and video-mirror latency, but WebView2 uses its own user-data folder/profile; it does not automatically inherit Chrome cookies. A native host is a separate Windows desktop application, not something a static GitHub Pages website or MV3 extension can become by itself.
+The current Windows implementation uses real WebView2 child controls in a transparent overlay owned by the browser window. The host is a background bridge rather than a second workspace application. WebView2 keeps its own user-data folder and sign-in profiles; it does not inherit Chrome cookies.
 
 ## Non-goals
 
@@ -61,28 +61,19 @@ For a true composited browser child, the strongest documented Windows route is W
 - Uploading the user's workspace, notes or captured page frames to remote services.
 
 
-## Native WebView2 host integration (desktop-host v0.1.0)
+## Windows background bridge integration (protocol v2)
 
-The optional Windows host opens the existing GitHub Pages workspace as its parent WebView2 document and places child WebView2 controls in a transparent WinUI 3 Canvas above it. The workspace sends a versioned nolane.surfaces.sync message containing each website card's measured viewport rectangle, URL, visibility and stacking order. The host validates that messages come only from the exact Nolane GitHub Pages origin/path, then creates or repositions a child WebView2 control using a single shared CoreWebView2Environment and user-data folder. All child surfaces share a native-host login profile, but do not inherit Chrome profile cookies.
+The shipping Windows process does not host a second Nolane workspace window. It starts a loopback-only TCP listener on `127.0.0.1:43172`, implements a bounded WebSocket handshake, requires the exact `https://nolane-x.github.io` Origin and the `nolane.infinite.v2` subprotocol, and caps incoming text messages at 2 MiB. No HTTP.sys URL reservation or administrator elevation is required.
 
-Because the child controls are native browser controls in the XAML visual tree, the actual site receives browser-native mouse, keyboard, pointer, focus and scrolling input. There is no frame screenshot, tabCapture stream or CDP Input command in this path. The workspace keeps its normal HTML canvas, node persistence, pan/zoom and toolbar; native controls cover only the website-card body. Their bounds are resynchronized after canvas transforms, pan, drag, resize and window changes.
+The website queries Chrome/Edge's granular `loopback-network` permission. A first-time connection is initiated only by a user click; once the permission is granted, the site reconnects automatically. The host starts with the current Windows user after the first successful website handshake, is single-instance, and lives in the notification area.
 
-Resource policy: at most four visible child browsers are active concurrently. Hidden/off-screen surfaces are collapsed and suspended with WebView2's suspension API, and stale controls are evicted when the bounded cache grows beyond eight. This keeps renderer count bounded on modest machines. Popup/window flows and browser-owned OS surfaces remain WebView2-runtime behaviors and are not made identical to Chrome. Chrome sessions remain separate; use the existing Companion when a site must use an already-authenticated Chrome tab.
+The host creates a transparent, borderless WinUI overlay window owned by the active Chrome/Edge top-level window. It discovers the browser page viewport through Chromium's `Chrome_RenderWidgetHostHWND` child window instead of estimating the browser chrome height. Each workspace sync carries CSS viewport dimensions and device scale; the native host matches those against the actual renderer HWND bounds and hides the overlay if it cannot find a confident match.
 
+Website-card rectangles are expressed relative to the page viewport. The host creates one WebView2 child per eligible website card, positions them within the overlay, and applies a native window region made from the clipped card-body rectangles plus any open Downloads/Library panel. This leaves empty canvas regions click-through to the original website UI. The overlay stays non-activating and hides when the workspace tab is hidden, the browser is minimized, or another application becomes foreground.
 
-The native child-layer has a workspace handshake and coalesces layout revisions into a single pending snapshot, preventing a backlog of stale pan/zoom messages and concurrent initialization from creating duplicate browser controls. Website layers are suspended while a workspace dialog or mobile navigation overlay is open, so native browser surfaces cannot cover the parent workspace's own controls. The host accepts messages only from the exact `/web-view` path or its descendants on the trusted HTTPS host.
+Downloads, Library and Profiles are opened from the website toolbar; their native panels are rendered in the overlay at the browser viewport edge. The Windows process window itself is not a workspace users need to operate.
 
-
-The canvas excludes nodes already bound to a Companion Chrome tab and nodes with an active Live Chrome Surface from the native child overlay. This preserves the actual Chrome session/video mirror for those cards and prevents the native WebView2 profile from silently replacing the authenticated Chrome surface.
-
-
-Workspace snapshots are profile-local too: moving from Chrome to the native host requires the app's JSON export/import flow because IndexedDB/localStorage is not shared between Chrome and WebView2 user-data folders. After import, old tab IDs are not treated as live Chrome bindings unless the Companion reports the exact same active browser-profile ID; otherwise those URL cards may use native WebView2 surfaces.
-
-The host clears stale Chrome tab IDs from imported nodes before rendering when no matching Companion profile is connected. This converts imported tab cards to URL-backed native cards instead of leaving a permanently misleading Focus Chrome action.
-
-Each child WebView2 receives its original un-clipped bounds plus a local RectangleGeometry clip computed from the intersection with the canvas viewport. This preserves page layout while ensuring the native overlay cannot draw or receive input outside the canvas area.
-
-
+WebView2 keeps separate cookies and login profiles from Chrome. This architecture removes the regular need for the Chrome Companion but does not claim that Chrome cookies can be transferred. Real-world validation is still required for Chrome/Edge versions, browser zoom, DPI scaling, multi-monitor movement, fullscreen, tab focus, renderer HWND changes and the overlay's click-through behavior.
 ## Native browser control plane
 
 The web-to-host protocol is a versioned, allow-listed command surface: back, forward, reload, stop, toggle mute and open external. Card controls are only rendered when a website is actually owned by the native host; a connected Companion Chrome tab is never covered. `native-bridge.js` validates command names, message shape, state values and HTTP(S) URLs, and its contract is covered by Node unit tests. Native state reports include history availability, audio state, title and current safe URL; the workspace persists the active URL so a later session returns to the last page rather than the originally imported URL.
@@ -128,3 +119,14 @@ The shipping host declares `Microsoft.Web.WebView2 1.0.3179.45` directly. This v
 WinUI/WebView2 compile smoke projects are kept outside `desktop-host/` under `native-diagnostics/`. The native app project therefore uses normal WinUI SDK default item discovery without custom excludes/removes for nested projects, avoiding interference from diagnostic XAML during markup compilation.
 
 The Shell file-picker COM declarations and `IFileDialog`/`IShellItem` interop now live in a dedicated non-XAML `WindowsShellFilePicker` type. `MainWindow` only passes its HWND to this helper; WinUI's XAML compiler no longer needs to inspect COM-import interfaces nested in the XAML-backed window class.
+
+
+## Background Windows bridge and browser overlay (protocol v2)
+
+The Windows process no longer needs to display a second Nolane workspace window. It runs as a background companion and listens only on `127.0.0.1:43172`. A single WebSocket endpoint at `/bridge` accepts only `Origin: https://nolane-x.github.io` and the `nolane.infinite.v2` subprotocol. The first JSON message must be `nolane.bridge.hello` with protocol 2. Incoming text messages are capped at 2 MiB. The service never binds to LAN interfaces.
+
+The HTTPS workspace checks the browser's `loopback-network` permission. If permission is already granted, it reconnects automatically; if permission is still prompt, the user must press the Connect Windows bridge control so the browser can ask for permission from a user gesture. A denied permission is not bypassed. This is a browser-controlled Local Network Access boundary.
+
+The workspace sends each visible card's viewport rectangle plus screen viewport geometry and device scale. The native process places a borderless transparent WinUI overlay over the browser page viewport, creates real WebView2 controls for eligible cards, and applies a native window region formed from visible clipped card rectangles. Pixels and pointer areas outside these rectangles remain transparent/click-through. The overlay is owned by the detected browser top-level window and is hidden when the Nolane tab is hidden or the foreground application leaves that browser/overlay ownership chain.
+
+This mode removes the normal need for the Chrome Companion extension. It does not inherit Chrome's profile: WebView2 remains a separate browser engine and stores its own login state. A local WebSocket connection and coordinate model are necessary but not sufficient to prove pixel-perfect overlay compatibility; manual checks are still required for browser chrome insets, browser zoom, display scaling, multi-monitor moves, fullscreen, maximized windows, tab switching and focus.

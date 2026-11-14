@@ -9,7 +9,7 @@
     if (!ACTIONS.has(action)) return null;
     return Object.freeze({
       type: "nolane.surface.command",
-      protocol: 1,
+      protocol: 2,
       id: surfaceId,
       action
     });
@@ -25,7 +25,7 @@
       if ((parsed.protocol !== "http:" && parsed.protocol !== "https:") || parsed.username || parsed.password) return null;
       return Object.freeze({
         type: "nolane.surface.command",
-        protocol: 1,
+        protocol: 2,
         id: surfaceId,
         action: "navigate",
         url: parsed.href
@@ -89,7 +89,23 @@
     });
   }
 
-  const api = Object.freeze({ createCommand, createNavigationCommand, normalizeProfileName, summarizeProfileUsage, normalizeSurfaceState });
+  function normalizeViewport(value) {
+    if (!value || typeof value !== "object") return null;
+    const result = {
+      screenLeft: Number(value.screenLeft),
+      screenTop: Number(value.screenTop),
+      width: Number(value.width),
+      height: Number(value.height),
+      deviceScale: Number(value.deviceScale)
+    };
+    if (!Object.values(result).every(Number.isFinite)) return null;
+    if (result.width < 100 || result.width > 12000 || result.height < 100 || result.height > 12000) return null;
+    if (Math.abs(result.screenLeft) > 100000 || Math.abs(result.screenTop) > 100000) return null;
+    result.deviceScale = Math.max(1, Math.min(4, result.deviceScale || 1));
+    return Object.freeze(result);
+  }
+
+  const api = Object.freeze({ createCommand, createNavigationCommand, normalizeProfileName, summarizeProfileUsage, normalizeSurfaceState, normalizeViewport });
   const root = typeof window !== "undefined" ? window : globalThis;
   root.NolaneNativeBridge = api;
 })();
