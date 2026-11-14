@@ -1610,7 +1610,7 @@ public sealed partial class MainWindow : Window
             IsChecked = false
         };
         var clearButton = new Button { Content = "Clear browsing data", Padding = new Thickness(10, 6, 10, 6), FontSize = 10 };
-        var deleteButton = new Button { Content = "Delete profile", Padding = new Thickness(10, 6), FontSize = 10 };
+        var deleteButton = new Button { Content = "Delete profile", Padding = new Thickness(10, 6, 10, 6), FontSize = 10 };
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         actions.Children.Add(clearButton);
         actions.Children.Add(deleteButton);
