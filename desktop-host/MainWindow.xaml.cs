@@ -101,13 +101,13 @@ public sealed partial class MainWindow : Window
         };
         LibrarySearchBox.TextChanged += LibrarySearch_TextChanged;
 
-        HistoryTabButton = new Button { Content = "History", Padding = new Thickness(9, 5), FontSize = 10 };
+        HistoryTabButton = new Button { Content = "History", Padding = new Thickness(9, 5, 9, 5), FontSize = 10 };
         HistoryTabButton.Click += ShowHistory_Click;
-        BookmarksTabButton = new Button { Content = "Bookmarks", Padding = new Thickness(9, 5), FontSize = 10 };
+        BookmarksTabButton = new Button { Content = "Bookmarks", Padding = new Thickness(9, 5, 9, 5), FontSize = 10 };
         BookmarksTabButton.Click += ShowBookmarks_Click;
-        ClearHistoryButton = new Button { Content = "Clear history", Padding = new Thickness(9, 5), FontSize = 10 };
+        ClearHistoryButton = new Button { Content = "Clear history", Padding = new Thickness(9, 5, 9, 5), FontSize = 10 };
         ClearHistoryButton.Click += ClearHistory_Click;
-        var closeButton = new Button { Content = "Close", Padding = new Thickness(9, 5), FontSize = 10 };
+        var closeButton = new Button { Content = "Close", Padding = new Thickness(9, 5, 9, 5), FontSize = 10 };
         closeButton.Click += CloseLibrary_Click;
 
         var titleStack = new StackPanel { Spacing = 3 };
@@ -143,9 +143,9 @@ public sealed partial class MainWindow : Window
             Spacing = 6,
             Margin = new Thickness(0, 9, 0, 0)
         };
-        var exportButton = new Button { Content = "Export backup", Padding = new Thickness(9, 5), FontSize = 10 };
+        var exportButton = new Button { Content = "Export backup", Padding = new Thickness(9, 5, 9, 5), FontSize = 10 };
         exportButton.Click += ExportLibrary_Click;
-        var importButton = new Button { Content = "Import backup", Padding = new Thickness(9, 5), FontSize = 10 };
+        var importButton = new Button { Content = "Import backup", Padding = new Thickness(9, 5, 9, 5), FontSize = 10 };
         importButton.Click += ImportLibrary_Click;
         backupActions.Children.Add(exportButton);
         backupActions.Children.Add(importButton);
@@ -169,7 +169,7 @@ public sealed partial class MainWindow : Window
             BorderBrush = LibraryBrush(44, 55, 75),
             BorderThickness = new Thickness(0, 0, 0, 1),
             CornerRadius = new CornerRadius(12, 12, 0, 0),
-            Padding = new Thickness(14, 12),
+            Padding = new Thickness(14, 12, 14, 12),
             Child = headerGrid
         };
 
