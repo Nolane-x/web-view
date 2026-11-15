@@ -409,3 +409,34 @@ test("coarse overflow entries remain discoverable and removable at every query s
   assert.deepEqual(index.query({ x: -100, y: -100, w: 200, h: 200 }), []);
   assert.deepEqual(index.query({ x: 2_999_900, y: 2_999_900, w: 400, h: 400 }).map(item => item.id), ["coarse-small"]);
 });
+
+
+test("upsert moves entries across fine and coarse cells without leaving stale candidates", () => {
+  const index = new SpatialIndex(128);
+  const moving = { id: "moving-between-grids", x: -120, y: -120, w: 80, h: 80 };
+  index.upsert(moving);
+  assert.deepEqual(index.query({ x: -160, y: -160, w: 160, h: 160 }).map(item => item.id), [moving.id]);
+
+  moving.x = 2_000_000;
+  moving.y = -2_000_000;
+  assert.equal(index.upsert(moving), true);
+  assert.deepEqual(index.query({ x: -160, y: -160, w: 160, h: 160 }), []);
+  assert.deepEqual(index.query({ x: 1_999_900, y: -2_000_100, w: 300, h: 300 }).map(item => item.id), [moving.id]);
+
+  moving.x = -3_000_000;
+  moving.y = -3_000_000;
+  moving.w = 6_000_000;
+  moving.h = 6_000_000;
+  index.upsert(moving);
+  assert.deepEqual(index.query({ x: -100, y: -100, w: 200, h: 200 }).map(item => item.id), [moving.id]);
+
+  moving.x = 700_000;
+  moving.y = 700_000;
+  moving.w = 80;
+  moving.h = 80;
+  index.upsert(moving);
+  assert.deepEqual(index.query({ x: -100, y: -100, w: 200, h: 200 }), []);
+  assert.deepEqual(index.query({ x: 699_900, y: 699_900, w: 300, h: 300 }).map(item => item.id), [moving.id]);
+  assert.equal(index.remove(moving.id), true);
+  assert.equal(index.size, 0);
+});
