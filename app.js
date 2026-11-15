@@ -382,7 +382,7 @@
   function validateNode(node, usedIds) {
     if (!node || typeof node !== "object" || Array.isArray(node) || !["website", "note"].includes(node.type)) return null;
     const clean = {
-      id: window.NolaneSpatialIndex.claimUniqueId(node.id, usedIds || new Set(), uid),
+      id: "",
       type: node.type,
       title: String(node.title || (node.type === "note" ? "Untitled note" : "Website")).slice(0, 120),
       x: clamp(Number(node.x) || 0, -100000, 100000),
@@ -406,6 +406,9 @@
       clean.content = String(node.content || "").slice(0, 12000);
       clean.color = ["lavender", "mint", "peach", "blue"].includes(node.color) ? node.color : "lavender";
     }
+    // Claim the ID only after the record has passed validation, so an invalid
+    // earlier import record cannot force a later valid card to receive a new ID.
+    clean.id = window.NolaneSpatialIndex.claimUniqueId(node.id, usedIds || new Set(), uid);
     return clean;
   }
 
