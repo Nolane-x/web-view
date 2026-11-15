@@ -11,7 +11,11 @@
     const width = Number(rect.w ?? rect.width);
     const height = Number(rect.h ?? rect.height);
     if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) return null;
-    return { x, y, w: width, h: height, right: x + width, bottom: y + height };
+    const right = x + width;
+    const bottom = y + height;
+    // At very large magnitudes IEEE-754 may round x + width back to x.
+    if (!Number.isFinite(right) || !Number.isFinite(bottom) || right <= x || bottom <= y) return null;
+    return { x, y, w: width, h: height, right, bottom };
   }
 
   function intersects(a, b) {
@@ -55,8 +59,11 @@
       }
       this.remove(item.id);
       const range = this._cellRange(rect);
-      const cellCount = (range.maxX - range.minX + 1) * (range.maxY - range.minY + 1);
-      if (!Number.isSafeInteger(cellCount) || cellCount > MAX_CELLS_PER_ITEM) {
+      const safeRange = [range.minX, range.minY, range.maxX, range.maxY].every(Number.isSafeInteger);
+      const cellCount = safeRange
+        ? (range.maxX - range.minX + 1) * (range.maxY - range.minY + 1)
+        : Number.POSITIVE_INFINITY;
+      if (!safeRange || !Number.isSafeInteger(cellCount) || cellCount > MAX_CELLS_PER_ITEM) {
         this.oversized.add(item.id);
         this.entries.set(item.id, { item, rect, keys: null, oversized: true });
         return true;
@@ -98,9 +105,12 @@
       const rect = normalizeRect(queryRect);
       if (!rect || this.entries.size === 0) return [];
       const range = this._cellRange(rect);
-      const cellCount = (range.maxX - range.minX + 1) * (range.maxY - range.minY + 1);
+      const safeRange = [range.minX, range.minY, range.maxX, range.maxY].every(Number.isSafeInteger);
+      const cellCount = safeRange
+        ? (range.maxX - range.minX + 1) * (range.maxY - range.minY + 1)
+        : Number.POSITIVE_INFINITY;
       const candidateIds = new Set(this.oversized);
-      if (!Number.isSafeInteger(cellCount) || cellCount > MAX_CELLS_PER_QUERY) {
+      if (!safeRange || !Number.isSafeInteger(cellCount) || cellCount > MAX_CELLS_PER_QUERY) {
         for (const id of this.entries.keys()) candidateIds.add(id);
       } else {
         for (let cellY = range.minY; cellY <= range.maxY; cellY += 1) {
