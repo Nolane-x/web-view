@@ -174,3 +174,8 @@ World coordinates are normalized to a finite range of ±8,000,000 units. Camera 
 ### Viewport origin rebasing
 
 The canvas keeps node positions in stable world coordinates for saving, search, spatial queries, undo and native WebView2 geometry. The DOM renderer uses a separate, transient origin snapped to a 4,096-unit grid near the viewport center. Each rendered card is positioned at `node - origin`, while the world transform becomes `cameraTranslation + origin × zoom`. The two transforms cancel algebraically, so the card remains at exactly the same screen pixel while its CSS left/top values stay close to the viewport. The render origin is never serialized and never sent to the Windows host. Run `node scripts/benchmark-spatial.mjs` to compare index build, viewport query p50/p95 and incremental updates at 2,000, 10,000 and 50,000 synthetic cards.
+
+
+### Multi-resolution spatial lookup
+
+The spatial index maintains a 640-unit fine grid and a 64× coarser grid. Normal viewport queries use the fine grid; zoomed-out or broad queries switch to the coarse grid when the fine query would touch more than 4,096 cells. Each layer has its own bounded oversized-entry set, and all candidates are filtered with exact rectangle intersection. Only queries too broad for both grids use the final full-entry fallback. The additional coarse lookup is independent of workspace persistence and does not change the public query API.
