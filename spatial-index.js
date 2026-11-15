@@ -18,11 +18,11 @@
     return { x, y, w: width, h: height, right, bottom };
   }
 
-  function normalizeWorldCoordinate(value, fallback = 0, maxAbs = 1_000_000_000) {
+  function normalizeWorldCoordinate(value, fallback = 0, maxAbs = 8_000_000) {
     const requestedLimit = Number(maxAbs);
     const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
       ? Math.min(requestedLimit, Number.MAX_SAFE_INTEGER)
-      : 1_000_000_000;
+      : 8_000_000;
     const requestedFallback = fallback == null || (typeof fallback === "string" && !fallback.trim())
       ? Number.NaN
       : Number(fallback);
@@ -57,7 +57,7 @@
     const requestedWorldLimit = Number(settings.maxWorldCoordinate);
     const maxWorldCoordinate = Number.isFinite(requestedWorldLimit) && requestedWorldLimit > 0
       ? Math.min(requestedWorldLimit, Number.MAX_SAFE_INTEGER)
-      : 1_000_000_000;
+      : 8_000_000;
     // x/y are CSS-pixel translations. Dividing them by scale yields the world's
     // top-left coordinate, so scale the translation budget with the camera.
     const maxTranslation = Math.min(Number.MAX_SAFE_INTEGER, maxWorldCoordinate * scale);
