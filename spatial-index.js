@@ -32,6 +32,8 @@
 
     get size() { return this.entries.size; }
 
+    get(id) { return this.entries.get(id)?.item; }
+
     clear() {
       this.cells.clear();
       this.entries.clear();
