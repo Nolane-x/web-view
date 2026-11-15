@@ -89,3 +89,26 @@ test("invalid query rectangles return empty results without mutating the index",
   assert.deepEqual(index.query({ x: Number.NaN, y: 0, w: 10, h: 10 }), []);
   assert.equal(index.size, 1);
 });
+
+
+test("viewport queries stay selective across a full 2,000-item space", () => {
+  const index = new SpatialIndex(640);
+  const items = [];
+  for (let row = 0; row < 40; row += 1) {
+    for (let column = 0; column < 50; column += 1) {
+      items.push({
+        id: "grid-" + row + "-" + column,
+        x: column * 900,
+        y: row * 900,
+        w: 360,
+        h: 280
+      });
+    }
+  }
+  index.rebuild(items);
+  const visible = index.query({ x: 18000, y: 18000, w: 1920, h: 1080 });
+  assert.equal(index.size, 2000);
+  assert.equal(visible.length, 6);
+  assert.ok(visible.length / index.size < 0.01,
+    "a normal viewport should not mount even one percent of a maximum-sized space");
+});
