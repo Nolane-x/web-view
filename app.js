@@ -391,6 +391,8 @@
   }
 
   function scheduleSave(delay) {
+    // Keep the active space's sanitized model current when data changes, not on every camera frame.
+    syncActiveSpace();
     invalidateWorkspaceDerivedCaches();
     clearTimeout(saveTimer);
     setSaveState("saving", "Saving locally…");
@@ -538,7 +540,6 @@
     if (!nativeHostAvailable || !nativeBridgeSocket || nativeBridgeSocket.readyState !== WebSocket.OPEN || nativeSyncFrame) return;
     nativeSyncFrame = requestAnimationFrame(() => {
       nativeSyncFrame = 0;
-      syncActiveSpace();
       const area = canvas.getBoundingClientRect();
       const items = [];
       const profileUsage = cachedNativeProfileUsage();
