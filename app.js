@@ -76,7 +76,7 @@
     return candidate;
   };
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-  const MAX_WORLD_COORDINATE = 1_000_000_000;
+  const MAX_WORLD_COORDINATE = 8_000_000;
   const normalizeCanvasCoordinate = (value, fallback = 0) =>
     window.NolaneSpatialIndex.normalizeWorldCoordinate(value, fallback, MAX_WORLD_COORDINATE);
   const normalizeCanvasView = (value) =>
