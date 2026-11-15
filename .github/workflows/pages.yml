@@ -36,7 +36,7 @@ jobs:
           node --test tests/*.test.mjs
           node scripts/validate.mjs
 
-      - name: Benchmark spatial index at 2k, 10k and 50k cards
+      - name: Benchmark spatial index at 2k, 10k, 50k and 100k cards
         run: node scripts/benchmark-spatial.mjs
 
       - name: Verify publishable shell
