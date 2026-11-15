@@ -794,3 +794,15 @@ if (virtualizedSearchFunction.includes("if (query) for (const node of nodes)") |
     !js.includes('$("#searchInput").addEventListener("keydown"') ||
     !js.includes("focusSearchResult(event.shiftKey)")) fail("Workspace-wide search must keep off-screen matches out of the DOM and navigate them with Enter/Shift+Enter.");
 else pass("Search indexes all workspace matches without mounting them; Enter and Shift+Enter navigate the result set.");
+
+
+if (!spatialIndexSource.includes("function sortByZIndex(items)") ||
+    !nativeWorkingSetFunction.includes("window.NolaneSpatialIndex.sortByZIndex") ||
+    !nativeWorkingSetFunction.includes("if (items.length >= nativeMaxVisibleSurfaces) break;")) fail("Native working-set candidates must be z-ranked and stop at the adaptive visible-surface budget.");
+else pass("Native surface selection ranks overlapping cards by z-order and stops at the device renderer budget.");
+
+const searchNavigatorFunction = js.slice(js.indexOf("function updateViewFilter"), js.indexOf("function selectNode"));
+if (!searchNavigatorFunction.includes('if (query) searchResultIds.push(node.id)') ||
+    !searchNavigatorFunction.includes('if (!$("#searchInput").value.trim() || !searchResultIds.length) return;') ||
+    !js.includes("focusSearchResult(event.shiftKey)")) fail("Global search navigation must remain virtualized and must not cycle every card when the search box is empty.");
+else pass("Search navigation tracks global matches, moves forward/backward on Enter/Shift+Enter and leaves empty search inert.");
