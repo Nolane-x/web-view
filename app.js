@@ -67,7 +67,13 @@
   let nativeProfileUsageCache = null;
   let nodeSearchTextCache = new WeakMap();
 
-  const uid = () => "node-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+  const uid = () => {
+    let candidate;
+    do {
+      candidate = "node-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+    } while (nodes.some((node) => node.id === candidate) || spaces.some((space) => space.id === candidate));
+    return candidate;
+  };
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
   const escapeHTML = (value) => String(value == null ? "" : value).replace(/[&<>"']/g, (char) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
