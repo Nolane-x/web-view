@@ -46,6 +46,8 @@ public sealed partial class MainWindow : Window
     private bool _surfaceSyncRunning;
     private readonly SemaphoreSlim _permissionDialogGate = new(1, 1);
     private bool _runtimeUpdateAvailable;
+    private Task _shutdownTask = Task.CompletedTask;
+    private Action<string, string>? _trayNotification;
     private string? _downloadHistoryPath;
     private string? _browserLibraryPath;
     private readonly List<DownloadEntry> _downloads = new();
@@ -137,6 +139,39 @@ public sealed partial class MainWindow : Window
         return 4;
     }
 
+    public void SetTrayNotificationHandler(Action<string, string> notificationHandler)
+    {
+        _trayNotification = notificationHandler ?? throw new ArgumentNullException(nameof(notificationHandler));
+    }
+
+    public async Task<bool> ConfirmRestartAsync()
+    {
+        var activeDownloads = _downloads.Count(entry =>
+            entry.Operation is { } operation &&
+            (operation.State == CoreWebView2DownloadState.InProgress ||
+             (operation.State == CoreWebView2DownloadState.Interrupted && operation.CanResume)));
+
+        var message = "All open native website cards will close. Your Nolane workspace and saved browser profiles remain on this device, but page state that a website has not saved may be lost.";
+        if (activeDownloads > 0)
+        {
+            message += Environment.NewLine + Environment.NewLine +
+                activeDownloads + " active or resumable download(s) will be interrupted. Resume may not be available after the bridge restarts.";
+        }
+
+        var dialog = new ContentDialog
+        {
+            Title = "Restart the Nolane background bridge?",
+            Content = message,
+            PrimaryButtonText = "Restart bridge",
+            CloseButtonText = "Keep working",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = Content.XamlRoot
+        };
+        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+    }
+
+    public Task ShutdownTask => _shutdownTask;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -145,18 +180,21 @@ public sealed partial class MainWindow : Window
         BrowserSurfaceLayer.Loaded += MainWindow_Loaded;
         SizeChanged += (_, _) => BrowserSurfaceLayer.InvalidateArrange();
         InitializeOverlayWindow();
-        Closed += async (_, _) =>
+        Closed += (_, _) => _shutdownTask = ShutdownAsync();
+    }
+
+    private async Task ShutdownAsync()
+    {
+        _overlayTimer?.Stop();
+        HideOverlayWindow();
+        SaveDownloadHistory();
+        foreach (var surface in _surfaces.Values.ToArray())
         {
-            _overlayTimer?.Stop();
-            HideOverlayWindow();
-            SaveDownloadHistory();
-            foreach (var surface in _surfaces.Values.ToArray())
-            {
-                try { surface.View.Close(); } catch { }
-            }
-            _surfaces.Clear();
-            if (_bridgeServer is not null) await _bridgeServer.DisposeAsync();
-        };
+            try { surface.View.Close(); } catch { }
+        }
+        _surfaces.Clear();
+        if (_bridgeServer is not null) await _bridgeServer.DisposeAsync();
+    }
     }
 
     private static Microsoft.UI.Xaml.Media.SolidColorBrush LibraryBrush(byte red, byte green, byte blue) =>
@@ -332,7 +370,14 @@ public sealed partial class MainWindow : Window
             RefreshDownloadsUi();
             RefreshLibraryUi();
             _environment = await CoreWebView2Environment.CreateWithOptionsAsync(null, userData, new CoreWebView2EnvironmentOptions());
-            _environment.NewBrowserVersionAvailable += (_, _) => _runtimeUpdateAvailable = true;
+            _environment.NewBrowserVersionAvailable += (_, _) => DispatcherQueue.TryEnqueue(() =>
+            {
+                if (_runtimeUpdateAvailable) return;
+                _runtimeUpdateAvailable = true;
+                const string updateMessage = "A newer WebView2 Runtime is ready. Choose Restart bridge from the Nolane tray menu to apply it. Open browser cards will close.";
+                StatusText.Text = "WebView2 update ready · restart the background bridge to apply it.";
+                _trayNotification?.Invoke("WebView2 update ready", updateMessage);
+            });
             _environment.BrowserProcessExited += (_, _) => DispatcherQueue.TryEnqueue(() =>
             {
                 foreach (var surface in _surfaces.Values.ToArray())
