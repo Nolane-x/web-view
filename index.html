@@ -125,7 +125,7 @@
           <span class="control-divider"></span>
           <button class="icon-button" id="minimapButton" title="Toggle minimap"><svg class="icon"><use href="#i-layout"/></svg></button>
         </div>
-        <div class="minimap" id="minimap"><div class="minimap-title">MAP</div><div class="minimap-content" id="minimapContent"><span class="minimap-viewport" id="minimapViewport"></span></div></div>
+        <div class="minimap" id="minimap"><div class="minimap-title">MAP</div><div class="minimap-content" id="minimapContent"><canvas class="minimap-canvas" id="minimapCanvas" aria-hidden="true"></canvas><span class="minimap-viewport" id="minimapViewport" hidden></span></div></div>
       </section>
       <footer class="statusbar"><span><i class="status-dot green"></i> Local mode</span><span id="storageStatus">Saved on this device</span><span class="statusbar-right">No account · No cloud sync · Your data stays local</span></footer>
     </main>
@@ -199,6 +199,7 @@
   <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
   <script src="./native-bridge.js" defer></script>
   <script src="./workspace-storage.js" defer></script>
+  <script src="./spatial-index.js" defer></script>
   <script src="./app.js" defer></script>
 </body>
 </html>
