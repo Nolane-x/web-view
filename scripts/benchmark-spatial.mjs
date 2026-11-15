@@ -11,8 +11,8 @@ const round = value => Math.round(value * 100) / 100;
 function makeDataset(size) {
   return Array.from({ length: size }, (_, index) => ({
     id: "bench-" + index,
-    x: (index % 500) * 560 - 140000,
-    y: Math.floor(index / 500) * 420 - 70000,
+    x: (index % 1000) * 8000 - 4_000_000,
+    y: Math.floor(index / 1000) * 8000 - 200_000,
     w: 360,
     h: 280,
     z: index
@@ -62,6 +62,23 @@ for (const size of SIZES) {
     }
   }
 
+  const broadQuery = { x: -250_000, y: -250_000, w: 500_000, h: 500_000 };
+  const broadQueryTimes = [];
+  let broadResultCount = 0;
+  for (let queryNumber = 0; queryNumber < 80; queryNumber += 1) {
+    const start = performance.now();
+    const result = index.query(broadQuery);
+    broadQueryTimes.push(performance.now() - start);
+    broadResultCount += result.length;
+    if (queryNumber < 5) {
+      const expected = nodes.filter(item => intersects(item, broadQuery)).map(item => item.id).sort();
+      const actual = result.map(item => item.id).sort();
+      if (expected.length !== actual.length || expected.some((id, i) => id !== actual[i])) {
+        throw new Error("Coarse viewport query returned an incorrect result at size " + size);
+      }
+    }
+  }
+
   const moved = nodes.slice(0, Math.min(500, nodes.length));
   const updateStart = performance.now();
   for (const item of moved) {
@@ -78,6 +95,10 @@ for (const size of SIZES) {
     queryP50Ms: round(percentile(queryTimes, 0.5)),
     queryP95Ms: round(percentile(queryTimes, 0.95)),
     averageResultsPerQuery: round(returned / QUERY_COUNT),
+    broadQueryCount: broadQueryTimes.length,
+    broadQueryP50Ms: round(percentile(broadQueryTimes, 0.5)),
+    broadQueryP95Ms: round(percentile(broadQueryTimes, 0.95)),
+    averageBroadResults: round(broadResultCount / broadQueryTimes.length),
     updatedNodes: moved.length,
     updateMs: round(updateMs),
     bruteForceCorrectnessChecks: correctnessChecks
