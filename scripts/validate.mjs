@@ -686,6 +686,12 @@ if (!/\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}/.test(rea
 
 
 const virtualizedFilterFunction = js.slice(js.indexOf("function updateViewFilter"), js.indexOf("function selectNode"));
-if (!/^\\s*\\$\\$\\("\\.nav-item"\\)\\.forEach/m.test(virtualizedFilterFunction) ||
-    /^\\s*\\$\\("\\.nav-item"\\)\\.forEach/m.test(virtualizedFilterFunction)) fail("The virtualized filter must toggle every navigation item using the NodeList selector helper.");
+if (!virtualizedFilterFunction.includes('    $$(".nav-item").forEach(') ||
+    virtualizedFilterFunction.includes('    $(".nav-item").forEach(')) fail("The virtualized filter must toggle every navigation item using the NodeList selector helper.");
 else pass("The virtualized filter updates all navigation buttons through querySelectorAll.");
+
+const nativeWorkflow = read(".github/workflows/desktop-host.yml");
+if (!nativeWorkflow.includes('node --check spatial-index.js') ||
+    !nativeWorkflow.includes('      - "spatial-index.js"') ||
+    !nativeWorkflow.includes('group: "native-webview2-host-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}"')) fail("Windows CI must validate, watch and isolate the spatial canvas changes.");
+else pass("Windows CI validates the spatial index and isolates workflow runs per pull request.");
