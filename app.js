@@ -57,6 +57,8 @@
   const stoppedLiveSurfaceIds = new Set();
   const spatialIndex = new window.NolaneSpatialIndex.SpatialIndex(640);
   const renderedNodeElements = new Map();
+  let canvasRenderOrigin = { x: 0, y: 0 };
+  const CANVAS_RENDER_ORIGIN_QUANTUM = 4096;
   const CANVAS_OVERSCAN_PX = 280;
   const MAX_NATIVE_SURFACE_CANDIDATES = 8;
   let canvasRenderFrame = 0;
@@ -471,7 +473,8 @@
   }
 
   function applyView() {
-    world.style.transform = "translate(" + view.x + "px," + view.y + "px) scale(" + view.scale + ")";
+    updateCanvasRenderOrigin();
+    applyCanvasWorldTransform();
     grid.style.backgroundPosition = (view.x % (24 * view.scale)) + "px " + (view.y % (24 * view.scale)) + "px";
     $("#zoomValue").textContent = Math.round(view.scale * 100) + "%";
     scheduleCanvasVirtualization();
@@ -527,6 +530,34 @@
       w: rect.width / view.scale + overscan * 2, h: rect.height / view.scale + overscan * 2 };
   }
 
+  function applyCanvasWorldTransform() {
+    const transform = window.NolaneSpatialIndex.createRebasedTransform(view, canvasRenderOrigin);
+    world.style.transform = "translate(" + transform.x + "px," + transform.y + "px) scale(" + transform.scale + ")";
+  }
+
+  function positionCanvasNodeElement(element, node) {
+    const local = window.NolaneSpatialIndex.rebasePoint(node, canvasRenderOrigin);
+    element.style.left = local.x + "px";
+    element.style.top = local.y + "px";
+  }
+
+  function updateCanvasRenderOrigin() {
+    const rect = canvas.getBoundingClientRect();
+    const next = window.NolaneSpatialIndex.computeRenderOrigin(
+      view,
+      { width: rect.width, height: rect.height },
+      CANVAS_RENDER_ORIGIN_QUANTUM
+    );
+    if (next.x === canvasRenderOrigin.x && next.y === canvasRenderOrigin.y) return false;
+    canvasRenderOrigin = next;
+    for (const [id, element] of renderedNodeElements) {
+      const node = spatialIndex.get(id);
+      if (node) positionCanvasNodeElement(element, node);
+    }
+    applyCanvasWorldTransform();
+    return true;
+  }
+
   function cachedNodeSearchText(node) {
     let searchText = nodeSearchTextCache.get(node);
     if (searchText === undefined) {
@@ -555,6 +586,7 @@
   }
 
   function syncCanvasNodeElements(forceRefresh) {
+    updateCanvasRenderOrigin();
     const query = $("#searchInput").value.trim().toLowerCase();
     const wanted = new Map();
     for (const node of spatialIndex.query(currentCanvasWorldBounds(CANVAS_OVERSCAN_PX))) {
@@ -590,8 +622,7 @@
         element = replacement;
         renderedNodeElements.set(node.id, element);
       } else {
-        element.style.left = node.x + "px";
-        element.style.top = node.y + "px";
+        positionCanvasNodeElement(element, node);
         element.style.width = node.w + "px";
         element.style.height = node.h + "px";
         element.style.zIndex = node.z || 1;
@@ -889,6 +920,7 @@
     clearUnavailableChromeTabBindings();
     refreshNativeWorkspaceIdsSnapshot();
     spatialIndex.rebuild(nodes);
+    updateCanvasRenderOrigin();
     syncCanvasNodeElements(true);
     updateViewFilter();
     updateCounts();
@@ -940,8 +972,7 @@
     const article = document.createElement("article");
     article.className = "node" + (node.id === selectedId ? " selected" : "");
     article.dataset.id = node.id;
-    article.style.left = node.x + "px";
-    article.style.top = node.y + "px";
+    positionCanvasNodeElement(article, node);
     article.style.width = node.w + "px";
     article.style.height = node.h + "px";
     article.style.zIndex = node.z || 1;
@@ -2322,7 +2353,7 @@
       );
       spatialIndex.upsert(node);
       const element = renderedNodeElements.get(node.id);
-      if (element) { element.style.left = node.x + "px"; element.style.top = node.y + "px"; }
+      if (element) positionCanvasNodeElement(element, node);
       updateMinimap(true);
       scheduleNativeSurfaceSync();
       return;
