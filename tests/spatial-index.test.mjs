@@ -220,6 +220,8 @@ test("world coordinates clamp finite values and replace non-finite values with a
   assert.equal(normalizeWorldCoordinate(-2_000_000_000, -17, 1_000_000_000), -1_000_000_000);
   assert.equal(normalizeWorldCoordinate(Number.POSITIVE_INFINITY, 42, 1_000_000_000), 42);
   assert.equal(normalizeWorldCoordinate(Number.NaN, -42, 1_000_000_000), -42);
+  assert.equal(normalizeWorldCoordinate(null, 19, 1_000_000_000), 19);
+  assert.equal(normalizeWorldCoordinate("", -19, 1_000_000_000), -19);
 });
 
 test("camera translations use the normalized scale-aware world-coordinate budget", () => {
@@ -249,6 +251,9 @@ test("camera scale is bounded and invalid camera values receive deterministic de
     x: 500, y: -500, scale: 0.25
   });
   assert.deepEqual(normalizeViewState(null, options), {
+    x: 25, y: 7, scale: 1
+  });
+  assert.deepEqual(normalizeViewState({ x: null, y: "", scale: null }, options), {
     x: 25, y: 7, scale: 1
   });
 });
