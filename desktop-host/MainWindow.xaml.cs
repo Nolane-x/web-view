@@ -195,7 +195,6 @@ public sealed partial class MainWindow : Window
         _surfaces.Clear();
         if (_bridgeServer is not null) await _bridgeServer.DisposeAsync();
     }
-    }
 
     private static Microsoft.UI.Xaml.Media.SolidColorBrush LibraryBrush(byte red, byte green, byte blue) =>
         new(Microsoft.UI.ColorHelper.FromArgb(255, red, green, blue));
