@@ -24,6 +24,8 @@
   let db = null;
   let saveTimer = null;
   let selectedId = null;
+  let searchResultIds = [];
+  let searchResultIndex = -1;
   let activeTab = "website";
   let activeView = "canvas";
   let editingId = null;
@@ -512,10 +514,6 @@
     const query = $("#searchInput").value.trim().toLowerCase();
     const wanted = new Map();
     for (const node of spatialIndex.query(currentCanvasWorldBounds(CANVAS_OVERSCAN_PX))) {
-      if (matchesNodeFilters(node, query)) wanted.set(node.id, node);
-    }
-    // Search remains workspace-wide. Matching off-screen results stay mounted.
-    if (query) for (const node of nodes) {
       if (matchesNodeFilters(node, query)) wanted.set(node.id, node);
     }
     // Pin selected cards and active streams; do not detach a live video element on pan.
@@ -1809,8 +1807,12 @@
 
   function updateViewFilter() {
     const query = $("#searchInput").value.trim().toLowerCase();
-    let visibleCount = 0;
-    for (const node of nodes) if (matchesNodeFilters(node, query)) visibleCount += 1;
+    searchResultIds = [];
+    searchResultIndex = -1;
+    for (const node of nodes) {
+      if (matchesNodeFilters(node, query)) searchResultIds.push(node.id);
+    }
+    const visibleCount = searchResultIds.length;
     const nodesById = new Map(nodes.map((node) => [node.id, node]));
     for (const [id, element] of renderedNodeElements) {
       element.classList.toggle("hidden-by-search", !matchesNodeFilters(nodesById.get(id), query));
@@ -1818,7 +1820,11 @@
     const titles = { canvas: "My workspace", websites: "Web surfaces", notes: "Notes" };
     $("#viewTitle").textContent = activeView === "canvas" ? (activeSpace()?.name || titles.canvas) : titles[activeView];
     $("#canvasHeading").textContent = activeView === "websites" ? "Your web, gathered." : activeView === "notes" ? "Thoughts, in context." : (activeSpace()?.name || "A space for everything.");
-    $("#canvasSubheading").textContent = activeView === "websites" ? "Open, arrange and revisit the websites you use." : activeView === "notes" ? "Keep ideas close to the things they belong to." : "Bring your web tools together. Arrange them your way.";
+    $("#canvasSubheading").textContent = query
+      ? (visibleCount ? visibleCount + " matching items · Press Enter to jump, Shift+Enter to go back." : "No items match this search.")
+      : activeView === "websites" ? "Open, arrange and revisit the websites you use."
+        : activeView === "notes" ? "Keep ideas close to the things they belong to."
+          : "Bring your web tools together. Arrange them your way.";
     const empty = $("#emptyState");
     empty.hidden = visibleCount > 0;
     $("#emptyTitle").textContent = query ? "No matches yet." : activeView === "websites" ? "No websites here yet." : activeView === "notes" ? "No notes here yet." : "A fresh space.";
@@ -1826,6 +1832,22 @@
     $$(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === activeView));
     scheduleCanvasVirtualization();
     scheduleNativeSurfaceSync();
+  }
+
+  function focusSearchResult(reverse) {
+    if (!searchResultIds.length) return;
+    const direction = reverse ? -1 : 1;
+    searchResultIndex = (searchResultIndex + direction + searchResultIds.length) % searchResultIds.length;
+    const node = nodes.find((item) => item.id === searchResultIds[searchResultIndex]);
+    if (!node) return;
+
+    const rect = canvas.getBoundingClientRect();
+    view.scale = clamp(Math.max(view.scale, 0.6), MIN_SCALE, MAX_SCALE);
+    view.x = rect.width / 2 - (node.x + node.w / 2) * view.scale;
+    view.y = rect.height / 2 - (node.y + node.h / 2) * view.scale;
+    selectNode(node.id);
+    applyView();
+    toast("Match " + (searchResultIndex + 1) + " of " + searchResultIds.length + ": " + node.title);
   }
 
   function selectNode(id) {
@@ -2543,6 +2565,11 @@
       updateMinimap();
     });
     $("#searchInput").addEventListener("input", updateViewFilter);
+    $("#searchInput").addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      focusSearchResult(event.shiftKey);
+    });
     $$(".nav-item").forEach((button) => button.addEventListener("click", () => changeView(button.dataset.view)));
     $("#newSpaceBtn").addEventListener("click", createSpace);
     $("#workspaceMenu").addEventListener("click", () => toast("Choose a space from the sidebar. Use the menu beside a space to rename it."));
