@@ -196,7 +196,7 @@ The workspace model and `SpatialIndex` continue to store/query logical world coo
 
 This keeps mounted card CSS coordinates local without changing any visible pixel. The origin is recalculated when camera/viewport geometry changes, and existing mounted nodes are repositioned in the same synchronous update as the parent transform. It is deliberately not persisted in workspace schema, indexed, or sent to WebView2: the Windows overlay continues to derive screen rectangles from logical node coordinates and the logical camera. Selected and live-stream cards may remain mounted outside the viewport; the current finite ±8,000,000 world bound keeps even those local coordinates below the browser CSS length guard. Any future expansion to effectively unbounded logical coordinates must add a dedicated parking layer for off-screen live video cards before relaxing that bound.
 
-The spatial index has a deterministic 15,000-card correctness stress test. `node scripts/benchmark-spatial.mjs` separately measures index build, viewport-query p50/p95 and 500 incremental updates at 2k, 10k and 50k cards; it deliberately reports measurements without brittle wall-clock pass/fail thresholds.
+The spatial index has a deterministic 15,000-card correctness stress test. `node scripts/benchmark-spatial.mjs` separately measures index build, viewport-query p50/p95 and 500 incremental updates at 2k, 10k, 50k and 100k cards; it deliberately reports measurements without brittle wall-clock pass/fail thresholds.
 
 
 ### Multi-resolution spatial index
