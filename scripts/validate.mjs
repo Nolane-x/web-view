@@ -950,7 +950,8 @@ if (!spatialIndexSource.includes("right <= x || bottom <= y") ||
     !spatialIndexTests.includes('test("rectangles whose extent disappears at floating-point precision are rejected"') ||
     !spatialIndexTests.includes('test("broad viewport queries use the coarse grid instead of scanning every entry"') ||
     !spatialIndexTests.includes('test("coarse overflow entries remain discoverable and removable at every query scale"') ||
-    !spatialIndexTests.includes('test("upsert moves entries across fine and coarse cells without leaving stale candidates"') fail("Spatial indexing must safely handle extreme numeric coordinates, fine/coarse cell fallback and floating-point collapsed rectangles.");
+    !spatialIndexTests.includes('test("upsert moves entries across fine and coarse cells without leaving stale candidates"') ||
+    !spatialIndexTests.includes('test("clear and rebuild remove all fine/coarse memberships and overflow state"') fail("Spatial indexing must safely handle extreme numeric coordinates, fine/coarse cell fallback and floating-point collapsed rectangles.");
 else pass("Spatial indexing uses exact geometry checks with bounded fine/coarse grids and dedicated overflow paths.");
 
 
