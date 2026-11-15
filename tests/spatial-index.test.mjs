@@ -346,3 +346,27 @@ test("spatial index keeps exact viewport query results across a 15,000-card work
   assert.equal(index.query({ x: -100000, y: -30000, w: 1000, h: 1000 })
     .some(item => moved.includes(item)), false);
 });
+
+
+test("origin rebasing keeps pinned edge cards inside bounded CSS coordinates at both world limits", () => {
+  const { computeRenderOrigin, rebasePoint, createRebasedTransform } = require("../spatial-index.js");
+  const cases = [
+    { view: { x: -17_600_000, y: -17_600_000, scale: 2.2 }, point: { x: -8_000_000, y: -8_000_000 } },
+    { view: { x: 17_600_000, y: 17_600_000, scale: 2.2 }, point: { x: 8_000_000, y: 8_000_000 } }
+  ];
+  for (const entry of cases) {
+    const origin = computeRenderOrigin(entry.view, { width: 1440, height: 900 }, 4096);
+    const local = rebasePoint(entry.point, origin);
+    const transform = createRebasedTransform(entry.view, origin);
+    const logicalX = entry.point.x * entry.view.scale + entry.view.x;
+    const logicalY = entry.point.y * entry.view.scale + entry.view.y;
+    const rebasedX = local.x * transform.scale + transform.x;
+    const rebasedY = local.y * transform.scale + transform.y;
+    assert.ok(Math.abs(rebasedX - logicalX) < 1e-6);
+    assert.ok(Math.abs(rebasedY - logicalY) < 1e-6);
+    assert.ok(Math.abs(local.x) < 16_100_000);
+    assert.ok(Math.abs(local.y) < 16_100_000);
+    assert.ok(Math.abs(transform.x) < 20_000);
+    assert.ok(Math.abs(transform.y) < 20_000);
+  }
+});
