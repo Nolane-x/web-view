@@ -1809,10 +1809,12 @@
     const query = $("#searchInput").value.trim().toLowerCase();
     searchResultIds = [];
     searchResultIndex = -1;
+    let visibleCount = 0;
     for (const node of nodes) {
-      if (matchesNodeFilters(node, query)) searchResultIds.push(node.id);
+      if (!matchesNodeFilters(node, query)) continue;
+      visibleCount += 1;
+      if (query) searchResultIds.push(node.id);
     }
-    const visibleCount = searchResultIds.length;
     const nodesById = new Map(nodes.map((node) => [node.id, node]));
     for (const [id, element] of renderedNodeElements) {
       element.classList.toggle("hidden-by-search", !matchesNodeFilters(nodesById.get(id), query));
@@ -1835,7 +1837,7 @@
   }
 
   function focusSearchResult(reverse) {
-    if (!searchResultIds.length) return;
+    if (!$("#searchInput").value.trim() || !searchResultIds.length) return;
     if (searchResultIndex < 0) {
       searchResultIndex = reverse ? searchResultIds.length - 1 : 0;
     } else {
