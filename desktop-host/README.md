@@ -29,3 +29,6 @@ The startup preference lives in a separate per-user settings key. The Run key co
 
 
 Overlay geometry is implemented in `OverlayGeometry.cs` so card and panel regions use the same DPI-aware conversion. The Windows workflow runs a standalone smoke test for negative coordinates, clipped edges, offscreen cards, 150% display scale and panels larger than the viewport.
+
+
+Downloads records carry the originating browser profile and the panel filters by profile. Older local history entries without the profile field remain assigned to Default; private-session download metadata is not written to disk. Download files continue to use the destination selected in WebView2's native Save dialog.

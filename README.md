@@ -145,3 +145,6 @@ Windows background bridge download: [Nolane Native WebView2 Host (Windows x64)](
 
 
 The startup choice is stored in a separate per-user application registry key; the Windows `Run` key contains only the host executable command. The installer updates that command after a reinstall without overriding an explicit startup opt-out, and the host migrates the marker written by an earlier development build.
+
+
+The native Downloads panel labels each transfer with its originating browser profile and filters All profiles, Default, named profiles or Private sessions. The filter applies to the visible list and Clear finished action. Downloads still go to the destination chosen in WebView2's Save dialog; Nolane does not silently move files into profile-specific folders.

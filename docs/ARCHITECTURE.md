@@ -145,3 +145,8 @@ The startup-choice marker is stored under `HKCU\Software\Nolane\NolaneInfiniteBr
 ## Native overlay geometry tests
 
 Card and panel clipping uses the same `OverlayGeometry` helper to convert CSS viewport rectangles into bounded native pixel regions. The conversion floors left/top edges, ceils right/bottom edges, clamps to the measured renderer HWND bounds, rejects unusable DPI scales and drops sub-two-pixel regions. A standalone .NET smoke test covers negative canvas positions, partial cards at the viewport edges, offscreen cards, 150% DPI and panels larger than the viewport. This tests the coordinate math but does not replace desktop-level validation of the actual Chromium renderer HWND and pointer/focus behavior.
+
+
+## Profile-scoped Downloads
+
+Every WebView2 download records the originating card's browser profile. The Downloads panel can filter All profiles, Default, named profiles or Private sessions; the Clear finished action only removes completed/interrupted entries inside the selected filter. Historical records created before this field existed deserialize into Default. Private download metadata remains memory-only and is excluded from the local download-history file. The native Save dialog and user-selected destination remain unchanged: profile filtering is attribution and organization, not automatic filesystem segregation.

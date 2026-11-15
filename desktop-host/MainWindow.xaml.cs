@@ -26,6 +26,7 @@ public sealed partial class MainWindow : Window
     private const int MaxLibraryBookmarkEntries = 200;
     private const long MaxLibraryBackupBytes = 5L * 1024 * 1024;
     private const string AllLibraryProfilesFilter = "\0all";
+    private const string PrivateDownloadsProfileFilter = "\0private";
     private readonly int _maxVisibleSurfaces = DetermineVisibleSurfaceBudget();
 
     private int MaxVisibleSurfaces => _maxVisibleSurfaces;
@@ -51,6 +52,8 @@ public sealed partial class MainWindow : Window
     private string _focusedSurfaceId = "";
     private string _libraryProfileFilter = AllLibraryProfilesFilter;
     private bool _refreshingLibraryProfileFilter;
+    private string _downloadsProfileFilter = AllLibraryProfilesFilter;
+    private bool _refreshingDownloadsProfileFilter;
     private LocalBridgeServer? _bridgeServer;
     private DispatcherQueueTimer? _overlayTimer;
     private IntPtr _overlayHwnd;
@@ -107,6 +110,7 @@ public sealed partial class MainWindow : Window
     private Button ClearHistoryButton = null!;
     private TextBox LibrarySearchBox = null!;
     private ComboBox LibraryProfileFilter = null!;
+    private ComboBox DownloadsProfileFilter = null!;
     private StackPanel LibraryItems = null!;
     private int _downloadRefreshQueued;
     private int _downloadHistoryDirty;
@@ -907,6 +911,7 @@ public sealed partial class MainWindow : Window
             Operation = operation,
             IsPrivate = surface.IsPrivate,
             SurfaceId = surface.Id,
+            ProfileName = surface.ProfileName,
             SourceHost = SafeHost(operation.Uri),
             MimeType = StringRaw(operation.MimeType, 120),
             StartedAtUtc = DateTimeOffset.UtcNow,
@@ -1031,6 +1036,7 @@ public sealed partial class MainWindow : Window
                     Id = StringRaw(record.Id, 64),
                     FileName = StringRaw(record.FileName, 180),
                     SourceHost = StringRaw(record.SourceHost, 120),
+                    ProfileName = NormalizeLibraryProfileName(record.ProfileName) ?? "",
                     FilePath = safePath,
                     MimeType = StringRaw(record.MimeType, 120),
                     BytesReceived = Math.Max(0, record.BytesReceived),
@@ -1061,6 +1067,7 @@ public sealed partial class MainWindow : Window
                 Id = entry.Id,
                 FileName = StringRaw(entry.FileName, 180),
                 SourceHost = StringRaw(entry.SourceHost, 120),
+                ProfileName = StringRaw(entry.ProfileName, 64),
                 FilePath = StringRaw(entry.FilePath, 2048),
                 MimeType = StringRaw(entry.MimeType, 120),
                 BytesReceived = Math.Max(0, entry.BytesReceived),
@@ -1101,19 +1108,23 @@ public sealed partial class MainWindow : Window
 
     private void RefreshDownloadsUi()
     {
-        var activeCount = _downloads.Count(entry => entry.Operation?.State == CoreWebView2DownloadState.InProgress);
-        DownloadsButton.Content = $"Downloads ({activeCount})";
-        DownloadsSummaryText.Text = activeCount == 0
-            ? $"{_downloads.Count} recent item(s) · history stored on this device"
-            : $"{activeCount} active · {_downloads.Count} recent item(s)";
+        var activeCountAll = _downloads.Count(entry => entry.Operation?.State == CoreWebView2DownloadState.InProgress);
+        DownloadsButton.Content = $"Downloads ({activeCountAll})";
+        RefreshDownloadsProfileFilter();
+
+        var filtered = _downloads.Where(MatchesDownloadsProfile).Take(100).ToArray();
+        var activeCount = filtered.Count(entry => entry.Operation?.State == CoreWebView2DownloadState.InProgress);
+        DownloadsSummaryText.Text = $"{activeCount} active · {filtered.Length} shown · {DownloadsProfileFilterLabel()}";
 
         if (DownloadsPanel.Visibility != Visibility.Visible) return;
         DownloadsList.Children.Clear();
-        if (_downloads.Count == 0)
+        if (filtered.Length == 0)
         {
             DownloadsList.Children.Add(new TextBlock
             {
-                Text = "No downloads yet. Files downloaded by websites will appear here.",
+                Text = _downloads.Count == 0
+                    ? "No downloads yet. Files downloaded by websites will appear here."
+                    : "No downloads for " + DownloadsProfileFilterLabel() + ". Choose another profile to see its downloads.",
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 145, 158, 180)),
                 Margin = new Thickness(8, 18, 8, 18)
@@ -1121,7 +1132,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        foreach (var entry in _downloads.Take(100))
+        foreach (var entry in filtered)
             DownloadsList.Children.Add(CreateDownloadCard(entry));
     }
 
@@ -1147,7 +1158,7 @@ public sealed partial class MainWindow : Window
         });
         content.Children.Add(new TextBlock
         {
-            Text = entry.SourceHost + " · " + entry.Status,
+            Text = entry.SourceHost + " · " + (entry.IsPrivate ? "Private session" : ProfileLabel(entry.ProfileName)) + " · " + entry.Status,
             FontSize = 10,
             Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 151, 164, 185)),
             TextWrapping = TextWrapping.Wrap
@@ -1288,6 +1299,7 @@ public sealed partial class MainWindow : Window
     private void ClearFinishedDownloads_Click(object sender, RoutedEventArgs e)
     {
         _downloads.RemoveAll(entry =>
+            MatchesDownloadsProfile(entry) &&
             entry.Operation?.State != CoreWebView2DownloadState.InProgress &&
             !(entry.Operation?.CanResume ?? false));
         SaveDownloadHistory();
@@ -1609,6 +1621,54 @@ public sealed partial class MainWindow : Window
         _libraryProfileFilter == AllLibraryProfilesFilter ||
         SameProfile(profileName, _libraryProfileFilter);
 
+    private bool MatchesDownloadsProfile(DownloadEntry entry) =>
+        _downloadsProfileFilter == AllLibraryProfilesFilter ||
+        (_downloadsProfileFilter == PrivateDownloadsProfileFilter
+            ? entry.IsPrivate
+            : !entry.IsPrivate && SameProfile(entry.ProfileName, _downloadsProfileFilter));
+
+    private string DownloadsProfileFilterLabel() =>
+        _downloadsProfileFilter switch
+        {
+            AllLibraryProfilesFilter => "All profiles",
+            PrivateDownloadsProfileFilter => "Private sessions",
+            _ => ProfileLabel(_downloadsProfileFilter)
+        };
+
+    private void DownloadsProfileFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_refreshingDownloadsProfileFilter) return;
+        if (DownloadsProfileFilter.SelectedItem is ComboBoxItem selected)
+            _downloadsProfileFilter = selected.Tag as string ?? AllLibraryProfilesFilter;
+        RefreshDownloadsUi();
+    }
+
+    private void RefreshDownloadsProfileFilter()
+    {
+        if (DownloadsProfileFilter is null) return;
+        _refreshingDownloadsProfileFilter = true;
+        try
+        {
+            DownloadsProfileFilter.Items.Clear();
+            DownloadsProfileFilter.Items.Add(new ComboBoxItem { Content = "All profiles", Tag = AllLibraryProfilesFilter });
+            DownloadsProfileFilter.Items.Add(new ComboBoxItem { Content = "Default", Tag = "" });
+
+            foreach (var name in GetKnownBrowserProfiles())
+                DownloadsProfileFilter.Items.Add(new ComboBoxItem { Content = name, Tag = name });
+
+            if (_downloads.Any(entry => entry.IsPrivate))
+                DownloadsProfileFilter.Items.Add(new ComboBoxItem { Content = "Private sessions", Tag = PrivateDownloadsProfileFilter });
+
+            var selected = DownloadsProfileFilter.Items
+                .OfType<ComboBoxItem>()
+                .FirstOrDefault(item => StringComparer.OrdinalIgnoreCase.Equals(item.Tag as string, _downloadsProfileFilter))
+                ?? (ComboBoxItem)DownloadsProfileFilter.Items[0];
+            DownloadsProfileFilter.SelectedItem = selected;
+            _downloadsProfileFilter = selected.Tag as string ?? AllLibraryProfilesFilter;
+        }
+        finally { _refreshingDownloadsProfileFilter = false; }
+    }
+
     private static string? NormalizeLibraryProfileName(string? value)
     {
         if (string.IsNullOrEmpty(value)) return "";
@@ -1814,6 +1874,7 @@ public sealed partial class MainWindow : Window
         foreach (var name in _profileCardUsage.Keys
                      .Concat(_browserHistory.Select(item => item.ProfileName))
                      .Concat(_browserBookmarks.Select(item => item.ProfileName))
+                     .Concat(_downloads.Where(item => !item.IsPrivate).Select(item => item.ProfileName))
                      .Concat(_surfaces.Values.Select(surface => surface.ProfileName)))
         {
             var normalized = NormalizeLibraryProfileName(name);
@@ -2653,6 +2714,7 @@ public sealed partial class MainWindow : Window
         public string FileName { get; set; } = "Website download";
         public bool IsPrivate { get; set; }
         public string SourceHost { get; set; } = "website";
+        public string ProfileName { get; set; } = "";
         public string FilePath { get; set; } = "";
         public string MimeType { get; set; } = "";
         public long BytesReceived { get; set; }
@@ -2702,6 +2764,7 @@ public sealed partial class MainWindow : Window
         public string Id { get; set; } = "";
         public string FileName { get; set; } = "";
         public string SourceHost { get; set; } = "";
+        public string ProfileName { get; set; } = "";
         public string FilePath { get; set; } = "";
         public string MimeType { get; set; } = "";
         public long BytesReceived { get; set; }

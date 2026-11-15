@@ -21,7 +21,7 @@
               Background="#111722" BorderBrush="#344158" BorderThickness="1"
               CornerRadius="12" Visibility="Collapsed" IsHitTestVisible="True">
         <Grid>
-          <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+          <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
           <Border Background="#171F2D" BorderBrush="#2C374B" BorderThickness="0,0,0,1"
                   CornerRadius="12,12,0,0" Padding="14,12">
             <Grid>
@@ -36,7 +36,15 @@
               </StackPanel>
             </Grid>
           </Border>
-          <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <Border Grid.Row="1" Background="#111722" BorderBrush="#2C374B" BorderThickness="0,0,0,1" Padding="12,7">
+            <Grid>
+              <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+              <TextBlock Text="PROFILE" FontSize="9" Foreground="#93A0B4" VerticalAlignment="Center" Margin="0,0,10,0" />
+              <ComboBox x:Name="DownloadsProfileFilter" Grid.Column="1" MinWidth="150" Height="30"
+                        SelectionChanged="DownloadsProfileFilter_SelectionChanged" />
+            </Grid>
+          </Border>
+          <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <StackPanel x:Name="DownloadsList" Padding="10" Spacing="8" />
           </ScrollViewer>
         </Grid>

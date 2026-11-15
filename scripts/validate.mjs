@@ -598,3 +598,15 @@ else pass("Panel-region tests assert the same right/bottom inset used by the liv
 
 if (process.exitCode) process.exit(process.exitCode);
 console.log("All static checks passed.");
+
+if (!nativeHost.includes("ProfileName = surface.ProfileName") ||
+    !nativeHost.includes("ProfileName = StringRaw(entry.ProfileName, 64)") ||
+    !nativeHost.includes("ProfileName = NormalizeLibraryProfileName(record.ProfileName) ?? \"\"") ||
+    !nativeHost.includes("DownloadsProfileFilter_SelectionChanged") ||
+    !nativeHost.includes("RefreshDownloadsProfileFilter") ||
+    !nativeHost.includes("MatchesDownloadsProfile") ||
+    !nativeHost.includes("PrivateDownloadsProfileFilter") ||
+    !nativeHost.includes("MatchesDownloadsProfile(entry) &&") ||
+    !nativeHost.includes("ProfileLabel(entry.ProfileName)") ||
+    !nativeXaml.includes('x:Name="DownloadsProfileFilter"')) fail("Downloads must retain source profile ownership, persist it compatibly, protect private history and expose a per-profile filter.");
+else pass("Downloads preserve profile ownership, default old records to Default, keep private metadata ephemeral and filter from the website panel.");
