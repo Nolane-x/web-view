@@ -130,9 +130,12 @@
         throw new RangeError("SpatialIndex cell size must be between 64 and 8192 world units.");
       }
       this.cellSize = size;
+      this.coarseCellSize = size * 64;
       this.cells = new Map();
+      this.coarseCells = new Map();
       this.entries = new Map();
       this.oversized = new Set();
+      this.coarseOversized = new Set();
     }
 
     get size() { return this.entries.size; }
@@ -141,8 +144,10 @@
 
     clear() {
       this.cells.clear();
+      this.coarseCells.clear();
       this.entries.clear();
       this.oversized.clear();
+      this.coarseOversized.clear();
     }
 
     rebuild(items) {
@@ -159,45 +164,29 @@
         return false;
       }
       this.remove(item.id);
-      const range = this._cellRange(rect);
-      const safeRange = [range.minX, range.minY, range.maxX, range.maxY].every(Number.isSafeInteger);
-      const cellCount = safeRange
-        ? (range.maxX - range.minX + 1) * (range.maxY - range.minY + 1)
-        : Number.POSITIVE_INFINITY;
-      if (!safeRange || !Number.isSafeInteger(cellCount) || cellCount > MAX_CELLS_PER_ITEM) {
-        this.oversized.add(item.id);
-        this.entries.set(item.id, { item, rect, keys: null, oversized: true });
-        return true;
-      }
-      const keys = [];
-      for (let cellY = range.minY; cellY <= range.maxY; cellY += 1) {
-        for (let cellX = range.minX; cellX <= range.maxX; cellX += 1) {
-          const key = this._key(cellX, cellY);
-          let bucket = this.cells.get(key);
-          if (!bucket) {
-            bucket = new Set();
-            this.cells.set(key, bucket);
-          }
-          bucket.add(item.id);
-          keys.push(key);
-        }
-      }
-      this.entries.set(item.id, { item, rect, keys, oversized: false });
+
+      const fine = this._rangeMetrics(rect, this.cellSize);
+      const coarse = this._rangeMetrics(rect, this.coarseCellSize);
+      const fineOversized = !fine || fine.cellCount > MAX_CELLS_PER_ITEM;
+      const coarseOversized = !coarse || coarse.cellCount > MAX_CELLS_PER_ITEM;
+      const fineKeys = fineOversized ? null : this._addToMap(this.cells, fine.range, item.id);
+      const coarseKeys = coarseOversized ? null : this._addToMap(this.coarseCells, coarse.range, item.id);
+
+      if (fineOversized) this.oversized.add(item.id);
+      if (coarseOversized) this.coarseOversized.add(item.id);
+      this.entries.set(item.id, {
+        item, rect, fineKeys, coarseKeys, fineOversized, coarseOversized
+      });
       return true;
     }
 
     remove(id) {
       const entry = this.entries.get(id);
       if (!entry) return false;
-      if (entry.oversized) this.oversized.delete(id);
-      else {
-        for (const key of entry.keys) {
-          const bucket = this.cells.get(key);
-          if (!bucket) continue;
-          bucket.delete(id);
-          if (bucket.size === 0) this.cells.delete(key);
-        }
-      }
+      if (entry.fineOversized) this.oversized.delete(id);
+      else this._removeFromMap(this.cells, entry.fineKeys, id);
+      if (entry.coarseOversized) this.coarseOversized.delete(id);
+      else this._removeFromMap(this.coarseCells, entry.coarseKeys, id);
       this.entries.delete(id);
       return true;
     }
@@ -205,22 +194,22 @@
     query(queryRect) {
       const rect = normalizeRect(queryRect);
       if (!rect || this.entries.size === 0) return [];
-      const range = this._cellRange(rect);
-      const safeRange = [range.minX, range.minY, range.maxX, range.maxY].every(Number.isSafeInteger);
-      const cellCount = safeRange
-        ? (range.maxX - range.minX + 1) * (range.maxY - range.minY + 1)
-        : Number.POSITIVE_INFINITY;
-      const candidateIds = new Set(this.oversized);
-      if (!safeRange || !Number.isSafeInteger(cellCount) || cellCount > MAX_CELLS_PER_QUERY) {
-        for (const id of this.entries.keys()) candidateIds.add(id);
+
+      const fine = this._rangeMetrics(rect, this.cellSize);
+      let candidateIds;
+      if (fine && fine.cellCount <= MAX_CELLS_PER_QUERY) {
+        candidateIds = new Set(this.oversized);
+        this._collectFromMap(this.cells, fine.range, candidateIds);
       } else {
-        for (let cellY = range.minY; cellY <= range.maxY; cellY += 1) {
-          for (let cellX = range.minX; cellX <= range.maxX; cellX += 1) {
-            const bucket = this.cells.get(this._key(cellX, cellY));
-            if (bucket) for (const id of bucket) candidateIds.add(id);
-          }
+        const coarse = this._rangeMetrics(rect, this.coarseCellSize);
+        if (coarse && coarse.cellCount <= MAX_CELLS_PER_QUERY) {
+          candidateIds = new Set(this.coarseOversized);
+          this._collectFromMap(this.coarseCells, coarse.range, candidateIds);
+        } else {
+          candidateIds = new Set(this.entries.keys());
         }
       }
+
       const results = [];
       for (const id of candidateIds) {
         const entry = this.entries.get(id);
@@ -229,12 +218,58 @@
       return results;
     }
 
-    _cellRange(rect) {
+    _rangeMetrics(rect, size) {
+      const range = this._cellRange(rect, size);
+      const safeRange = [range.minX, range.minY, range.maxX, range.maxY].every(Number.isSafeInteger);
+      if (!safeRange) return null;
+      const columns = range.maxX - range.minX + 1;
+      const rows = range.maxY - range.minY + 1;
+      const cellCount = columns * rows;
+      if (!Number.isSafeInteger(cellCount) || cellCount <= 0) return null;
+      return { range, cellCount };
+    }
+
+    _addToMap(map, range, id) {
+      const keys = [];
+      for (let cellY = range.minY; cellY <= range.maxY; cellY += 1) {
+        for (let cellX = range.minX; cellX <= range.maxX; cellX += 1) {
+          const key = this._key(cellX, cellY);
+          let bucket = map.get(key);
+          if (!bucket) {
+            bucket = new Set();
+            map.set(key, bucket);
+          }
+          bucket.add(id);
+          keys.push(key);
+        }
+      }
+      return keys;
+    }
+
+    _removeFromMap(map, keys, id) {
+      for (const key of keys || []) {
+        const bucket = map.get(key);
+        if (!bucket) continue;
+        bucket.delete(id);
+        if (bucket.size === 0) map.delete(key);
+      }
+    }
+
+    _collectFromMap(map, range, target) {
+      for (let cellY = range.minY; cellY <= range.maxY; cellY += 1) {
+        for (let cellX = range.minX; cellX <= range.maxX; cellX += 1) {
+          const bucket = map.get(this._key(cellX, cellY));
+          if (bucket) for (const id of bucket) target.add(id);
+        }
+      }
+    }
+
+    _cellRange(rect, size = this.cellSize) {
       return {
-        minX: Math.floor(rect.x / this.cellSize),
-        minY: Math.floor(rect.y / this.cellSize),
-        maxX: Math.ceil(rect.right / this.cellSize) - 1,
-        maxY: Math.ceil(rect.bottom / this.cellSize) - 1
+        minX: Math.floor(rect.x / size),
+        minY: Math.floor(rect.y / size),
+        maxX: Math.ceil(rect.right / size) - 1,
+        maxY: Math.ceil(rect.bottom / size) - 1
       };
     }
 
