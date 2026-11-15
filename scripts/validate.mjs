@@ -886,3 +886,9 @@ else pass("Workspace normalization assigns unique safe IDs and enforces 2,000 no
 if (!spatialIndexSource.includes("function claimUniqueId(candidate, usedIds, generateId)") ||
     !testsSource.includes('test("workspace IDs are safe, unique and retained in first-occurrence order"')) fail("Unique ID allocation must be covered by deterministic regression tests.");
 else pass("Duplicate and unsafe workspace ID handling is exercised by unit tests.");
+
+
+const validateNodeFunction = js.slice(js.indexOf("function validateNode"), js.indexOf("function workspaceSnapshot"));
+if (validateNodeFunction.indexOf("claimUniqueId(node.id") < validateNodeFunction.indexOf('if (node.type === "website")') ||
+    !validateNodeFunction.includes("Claim the ID only after the record has passed validation")) fail("Imported node IDs must be claimed only after the node record has passed validation.");
+else pass("Invalid import records do not reserve IDs or force later valid cards to be renamed.");
