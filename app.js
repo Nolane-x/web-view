@@ -5,7 +5,7 @@
   const DB_VERSION = 1;
   const STORE_NAME = "workspace";
   const STORAGE_KEY = "nolane-infinite-workspace-v1";
-  const MAX_NODES = 150;
+  const MAX_NODES = 2000;
   const MIN_SCALE = 0.25;
   const MAX_SCALE = 2.2;
   const SAFE_FRAME_SANDBOX = "allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals";
@@ -50,6 +50,11 @@
   const liveSurfaces = new Map();
   const nativeSurfaceStates = new Map();
   const stoppedLiveSurfaceIds = new Set();
+  const spatialIndex = new window.NolaneSpatialIndex.SpatialIndex(640);
+  const renderedNodeElements = new Map();
+  const CANVAS_OVERSCAN_PX = 280;
+  let canvasRenderFrame = 0;
+  let minimapFrame = 0;
 
   const uid = () => "node-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -410,6 +415,7 @@
     world.style.transform = "translate(" + view.x + "px," + view.y + "px) scale(" + view.scale + ")";
     grid.style.backgroundPosition = (view.x % (24 * view.scale)) + "px " + (view.y % (24 * view.scale)) + "px";
     $("#zoomValue").textContent = Math.round(view.scale * 100) + "%";
+    scheduleCanvasVirtualization();
     updateMinimap();
     scheduleNativeSurfaceSync();
   }
@@ -455,6 +461,71 @@
     toast("Navigating to " + hostOf(url) + ".");
   }
 
+  function currentCanvasWorldBounds(overscanPixels) {
+    const rect = canvas.getBoundingClientRect();
+    const overscan = Math.max(0, Number(overscanPixels) || 0) / view.scale;
+    return { x: -view.x / view.scale - overscan, y: -view.y / view.scale - overscan,
+      w: rect.width / view.scale + overscan * 2, h: rect.height / view.scale + overscan * 2 };
+  }
+
+  function matchesNodeFilters(node, query) {
+    if (!node) return false;
+    const typeMatch = activeView === "canvas" ||
+      (activeView === "websites" && node.type === "website") ||
+      (activeView === "notes" && node.type === "note");
+    if (!typeMatch) return false;
+    return !query || [node.title, node.url || "", node.content || "", node.description || ""]
+      .join(" ").toLowerCase().includes(query);
+  }
+
+  function scheduleCanvasVirtualization() {
+    if (canvasRenderFrame) return;
+    canvasRenderFrame = requestAnimationFrame(() => {
+      canvasRenderFrame = 0;
+      syncCanvasNodeElements(false);
+    });
+  }
+
+  function syncCanvasNodeElements(forceRefresh) {
+    const query = $("#searchInput").value.trim().toLowerCase();
+    const wanted = new Map();
+    for (const node of spatialIndex.query(currentCanvasWorldBounds(CANVAS_OVERSCAN_PX))) {
+      if (matchesNodeFilters(node, query)) wanted.set(node.id, node);
+    }
+    // Search remains workspace-wide. Matching off-screen results stay mounted.
+    if (query) for (const node of nodes) {
+      if (matchesNodeFilters(node, query)) wanted.set(node.id, node);
+    }
+    // Pin selected cards and active streams; do not detach a live video element on pan.
+    for (const node of nodes) {
+      if (node.id === selectedId || liveSurfaces.has(node.id)) wanted.set(node.id, node);
+    }
+    for (const [id, element] of renderedNodeElements) {
+      if (wanted.has(id)) continue;
+      element.remove();
+      renderedNodeElements.delete(id);
+    }
+    for (const node of wanted.values()) {
+      let element = renderedNodeElements.get(node.id);
+      const recreate = !element || (forceRefresh && !liveSurfaces.has(node.id));
+      if (recreate) {
+        const replacement = createNodeElement(node);
+        if (element) element.replaceWith(replacement);
+        else world.appendChild(replacement);
+        element = replacement;
+        renderedNodeElements.set(node.id, element);
+      } else {
+        element.style.left = node.x + "px";
+        element.style.top = node.y + "px";
+        element.style.width = node.w + "px";
+        element.style.height = node.h + "px";
+        element.style.zIndex = node.z || 1;
+        element.classList.toggle("selected", node.id === selectedId);
+      }
+      element.classList.toggle("hidden-by-search", !matchesNodeFilters(node, query));
+    }
+  }
+
   function scheduleNativeSurfaceSync() {
     if (!nativeHostAvailable || !nativeBridgeSocket || nativeBridgeSocket.readyState !== WebSocket.OPEN || nativeSyncFrame) return;
     nativeSyncFrame = requestAnimationFrame(() => {
@@ -463,36 +534,32 @@
       const area = canvas.getBoundingClientRect();
       const items = [];
       const profileUsage = window.NolaneNativeBridge?.summarizeProfileUsage(spaces) || [];
+      const uiBlocked = !!document.querySelector("dialog[open], #sidebar.open");
+      const scale = view.scale;
+      const query = $("#searchInput").value.trim().toLowerCase();
       for (const node of nodes) {
-        if (!canUseNativeSurface(node) || items.length >= 80) continue;
-        const card = $('.node[data-id="' + CSS.escape(node.id) + '"]', world);
-        const body = card?.querySelector(".node-body");
-        if (!body) continue;
-        const rect = body.getBoundingClientRect();
-        const style = getComputedStyle(body);
-        const uiBlocked = !!document.querySelector("dialog[open], #sidebar.open");
-        const clipLeft = Math.max(rect.left, area.left);
-        const clipTop = Math.max(rect.top, area.top);
-        const clipRight = Math.min(rect.right, area.right);
-        const clipBottom = Math.min(rect.bottom, area.bottom);
-        const clipWidth = Math.max(0, clipRight - clipLeft);
-        const clipHeight = Math.max(0, clipBottom - clipTop);
-        const visible = !uiBlocked && style.display !== "none" && style.visibility !== "hidden" &&
+        if (!canUseNativeSurface(node)) continue;
+        // Native card geometry must not depend on whether the card DOM is mounted.
+        const rect = {
+          left: area.left + view.x + (node.x + 1) * scale,
+          top: area.top + view.y + (node.y + 40) * scale,
+          width: Math.max(0, node.w - 2) * scale,
+          height: Math.max(0, node.h - 41) * scale
+        };
+        const right = rect.left + rect.width, bottom = rect.top + rect.height;
+        const clipLeft = Math.max(rect.left, area.left), clipTop = Math.max(rect.top, area.top);
+        const clipRight = Math.min(right, area.right), clipBottom = Math.min(bottom, area.bottom);
+        const clipWidth = Math.max(0, clipRight - clipLeft), clipHeight = Math.max(0, clipBottom - clipTop);
+        const visible = !uiBlocked && matchesNodeFilters(node, query) &&
           rect.width >= 80 && rect.height >= 60 && clipWidth >= 80 && clipHeight >= 60;
         items.push({
-          id: node.id,
-          url: node.privateMode && node.transientUrl ? node.transientUrl : node.url,
-          title: node.title,
-          privateMode: node.privateMode === true,
-          profileName: node.browserProfile || "",
-          x: Math.round(rect.left * 100) / 100,
-          y: Math.round(rect.top * 100) / 100,
-          width: Math.round(rect.width * 100) / 100,
-          height: Math.round(rect.height * 100) / 100,
+          id: node.id, url: node.privateMode && node.transientUrl ? node.transientUrl : node.url,
+          title: node.title, privateMode: node.privateMode === true, profileName: node.browserProfile || "",
+          x: Math.round(rect.left * 100) / 100, y: Math.round(rect.top * 100) / 100,
+          width: Math.round(rect.width * 100) / 100, height: Math.round(rect.height * 100) / 100,
           clipX: Math.round((clipLeft - rect.left) * 100) / 100,
           clipY: Math.round((clipTop - rect.top) * 100) / 100,
-          clipWidth: Math.round(clipWidth * 100) / 100,
-          clipHeight: Math.round(clipHeight * 100) / 100,
+          clipWidth: Math.round(clipWidth * 100) / 100, clipHeight: Math.round(clipHeight * 100) / 100,
           zIndex: Number(node.z) || 1, visible
         });
       }
@@ -501,14 +568,10 @@
       const viewport = {
         screenLeft: (Number(window.screenX) || 0) + Math.max(0, (outerWidth - window.innerWidth) / 2),
         screenTop: (Number(window.screenY) || 0) + Math.max(0, outerHeight - window.innerHeight - 8),
-        width: window.innerWidth,
-        height: window.innerHeight,
-        deviceScale: window.devicePixelRatio || 1
+        width: window.innerWidth, height: window.innerHeight, deviceScale: window.devicePixelRatio || 1
       };
       sendNativeBridgeMessage({
-        type: "nolane.surfaces.sync",
-        protocol: 2,
-        viewport,
+        type: "nolane.surfaces.sync", protocol: 2, viewport,
         workspaceVisible: document.visibilityState === "visible",
         items: items.map((item) => document.visibilityState === "visible" ? item : { ...item, visible: false }),
         profileUsage
@@ -716,8 +779,8 @@
 
   function renderNodes() {
     clearUnavailableChromeTabBindings();
-    world.replaceChildren();
-    nodes.forEach((node) => world.appendChild(createNodeElement(node)));
+    spatialIndex.rebuild(nodes);
+    syncCanvasNodeElements(true);
     updateViewFilter();
     updateCounts();
     renderSpaces();
@@ -1670,14 +1733,11 @@
   function updateViewFilter() {
     const query = $("#searchInput").value.trim().toLowerCase();
     let visibleCount = 0;
-    $$(".node", world).forEach((element) => {
-      const node = nodes.find((item) => item.id === element.dataset.id);
-      const viewMatch = activeView === "canvas" || (activeView === "websites" && node && node.type === "website") || (activeView === "notes" && node && node.type === "note");
-      const searchText = node ? [node.title, node.url || "", node.content || "", node.description || ""].join(" ").toLowerCase() : "";
-      const matches = !!(viewMatch && (!query || searchText.includes(query)));
-      element.classList.toggle("hidden-by-search", !matches);
-      if (matches) visibleCount += 1;
-    });
+    for (const node of nodes) if (matchesNodeFilters(node, query)) visibleCount += 1;
+    const nodesById = new Map(nodes.map((node) => [node.id, node]));
+    for (const [id, element] of renderedNodeElements) {
+      element.classList.toggle("hidden-by-search", !matchesNodeFilters(nodesById.get(id), query));
+    }
     const titles = { canvas: "My workspace", websites: "Web surfaces", notes: "Notes" };
     $("#viewTitle").textContent = activeView === "canvas" ? (activeSpace()?.name || titles.canvas) : titles[activeView];
     $("#canvasHeading").textContent = activeView === "websites" ? "Your web, gathered." : activeView === "notes" ? "Thoughts, in context." : (activeSpace()?.name || "A space for everything.");
@@ -1686,7 +1746,8 @@
     empty.hidden = visibleCount > 0;
     $("#emptyTitle").textContent = query ? "No matches yet." : activeView === "websites" ? "No websites here yet." : activeView === "notes" ? "No notes here yet." : "A fresh space.";
     $("#emptyDescription").textContent = query ? "Try a different search, or clear the search field." : "Start with a website, a note, or both. Your workspace grows with you.";
-    $$(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === activeView));
+    $(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === activeView));
+    scheduleCanvasVirtualization();
     scheduleNativeSurfaceSync();
   }
 
@@ -2081,7 +2142,8 @@
       if (!node) return;
       node.x = Math.round(dragState.x + (event.clientX - dragState.pointerX) / view.scale);
       node.y = Math.round(dragState.y + (event.clientY - dragState.pointerY) / view.scale);
-      const element = $('.node[data-id="' + CSS.escape(node.id) + '"]', world);
+      spatialIndex.upsert(node);
+      const element = renderedNodeElements.get(node.id);
       if (element) { element.style.left = node.x + "px"; element.style.top = node.y + "px"; }
       updateMinimap();
       scheduleNativeSurfaceSync();
@@ -2092,7 +2154,8 @@
       if (!node) return;
       node.w = Math.round(clamp(resizeState.w + (event.clientX - resizeState.pointerX) / view.scale, 230, 1800));
       node.h = Math.round(clamp(resizeState.h + (event.clientY - resizeState.pointerY) / view.scale, 150, 1200));
-      const element = $('.node[data-id="' + CSS.escape(node.id) + '"]', world);
+      spatialIndex.upsert(node);
+      const element = renderedNodeElements.get(node.id);
       if (element) { element.style.width = node.w + "px"; element.style.height = node.h + "px"; }
       updateMinimap();
       scheduleNativeSurfaceSync();
@@ -2219,37 +2282,50 @@
   }
 
   function updateMinimap() {
+    if (minimapFrame) return;
+    minimapFrame = requestAnimationFrame(() => { minimapFrame = 0; drawMinimap(); });
+  }
+
+  function drawMinimap() {
     const content = $("#minimapContent");
-    if (!content || $("#minimap").classList.contains("hidden")) return;
-    const valid = nodes.filter((node) => node && Number.isFinite(node.x));
-    content.querySelectorAll(".minimap-node").forEach((el) => el.remove());
-    if (!valid.length) return;
-    const minX = Math.min(...valid.map((n) => n.x));
-    const minY = Math.min(...valid.map((n) => n.y));
-    const maxX = Math.max(...valid.map((n) => n.x + n.w));
-    const maxY = Math.max(...valid.map((n) => n.y + n.h));
-    const spanX = Math.max(1, maxX - minX);
-    const spanY = Math.max(1, maxY - minY);
-    const bounds = content.getBoundingClientRect();
-    const width = bounds.width || 154;
-    const height = bounds.height || 83;
-    valid.forEach((node) => {
-      const marker = document.createElement("span");
-      marker.className = "minimap-node" + (node.type === "note" ? " note" : "");
-      marker.style.left = ((node.x - minX) / spanX * (width - 8) + 4) + "px";
-      marker.style.top = ((node.y - minY) / spanY * (height - 8) + 4) + "px";
-      marker.style.width = Math.max(3, node.w / spanX * (width - 8)) + "px";
-      marker.style.height = Math.max(3, node.h / spanY * (height - 8)) + "px";
-      content.appendChild(marker);
-    });
+    const minimapCanvas = $("#minimapCanvas");
     const viewport = $("#minimapViewport");
+    if (!content || !minimapCanvas || !viewport || $("#minimap").classList.contains("hidden")) return;
+    const bounds = content.getBoundingClientRect();
+    const width = bounds.width || 154, height = bounds.height || 83;
+    const pixelRatio = clamp(Number(window.devicePixelRatio) || 1, 1, 2);
+    const pixelWidth = Math.max(1, Math.round(width * pixelRatio));
+    const pixelHeight = Math.max(1, Math.round(height * pixelRatio));
+    if (minimapCanvas.width !== pixelWidth) minimapCanvas.width = pixelWidth;
+    if (minimapCanvas.height !== pixelHeight) minimapCanvas.height = pixelHeight;
+    const context = minimapCanvas.getContext("2d");
+    if (!context) return;
+    context.clearRect(0, 0, pixelWidth, pixelHeight);
+    const valid = nodes.filter((node) => node && Number.isFinite(node.x) && Number.isFinite(node.y) &&
+      Number.isFinite(node.w) && Number.isFinite(node.h));
+    if (!valid.length) { viewport.hidden = true; return; }
+    const minX = Math.min(...valid.map((node) => node.x));
+    const minY = Math.min(...valid.map((node) => node.y));
+    const maxX = Math.max(...valid.map((node) => node.x + node.w));
+    const maxY = Math.max(...valid.map((node) => node.y + node.h));
+    const spanX = Math.max(1, maxX - minX), spanY = Math.max(1, maxY - minY);
+    const pad = 4, mapWidth = Math.max(1, width - pad * 2), mapHeight = Math.max(1, height - pad * 2);
+    context.save();
+    context.scale(pixelRatio, pixelRatio);
+    for (const node of valid) {
+      context.fillStyle = node.type === "note" ? "rgba(182, 154, 117, 0.88)" : "rgba(131, 113, 213, 0.82)";
+      const x = pad + (node.x - minX) / spanX * mapWidth;
+      const y = pad + (node.y - minY) / spanY * mapHeight;
+      context.fillRect(x, y, Math.max(2, node.w / spanX * mapWidth), Math.max(2, node.h / spanY * mapHeight));
+    }
+    context.restore();
     const rect = canvas.getBoundingClientRect();
-    const worldLeft = -view.x / view.scale;
-    const worldTop = -view.y / view.scale;
-    viewport.style.left = ((worldLeft - minX) / spanX * (width - 8) + 4) + "px";
-    viewport.style.top = ((worldTop - minY) / spanY * (height - 8) + 4) + "px";
-    viewport.style.width = clamp((rect.width / view.scale) / spanX * (width - 8), 8, width - 8) + "px";
-    viewport.style.height = clamp((rect.height / view.scale) / spanY * (height - 8), 8, height - 8) + "px";
+    const worldLeft = -view.x / view.scale, worldTop = -view.y / view.scale;
+    viewport.hidden = false;
+    viewport.style.left = (pad + (worldLeft - minX) / spanX * mapWidth) + "px";
+    viewport.style.top = (pad + (worldTop - minY) / spanY * mapHeight) + "px";
+    viewport.style.width = clamp((rect.width / view.scale) / spanX * mapWidth, 8, mapWidth) + "px";
+    viewport.style.height = clamp((rect.height / view.scale) / spanY * mapHeight, 8, mapHeight) + "px";
   }
 
   function toast(message, kind) {
@@ -2402,7 +2478,11 @@
       if (event.code === "Space") { spacePressed = false; canvas.classList.remove("space-pan"); }
     });
     window.addEventListener("blur", () => { spacePressed = false; canvas.classList.remove("space-pan"); pointerUp(); });
-    window.addEventListener("resize", updateMinimap);
+    window.addEventListener("resize", () => {
+      scheduleCanvasVirtualization();
+      updateMinimap();
+      scheduleNativeSurfaceSync();
+    });
     window.addEventListener("pagehide", () => {
       for (const surface of liveSurfaces.values()) {
         window.postMessage({
