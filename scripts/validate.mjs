@@ -457,6 +457,11 @@ if (!js.includes("scheduleNativeSurfaceSync") || !js.includes("sendNativeBridgeM
 else pass("Static workspace syncs website-card geometry, receives native status and hides browser overlays for workspace dialogs.");
 if (!nativeHost.includes("_pendingSurfaceSync") || !nativeHost.includes("DrainSurfaceSyncQueueAsync") || !nativeHost.includes("nolane.host.hello")) fail("Native surface synchronization must coalesce layout updates and use a reliable workspace handshake.");
 else pass("Native surface synchronization coalesces stale layouts and uses an explicit ready handshake.");
+if (!nativeSyncFunction.includes("for (const node of nodes)") ||
+    nativeSyncFunction.includes("items.length >= 80") ||
+    !nativeHost.includes("items.OrderByDescending(item => item.ZIndex)") ||
+    !nativeHost.includes("activeCount >= MaxVisibleSurfaces")) fail("Every eligible website card must reach the native host, where z-order and the adaptive memory budget choose live surfaces.");
+else pass("All eligible website cards are synchronized; native z-order and memory limits select active surfaces without insertion-order truncation.");
 if (!nativeHost.includes('uri.AbsolutePath.Equals("/web-view"') || !nativeHost.includes('uri.AbsolutePath.StartsWith("/web-view/"')) fail("Native host workspace origin/path allowlist is too broad.");
 else pass("Native host accepts only the exact Nolane workspace path family.");
 
