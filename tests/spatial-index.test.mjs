@@ -140,7 +140,6 @@ test("native working-set ranking selects topmost cards from a 2,000-card overlap
   assert.deepEqual(ranked.slice(0, 4).map(item => item.id), [
     "overlap-1999", "overlap-1998", "overlap-1997", "overlap-1996"
   ]);
-  assert.deepEqual(ranked.slice(0, 4).map(item => item.id), ranked.slice(0, 4).map(item => item.id));
   assert.equal(items[0], originalFirst);
   assert.equal(items[0].id, "overlap-0");
   assert.deepEqual(sortByZIndex(null), []);
