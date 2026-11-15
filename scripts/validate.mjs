@@ -502,6 +502,16 @@ if (!nativeHost.includes("_environment.NewBrowserVersionAvailable") ||
     !appHost.includes("Process.Start(new ProcessStartInfo(executable, \"--background\")")) fail("A detected WebView2 Runtime update must surface a one-time tray notification and provide a controlled restart action.");
 else pass("WebView2 Runtime updates are surfaced once through the Windows tray, with an explicit restart action that releases the single-instance mutex before relaunch.");
 
+const shutdownWaitIndex = appHost.indexOf("await window.ShutdownTask;");
+const mutexReleaseIndex = appHost.indexOf("_instanceMutex?.ReleaseMutex();");
+const processRestartIndex = appHost.indexOf("Process.Start(new ProcessStartInfo(executable, \"--background\")");
+if (!nativeHost.includes("private Task _shutdownTask = Task.CompletedTask;") ||
+    !nativeHost.includes("public Task ShutdownTask => _shutdownTask;") ||
+    !nativeHost.includes("Closed += (_, _) => _shutdownTask = ShutdownAsync();") ||
+    shutdownWaitIndex < 0 || mutexReleaseIndex <= shutdownWaitIndex || processRestartIndex <= mutexReleaseIndex)
+    fail("Restart must await WebView2/bridge shutdown before releasing the single-instance mutex and launching a replacement host.");
+else pass("Restart waits for all native surfaces and the loopback listener to shut down before relaunching.");
+
 if (!js.includes('new WebSocket("ws://127.0.0.1:43172/bridge", "nolane.infinite.v2")') ||
     !js.includes('navigator.permissions.query({ name: "loopback-network" })') ||
     !js.includes("connectWindowsBridge") ||
