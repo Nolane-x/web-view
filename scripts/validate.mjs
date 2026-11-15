@@ -823,3 +823,15 @@ if (!nativeWorkingSetFunction.includes("if (nativeProfileUsageDirty)") ||
     !js.includes("function invalidateNativeProfileUsageCache()") ||
     !js.includes("invalidateNativeProfileUsageCache();")) fail("Native profile usage must be transmitted only after profile/workspace changes, not on every camera frame.");
 else pass("Native profile usage is cached and sent only when profile data changes or a bridge handshake requires a refresh.");
+
+
+if (!nativeWorkingSetFunction.includes('message.profileUsage = cachedNativeProfileUsage().map((item) => [item.name, item.count])') ||
+    !nativeHost.includes("entry.ValueKind == JsonValueKind.Array && entry.GetArrayLength() == 2") ||
+    !nativeHost.includes("Retain compatibility with the earlier verbose profile summary format")) fail("Profile usage must use compact name/count tuples while the Windows host retains compatibility with existing object summaries.");
+else pass("Profile summaries use compact tuples and the Windows parser remains backward-compatible.");
+
+const nodeValidationFunction = js.slice(js.indexOf("function validateNode"), js.indexOf("function workspaceSnapshot"));
+const urlNormalizationFunction = js.slice(js.indexOf("function normalizeUrl"), js.indexOf("function openDatabase"));
+if (!nodeValidationFunction.includes("const safeId = /^[A-Za-z0-9_-]{1,80}$/") ||
+    !urlNormalizationFunction.includes("if (parsed.href.length > 4096)")) fail("Native sync IDs and normalized URLs must have strict serialized-size bounds.");
+else pass("Workspace IDs are ASCII-bounded and normalized website URLs remain within the native 4,096-character descriptor limit.");
