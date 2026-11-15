@@ -943,3 +943,27 @@ if (!worldCoordinateFunction.includes("function normalizeWorldCoordinate") ||
 } else {
   pass("World coordinates and zoom-scaled camera translations share finite normalization across import, restore, drag, pan, zoom and fit-to-content.");
 }
+
+
+// Renderer capacity must count successfully visible surfaces, not failed creation attempts.
+const nativeSurfaceSyncFunction = nativeHost.slice(
+  nativeHost.indexOf("private async Task SynchronizeSurfacesAsync"),
+  nativeHost.indexOf("private async Task<BrowserSurface?> GetOrCreateSurfaceAsync")
+);
+const retainedDownloadBranch = nativeSurfaceSyncFunction.indexOf("if (HasRetainedDownload(item.Id))");
+const retainedOverlayItem = nativeSurfaceSyncFunction.indexOf("activeItems.Add(item)", retainedDownloadBranch);
+const retainedActiveCount = nativeSurfaceSyncFunction.indexOf("activeCount++", retainedDownloadBranch);
+const surfaceCreation = nativeSurfaceSyncFunction.indexOf("var surface = await GetOrCreateSurfaceAsync(item)");
+const surfaceCreationGuard = nativeSurfaceSyncFunction.indexOf("if (surface is null) continue;", surfaceCreation);
+const surfaceActiveCount = nativeSurfaceSyncFunction.indexOf("activeCount++", surfaceCreationGuard);
+if (retainedDownloadBranch < 0 ||
+    retainedOverlayItem < retainedDownloadBranch ||
+    retainedActiveCount < retainedOverlayItem ||
+    surfaceCreation < 0 ||
+    surfaceCreationGuard < surfaceCreation ||
+    surfaceActiveCount < surfaceCreationGuard ||
+    nativeSurfaceSyncFunction.indexOf("activeCount++") < retainedDownloadBranch) {
+  fail("Native renderer budget must count only successfully created/retained visible surfaces, and retained-download surfaces must stay inside the active overlay region.");
+} else {
+  pass("Native renderer capacity is charged only to visible retained or successfully created surfaces; download-protected cards remain inside the overlay region.");
+}
