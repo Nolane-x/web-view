@@ -130,7 +130,14 @@
     _key(x, y) { return x + ":" + y; }
   }
 
-  const api = Object.freeze({ SpatialIndex });
+  function sortByZIndex(items) {
+    if (!Array.isArray(items)) return [];
+    return items.slice().sort((left, right) =>
+      (Number(right?.z) || 0) - (Number(left?.z) || 0)
+    );
+  }
+
+  const api = Object.freeze({ SpatialIndex, sortByZIndex });
   if (typeof module === "object" && module.exports) module.exports = api;
   else globalThis.NolaneSpatialIndex = api;
 })();
