@@ -27,6 +27,7 @@ public sealed partial class MainWindow : Window
     private const long MaxLibraryBackupBytes = 5L * 1024 * 1024;
     private const string AllLibraryProfilesFilter = "\0all";
     private const string PrivateDownloadsProfileFilter = "\0private";
+    private const int MaxSurfaceCandidates = 8;
     private readonly int _maxVisibleSurfaces = DetermineVisibleSurfaceBudget();
 
     private int MaxVisibleSurfaces => _maxVisibleSurfaces;
@@ -714,7 +715,7 @@ public sealed partial class MainWindow : Window
         var parsed = new List<SurfaceDescriptor>();
         foreach (var item in items.EnumerateArray())
             if (TryParseDescriptor(item, out var descriptor) && descriptor.Visible) parsed.Add(descriptor);
-        parsed = parsed.OrderByDescending(item => item.ZIndex).Take(MaxVisibleSurfaces).ToList();
+        parsed = parsed.OrderByDescending(item => item.ZIndex).Take(MaxSurfaceCandidates).ToList();
         _pendingSurfaceSync = parsed;
         _syncRevision++;
         if (!_surfaceSyncRunning) { _surfaceSyncRunning = true; _ = DrainSurfaceSyncQueueAsync(); }
