@@ -12,7 +12,8 @@ internal sealed class BackgroundTrayIcon : IDisposable
     private const string RunValue = "NolaneInfiniteBridge";
     private const string PreferencesKey = @"Software\Nolane\NolaneInfiniteBridge";
     private const string StartupChoiceValue = "StartupChoice";
-    private const uint NIM_ADD = 0, NIM_DELETE = 2, NIF_MESSAGE = 1, NIF_ICON = 2, NIF_TIP = 4;
+    private const uint NIM_ADD = 0, NIM_MODIFY = 1, NIM_DELETE = 2;
+    private const uint NIF_MESSAGE = 1, NIF_ICON = 2, NIF_TIP = 4, NIF_INFO = 0x10, NIIF_INFO = 0x1;
     private const uint WM_NULL = 0, WM_RBUTTONUP = 0x0205, WM_LBUTTONDBLCLK = 0x0203;
     private const uint TPM_RIGHTBUTTON = 0x0002, TPM_RETURNCMD = 0x0100, TPM_NONOTIFY = 0x0080;
     private const uint MF_STRING = 0, MF_SEPARATOR = 0x0800, MF_CHECKED = 0x0008, MF_UNCHECKED = 0;
@@ -106,6 +107,23 @@ internal sealed class BackgroundTrayIcon : IDisposable
             return IntPtr.Zero;
         }
         return CallWindowProc(_previousProc, hwnd, message, wParam, lParam);
+    }
+
+    public void ShowNotification(string title, string message)
+    {
+        if (_disposed) return;
+        var data = new NotifyIconData
+        {
+            Size = (uint)Marshal.SizeOf<NotifyIconData>(),
+            Window = _hwnd,
+            Id = 1,
+            Flags = NIF_TIP | NIF_INFO,
+            Tip = "Nolane Infinite - WebView2 update ready",
+            Info = message.Length > 255 ? message[..255] : message,
+            InfoTitle = title.Length > 63 ? title[..63] : title,
+            InfoFlags = NIIF_INFO
+        };
+        _ = Shell_NotifyIcon(NIM_MODIFY, ref data);
     }
 
     private void ShowMenu()
