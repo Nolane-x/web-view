@@ -376,6 +376,7 @@ public sealed partial class MainWindow : Window
         _knownWorkspaceSurfaceIds.Clear();
         _workspaceSurfaceIdsReceived = false;
         _pendingSurfaceSync = null;
+        _syncRevision++;
         _bridgeHandshakeComplete = false;
         _workspaceReady = false;
         _workspaceVisible = true;
@@ -712,7 +713,8 @@ public sealed partial class MainWindow : Window
         if (!root.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array) return;
         var parsed = new List<SurfaceDescriptor>();
         foreach (var item in items.EnumerateArray())
-            if (TryParseDescriptor(item, out var descriptor)) parsed.Add(descriptor);
+            if (TryParseDescriptor(item, out var descriptor) && descriptor.Visible) parsed.Add(descriptor);
+        parsed = parsed.OrderByDescending(item => item.ZIndex).Take(MaxVisibleSurfaces).ToList();
         _pendingSurfaceSync = parsed;
         _syncRevision++;
         if (!_surfaceSyncRunning) { _surfaceSyncRunning = true; _ = DrainSurfaceSyncQueueAsync(); }
@@ -1892,7 +1894,7 @@ public sealed partial class MainWindow : Window
                 !entry.TryGetProperty("name", out var nameProperty) ||
                 nameProperty.ValueKind != JsonValueKind.String ||
                 !entry.TryGetProperty("count", out var countProperty) ||
-                !countProperty.TryGetInt32(out var count) || count < 1 || count > 1000) continue;
+                !countProperty.TryGetInt32(out var count) || count < 1 || count > 24000) continue;
             var name = NormalizeLibraryProfileName(nameProperty.GetString());
             if (name is null) continue;
             updated[name] = updated.TryGetValue(name, out var existing) ? existing + count : count;
