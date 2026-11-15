@@ -463,8 +463,10 @@
       const area = canvas.getBoundingClientRect();
       const items = [];
       const profileUsage = window.NolaneNativeBridge?.summarizeProfileUsage(spaces) || [];
+      // Send every eligible card so the host can release removed surfaces and apply its own z-order/memory budget.
+      // The workspace already enforces MAX_NODES; truncating by insertion order can strand visible cards added later.
       for (const node of nodes) {
-        if (!canUseNativeSurface(node) || items.length >= 80) continue;
+        if (!canUseNativeSurface(node)) continue;
         const card = $('.node[data-id="' + CSS.escape(node.id) + '"]', world);
         const body = card?.querySelector(".node-body");
         if (!body) continue;
