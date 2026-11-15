@@ -876,8 +876,8 @@ if (!nativeWorkingSetFunction.includes('message.profileUsage = cachedNativeProfi
     !nativeProfileUsageParser.includes("totalCount > MaxWorkspaceCardCount") ||
     !nativeProfileUsageParser.includes("candidate.GetValueOrDefault(normalized)") ||
     !nativeProfileUsageParser.includes("entry.TryGetProperty(\"name\"") ||
-    !nativeProfileUsageSmoke.includes("duplicate profile names are aggregated without integer overflow") ||
-    !nativeProfileUsageSmoke.includes("snapshots above the 24,000-card aggregate are rejected atomically")) fail("Profile summaries must remain compact, backward-compatible and bounded by the total 12 x 2,000 workspace card quota.");
+    !nativeProfileUsageSmoke.includes("Case-insensitive duplicate profile names were not combined.") ||
+    !nativeProfileUsageSmoke.includes("A profile summary with more than 24,000 entries was not rejected atomically.")) fail("Profile summaries must remain compact, backward-compatible and bounded by the total 12 x 2,000 workspace card quota.");
 else pass("Native profile snapshots are parsed atomically, retain legacy object compatibility, and reject over-count/overflow input.");
 
 const nodeValidationFunction = js.slice(js.indexOf("function validateNode"), js.indexOf("function workspaceSnapshot"));
