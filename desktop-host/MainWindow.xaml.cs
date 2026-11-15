@@ -711,7 +711,8 @@ public sealed partial class MainWindow : Window
             }
             return;
         }
-        if (!root.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array) return;
+        if (!root.TryGetProperty("items", out var items) ||
+            items.ValueKind != JsonValueKind.Array || items.GetArrayLength() > MaxSurfaceCandidates) return;
         var parsed = new List<SurfaceDescriptor>();
         foreach (var item in items.EnumerateArray())
             if (TryParseDescriptor(item, out var descriptor) && descriptor.Visible) parsed.Add(descriptor);
