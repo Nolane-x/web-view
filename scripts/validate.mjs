@@ -683,3 +683,9 @@ if (!spatialIndexSource.includes("MAX_CELLS_PER_ITEM") || !spatialIndexSource.in
     !spatialIndexSource.includes("this.oversized")) fail("Spatial index resource safeguards are missing.");
 else pass("Spatial index bounds per-item cell fan-out and oversized viewport queries.");
 if (!/\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}/.test(read(".github/workflows/pages.yml"))) fail("Pages CI concurrency must be isolated per PR/ref.");
+
+
+const virtualizedFilterFunction = js.slice(js.indexOf("function updateViewFilter"), js.indexOf("function selectNode"));
+if (!/^\\s*\\$\\$\\("\\.nav-item"\\)\\.forEach/m.test(virtualizedFilterFunction) ||
+    /^\\s*\\$\\("\\.nav-item"\\)\\.forEach/m.test(virtualizedFilterFunction)) fail("The virtualized filter must toggle every navigation item using the NodeList selector helper.");
+else pass("The virtualized filter updates all navigation buttons through querySelectorAll.");
