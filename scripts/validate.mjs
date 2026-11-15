@@ -650,3 +650,9 @@ else pass("Overlay activation is foreground-safe and restores Downloads/Library/
 if (!js.includes('nativeBridgePermission = "granted";') ||
     js.includes('socket.addEventListener("open", () => {\n      nativeBridgeReconnectAttempts = 0;')) fail("Loopback reconnect fallback must be based on a completed bridge handshake, not a bare WebSocket open.");
 else pass("Loopback permission fallback and reconnect backoff only reset after a successful native handshake.");
+
+if (!nativeHost.includes("var browserOwnsForeground =") ||
+    nativeHost.includes("if (!_overlayShown || !_workspaceVisible || !_bridgeHandshakeComplete") ||
+    !nativeHost.includes("if (!_overlayShown &&") ||
+    !nativeHost.includes("DownloadsPanel.Visibility == Visibility.Visible ||")) fail("The native activation timer must restore a hidden overlay only when its owning browser is foreground.");
+else pass("The overlay timer can restore hidden native panels after focus returns, without bypassing foreground ownership checks.");

@@ -638,13 +638,24 @@ public sealed partial class MainWindow : Window
 
     private void RefreshOverlayActivation()
     {
-        if (!_overlayShown || !_workspaceVisible || !_bridgeHandshakeComplete || _browserHwnd == IntPtr.Zero) return;
-        if (!IsWindow(_browserHwnd) || IsIconic(_browserHwnd)) { HideOverlayWindow(); return; }
+        if (!_workspaceVisible || !_bridgeHandshakeComplete || _browserHwnd == IntPtr.Zero) return;
+        if (!IsWindow(_browserHwnd) || IsIconic(_browserHwnd))
+        {
+            HideOverlayWindow();
+            return;
+        }
+
         var foreground = GetForegroundWindow();
         var rootOwner = foreground == IntPtr.Zero ? IntPtr.Zero : GetAncestor(foreground, GA_ROOTOWNER);
-        if (foreground != _browserHwnd && foreground != _overlayHwnd && rootOwner != _browserHwnd)
+        var browserOwnsForeground = foreground == _browserHwnd ||
+            foreground == _overlayHwnd || rootOwner == _browserHwnd;
+        if (!browserOwnsForeground)
+        {
             HideOverlayWindow();
-        else if (!_overlayShown &&
+            return;
+        }
+
+        if (!_overlayShown &&
             (_activeOverlayItems.Count > 0 || DownloadsPanel.Visibility == Visibility.Visible ||
              LibraryPanel.Visibility == Visibility.Visible || _profilesDialogOpen))
             UpdateOverlayRegion(_activeOverlayItems);
