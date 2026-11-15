@@ -700,3 +700,15 @@ else pass("Windows CI validates the spatial index and isolates workflow runs per
 if (!js.includes("new ResizeObserver(") || !js.includes("canvasResizeObserver.observe(canvas)") ||
     !js.includes("scheduleCanvasVirtualization();")) fail("Canvas viewport changes from layout transitions must refresh the virtualized DOM projection.");
 else pass("Canvas ResizeObserver refreshes virtualization, minimap and native geometry after layout changes.");
+
+
+const saveFunction = js.slice(js.indexOf("function scheduleSave"), js.indexOf("async function saveWorkspace"));
+const profileOptionsFunction = js.slice(js.indexOf("function availableBrowserProfiles"), js.indexOf("function createNodeElement"));
+const cachedUsageFunction = js.slice(js.indexOf("function cachedNativeProfileUsage"), js.indexOf("function createNodeElement"));
+if (!saveFunction.includes("invalidateWorkspaceDerivedCaches()") ||
+    !profileOptionsFunction.includes("availableBrowserProfilesCache") ||
+    !cachedUsageFunction.includes("nativeProfileUsageCache") ||
+    !js.includes("const profileUsage = cachedNativeProfileUsage()")) fail("Workspace-derived browser profile lists and native profile usage must be cached and invalidated when workspace data changes.");
+else pass("Browser profile choices and native profile-usage summaries are cached across camera frames and invalidated on workspace saves.");
+if ((js.match(/summarizeProfileUsage\(spaces\)/g) || []).length !== 1) fail("Native profile usage must not be recomputed directly in every camera synchronization frame.");
+else pass("Native surface sync no longer recomputes profile usage on each camera frame.");
