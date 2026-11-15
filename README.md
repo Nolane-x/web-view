@@ -148,3 +148,12 @@ The startup choice is stored in a separate per-user application registry key; th
 
 
 The native Downloads panel labels each transfer with its originating browser profile and filters All profiles, Default, named profiles or Private sessions. The filter applies to the visible list and Clear finished action. Downloads still go to the destination chosen in WebView2's Save dialog; Nolane does not silently move files into profile-specific folders.
+
+
+## Large-workspace canvas
+
+Each local space accepts up to **2,000 website cards and notes**. The complete model remains in local storage, while ordinary card DOM is mounted only near the viewport. A grid-based spatial index narrows viewport queries; selected cards and active Live Chrome Surface media elements remain mounted so camera movement does not tear down drag state or decoded video. Search remains workspace-wide and can temporarily mount all matching results.
+
+Native WebView2 synchronization derives body rectangles from the camera transform, so it still sends descriptors for off-screen cards that have no DOM element. The Windows host continues to decide which small number of actual browser renderers can be visible. The minimap draws into one Canvas instead of creating one HTML element per item.
+
+The 2,000-item ceiling is a resource guard, not a claim of mathematically unbounded storage. Raising it requires profiling import/export size, IndexedDB latency, camera movement and native synchronization on low-memory Windows devices.
