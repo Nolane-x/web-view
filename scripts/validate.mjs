@@ -783,3 +783,14 @@ if (!renderNodesFunction.includes("refreshNativeWorkspaceIdsSnapshot()") ||
     !liveStopFunction.includes("if (render) renderNodes()") ||
     !js.includes("function refreshNativeWorkspaceIdsSnapshot()")) fail("Native workspace membership must refresh when a live surface stops and the card returns to native WebView2 eligibility.");
 else pass("Live Surface teardown refreshes native membership even when no workspace persistence event occurs.");
+
+
+const virtualizedSearchFunction = js.slice(js.indexOf("function syncCanvasNodeElements"), js.indexOf("function scheduleNativeSurfaceSync"));
+const searchFilterFunction = js.slice(js.indexOf("function updateViewFilter"), js.indexOf("function selectNode"));
+if (virtualizedSearchFunction.includes("if (query) for (const node of nodes)") ||
+    !searchFilterFunction.includes("searchResultIds.push(node.id)") ||
+    !searchFilterFunction.includes("function focusSearchResult(reverse)") ||
+    !searchFilterFunction.includes("searchResultIds.length - 1") ||
+    !js.includes('$("#searchInput").addEventListener("keydown"') ||
+    !js.includes("focusSearchResult(event.shiftKey)")) fail("Workspace-wide search must keep off-screen matches out of the DOM and navigate them with Enter/Shift+Enter.");
+else pass("Search indexes all workspace matches without mounting them; Enter and Shift+Enter navigate the result set.");
