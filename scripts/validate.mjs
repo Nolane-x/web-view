@@ -815,3 +815,11 @@ if (!spatialIndexSource.includes("function cycleIndex(currentIndex, itemCount, r
     !searchNavigatorFunction.includes("NolaneSpatialIndex.cycleIndex") ||
     !searchNavigatorFunction.includes("if (searchResultIndex < 0) return;")) fail("Search result navigation must use a tested cyclic index policy for forward, reverse, wrap and empty cases.");
 else pass("Search result cycling uses the tested shared forward/reverse index policy.");
+
+
+if (!nativeWorkingSetFunction.includes("if (nativeProfileUsageDirty)") ||
+    !nativeWorkingSetFunction.includes("message.profileUsage = cachedNativeProfileUsage()") ||
+    !nativeWorkingSetFunction.includes("if (nativeProfileUsageDirty) nativeProfileUsageDirty = false") ||
+    !js.includes("function invalidateNativeProfileUsageCache()") ||
+    !js.includes("invalidateNativeProfileUsageCache();")) fail("Native profile usage must be transmitted only after profile/workspace changes, not on every camera frame.");
+else pass("Native profile usage is cached and sent only when profile data changes or a bridge handshake requires a refresh.");
