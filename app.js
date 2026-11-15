@@ -58,6 +58,7 @@
   const spatialIndex = new window.NolaneSpatialIndex.SpatialIndex(640);
   const renderedNodeElements = new Map();
   const CANVAS_OVERSCAN_PX = 280;
+  const MAX_NATIVE_SURFACE_CANDIDATES = 8;
   let canvasRenderFrame = 0;
   let minimapFrame = 0;
   let minimapGeometryDirty = true;
@@ -610,15 +611,16 @@
       const query = $("#searchInput").value.trim().toLowerCase();
       const items = [];
 
-      // Only send cards whose body intersects the real viewport. The host's adaptive
-      // renderer budget is reported during the handshake, so this working set stays
-      // bounded even when thousands of cards overlap the same canvas region.
+      // Send a small z-ranked candidate pool from the real viewport. The host still
+      // activates only its adaptive renderer budget; extra candidates are fallbacks
+      // when a higher card cannot initialize or must be retained for an active download.
       if (!uiBlocked && document.visibilityState === "visible") {
         const candidates = window.NolaneSpatialIndex.sortByZIndex(
           spatialIndex.query(currentCanvasWorldBounds(0))
             .filter((node) => canUseNativeSurface(node) && matchesNodeFilters(node, query))
         );
 
+        const candidateLimit = Math.min(MAX_NATIVE_SURFACE_CANDIDATES, nativeMaxVisibleSurfaces + 4);
         for (const node of candidates) {
           const rect = {
             left: area.left + view.x + (node.x + 1) * scale,
@@ -642,7 +644,7 @@
             clipWidth: Math.round(clipWidth * 100) / 100, clipHeight: Math.round(clipHeight * 100) / 100,
             zIndex: Number(node.z) || 1, visible: true
           });
-          if (items.length >= nativeMaxVisibleSurfaces) break;
+          if (items.length >= candidateLimit) break;
         }
       }
 
