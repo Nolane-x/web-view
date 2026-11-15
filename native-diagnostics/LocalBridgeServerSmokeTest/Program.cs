@@ -84,4 +84,20 @@ Check(closed.MessageType == WebSocketMessageType.Close &&
       client.CloseStatus == WebSocketCloseStatus.MessageTooBig,
     "The bridge did not close a message that exceeded its 2 MiB safety limit.");
 
-Console.WriteLine("PASS: loopback binding, Origin rejection, WebSocket negotiation, bidirectional messages and 2 MiB limit.");
+await server.DisposeAsync();
+using (var afterShutdown = new System.Net.Sockets.TcpClient())
+{
+    using var shutdownTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+    var refused = false;
+    try
+    {
+        await afterShutdown.ConnectAsync(System.Net.IPAddress.Loopback, LocalBridgeServer.Port, shutdownTimeout.Token);
+    }
+    catch (System.Net.Sockets.SocketException)
+    {
+        refused = true;
+    }
+    Check(refused, "The loopback listener still accepted connections after native host shutdown completed.");
+}
+
+Console.WriteLine("PASS: loopback binding, Origin rejection, WebSocket negotiation, bidirectional messages, 2 MiB limit and listener shutdown.");
