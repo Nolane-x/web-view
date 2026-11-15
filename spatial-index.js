@@ -145,7 +145,19 @@
     return (current + (reverse ? -1 : 1) + count) % count;
   }
 
-  const api = Object.freeze({ SpatialIndex, sortByZIndex, cycleIndex });
+  function claimUniqueId(candidate, usedIds, generateId) {
+    if (!(usedIds instanceof Set)) throw new TypeError("claimUniqueId requires a Set of previously used IDs.");
+    const valid = (value) => typeof value === "string" && /^[A-Za-z0-9_-]{1,80}$/.test(value);
+    let id = valid(candidate) ? candidate : "";
+    if (!id || usedIds.has(id)) {
+      if (typeof generateId !== "function") throw new TypeError("claimUniqueId requires an ID generator for invalid or duplicate IDs.");
+      do { id = generateId(); } while (!valid(id) || usedIds.has(id));
+    }
+    usedIds.add(id);
+    return id;
+  }
+
+  const api = Object.freeze({ SpatialIndex, sortByZIndex, cycleIndex, claimUniqueId });
   if (typeof module === "object" && module.exports) module.exports = api;
   else globalThis.NolaneSpatialIndex = api;
 })();
