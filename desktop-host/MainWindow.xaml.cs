@@ -1934,34 +1934,11 @@ public sealed partial class MainWindow : Window
 
     private void UpdateProfileCardUsage(JsonElement root)
     {
-        if (!root.TryGetProperty("profileUsage", out var profiles) || profiles.ValueKind != JsonValueKind.Array) return;
-        var updated = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        foreach (var entry in profiles.EnumerateArray())
-        {
-            JsonElement nameProperty;
-            JsonElement countProperty;
-            if (entry.ValueKind == JsonValueKind.Array && entry.GetArrayLength() == 2)
-            {
-                nameProperty = entry[0];
-                countProperty = entry[1];
-            }
-            else if (entry.ValueKind == JsonValueKind.Object &&
-                     entry.TryGetProperty("name", out var objectName) &&
-                     entry.TryGetProperty("count", out var objectCount))
-            {
-                // Retain compatibility with the earlier verbose profile summary format.
-                nameProperty = objectName;
-                countProperty = objectCount;
-            }
-            else continue;
+        if (!root.TryGetProperty("profileUsage", out var profiles) ||
+            !ProfileUsageSnapshot.TryParse(profiles, out var updated)) return;
 
-            if (nameProperty.ValueKind != JsonValueKind.String ||
-                !countProperty.TryGetInt32(out var count) || count < 1 || count > 24000) continue;
-            var name = NormalizeLibraryProfileName(nameProperty.GetString());
-            if (name is null) continue;
-            updated[name] = updated.TryGetValue(name, out var existing) ? existing + count : count;
-        }
-
+        // Parse and validate the complete snapshot before replacing the last good
+        // state; malformed or oversized input must never partially update profiles.
         _profileCardUsage.Clear();
         foreach (var item in updated) _profileCardUsage[item.Key] = item.Value;
         _profileUsageReceived = true;

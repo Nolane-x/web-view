@@ -77,6 +77,11 @@ jobs:
         run: |
           dotnet run --project native-diagnostics/DownloadProfileFilterSmokeTest/DownloadProfileFilterSmokeTest.csproj -c Release
 
+      - name: Exercise bounded native profile summary parsing
+        shell: pwsh
+        run: |
+          dotnet run --project native-diagnostics/ProfileUsageSnapshotSmokeTest/ProfileUsageSnapshotSmokeTest.csproj -c Release
+
       - name: Compile isolated WebView2 projection smoke test
         shell: pwsh
         run: |

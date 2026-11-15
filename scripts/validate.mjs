@@ -12,6 +12,8 @@ const css = read("styles.css");
 const manifest = JSON.parse(read("manifest.webmanifest"));
 const sw = read("sw.js");
 const workspaceStorage = read("workspace-storage.js");
+const nativeProfileUsageParser = read("desktop-host/ProfileUsageSnapshot.cs");
+const nativeProfileUsageSmoke = read("native-diagnostics/ProfileUsageSnapshotSmokeTest/Program.cs");
 
 const ids = [...html.matchAll(/\bid=["']([^"']+)["']/g)].map((match) => match[1]);
 const idSet = new Set(ids);
@@ -869,9 +871,14 @@ else pass("Native profile usage is cached and sent only when profile data change
 
 
 if (!nativeWorkingSetFunction.includes('message.profileUsage = cachedNativeProfileUsage().map((item) => [item.name, item.count])') ||
-    !nativeHost.includes("entry.ValueKind == JsonValueKind.Array && entry.GetArrayLength() == 2") ||
-    !nativeHost.includes("Retain compatibility with the earlier verbose profile summary format")) fail("Profile usage must use compact name/count tuples while the Windows host retains compatibility with existing object summaries.");
-else pass("Profile summaries use compact tuples and the Windows parser remains backward-compatible.");
+    !nativeHost.includes("ProfileUsageSnapshot.TryParse(profiles, out var updated)") ||
+    !nativeProfileUsageParser.includes("MaxWorkspaceCardCount = 12 * 2000") ||
+    !nativeProfileUsageParser.includes("totalCount > MaxWorkspaceCardCount") ||
+    !nativeProfileUsageParser.includes("candidate.GetValueOrDefault(normalized)") ||
+    !nativeProfileUsageParser.includes("entry.TryGetProperty(\"name\"") ||
+    !nativeProfileUsageSmoke.includes("duplicate profile names are aggregated without integer overflow") ||
+    !nativeProfileUsageSmoke.includes("snapshots above the 24,000-card aggregate are rejected atomically")) fail("Profile summaries must remain compact, backward-compatible and bounded by the total 12 x 2,000 workspace card quota.");
+else pass("Native profile snapshots are parsed atomically, retain legacy object compatibility, and reject over-count/overflow input.");
 
 const nodeValidationFunction = js.slice(js.indexOf("function validateNode"), js.indexOf("function workspaceSnapshot"));
 const urlNormalizationFunction = js.slice(js.indexOf("function normalizeUrl"), js.indexOf("function openDatabase"));
