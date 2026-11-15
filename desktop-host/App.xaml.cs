@@ -27,6 +27,7 @@ public partial class App : Application
         _window = new MainWindow();
         var hwnd = WindowNative.GetWindowHandle(_window);
         _tray = new BackgroundTrayIcon(hwnd, () => _window?.Close());
+        _window.SetTrayNotificationHandler(_tray.ShowNotification);
         _window.Closed += (_, _) =>
         {
             _tray?.Dispose();
