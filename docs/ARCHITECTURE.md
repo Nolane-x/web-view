@@ -176,3 +176,5 @@ The native sync payload stays below the local bridge's 2 MiB message guard by co
 Native workspace membership snapshots are cached by ordered card ID and retransmitted only when that set changes or a new bridge handshake forces a refresh. Camera-only saves therefore do not repeatedly serialize the same list. Website URLs are capped at 4,096 characters at normalization time, matching the native descriptor parser's bound.
 
 Workspace-wide search does not force all matching cards into the DOM. Matches are indexed as IDs across the active space, while viewport virtualization continues to mount only nearby cards and the selected card. Enter jumps to the next match, Shift+Enter to the previous match; the camera centers the target and the virtualizer mounts it.
+
+Native profile usage is a separate dirty cache. Pan/zoom frames omit the profile summary entirely; it is re-sent only after structural workspace changes, profile assignments or a new bridge handshake.
