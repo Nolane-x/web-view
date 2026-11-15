@@ -153,7 +153,8 @@ internal sealed class LocalBridgeServer : IAsyncDisposable
         if (!headers.TryGetValue("Connection", out var connection) ||
             !connection.Split(',').Any(token => token.Trim().Equals("upgrade", StringComparison.OrdinalIgnoreCase))) return false;
         if (!headers.TryGetValue("Sec-WebSocket-Version", out var version) || version != "13") return false;
-        if (!headers.TryGetValue("Sec-WebSocket-Key", out key)) return false;
+        if (!headers.TryGetValue("Sec-WebSocket-Key", out var candidateKey) || string.IsNullOrWhiteSpace(candidateKey)) return false;
+        key = candidateKey;
         if (!headers.TryGetValue("Sec-WebSocket-Protocol", out var protocols) ||
             !protocols.Split(',').Any(token => token.Trim() == RequiredProtocol)) return false;
         try { return Convert.FromBase64String(key).Length == 16; }
