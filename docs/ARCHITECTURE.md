@@ -153,3 +153,14 @@ Every WebView2 download records the originating card's browser profile. The Down
 
 
 A standalone `DownloadProfileFilter` smoke test checks All, Default, named profiles and Private sessions independently. Matching is case-insensitive for named profile labels; private downloads never appear in a persistent named-profile filter.
+
+
+## Large-workspace model, spatial index and viewport virtualization
+
+Each space accepts at most 2,000 validated nodes. The persisted workspace remains a complete local model; the DOM is only its viewport projection. A uniform-grid spatial index (640 world units per cell) stores node bounds, de-duplicates candidates across cells, verifies exact rectangle intersection, and places unusually large items in a bounded overflow set to prevent unbounded cell fan-out. Invalid geometry is rejected; drag and resize update the index incrementally.
+
+The camera queries the world-space viewport with a 280 CSS-pixel overscan margin. Ordinary off-screen cards are detached; selected cards and active Live Chrome Surface cards are pinned. Search remains workspace-wide: all matching items are mounted while a non-empty query is active so off-screen matches are not silently hidden. The minimap draws markers into one high-DPI-aware Canvas.
+
+The Windows bridge no longer measures native card bodies from `.node` DOM elements. Each body rectangle is derived from world position/size, canvas origin, camera translation and scale, plus the one-pixel card border and 39-pixel header. Native descriptors therefore remain complete when lightweight card DOM is unmounted. Every eligible card descriptor is still sent; the native host keeps responsibility for z-order selection and its adaptive 2/3/4 visible-renderer budget (cache bounded to 8).
+
+The 2,000-node ceiling is an explicit resource guard, not an infinite-storage promise. Raising it requires measured evidence across IndexedDB save/load, import/export, search, minimap, native sync payload size and camera movement. Manual Windows checks remain necessary for WebView2 clipping and overlay hit-testing after virtualization.
