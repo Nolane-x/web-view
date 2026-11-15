@@ -179,3 +179,5 @@ Workspace-wide search does not force all matching cards into the DOM. Matches ar
 
 Native profile usage is a separate dirty cache. Pan/zoom frames omit the profile summary entirely; it is re-sent only after structural workspace changes, profile assignments or a new bridge handshake.
 Profile summaries are serialized as compact `[name,count]` tuples (while the host still accepts the previous object form), reducing worst-case payload size. Workspace IDs are restricted to 80 safe ASCII characters and normalized URLs to 4,096 characters, so a maximum 2,000-ID snapshot plus the 12×2,000-profile summary and at most eight visible descriptors stays within the bridge's 2 MiB frame guard.
+
+Workspace ingestion assigns a safe unique ID to each node and space. The first valid occurrence of an ID is preserved; later duplicate or unsafe IDs are regenerated. Invalid website records are rejected before they can reserve an ID. Normalization processes no more than 2,000 valid nodes per space and 12 valid spaces.
