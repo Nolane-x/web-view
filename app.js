@@ -254,6 +254,7 @@
     if (!parsed.hostname || (parsed.hostname.indexOf(".") === -1 && parsed.hostname !== "localhost" && !parsed.hostname.startsWith("["))) {
       throw new Error("Enter a full website address, such as example.com.");
     }
+    if (parsed.href.length > 4096) throw new Error("Normalized website addresses must be 4,096 characters or fewer.");
     return parsed.href;
   }
 
@@ -356,8 +357,10 @@
 
   function validateNode(node) {
     if (!node || typeof node !== "object" || !["website", "note"].includes(node.type)) return null;
+    const candidateId = String(node.id || "").slice(0, 80);
+    const safeId = /^[A-Za-z0-9_-]{1,80}$/.test(candidateId) ? candidateId : uid();
     const clean = {
-      id: String(node.id || uid()).slice(0, 80),
+      id: safeId,
       type: node.type,
       title: String(node.title || (node.type === "note" ? "Untitled note" : "Website")).slice(0, 120),
       x: clamp(Number(node.x) || 0, -100000, 100000),
