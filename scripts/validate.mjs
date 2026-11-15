@@ -325,8 +325,10 @@ if (!workflow.includes("Compile isolated WebView2 projection smoke test") ||
     !workflow.includes("WebView2EnableCsWinRTProjection=true") ||
     !smokeCs.includes("typeof(CoreWebView2Environment)") ||
     !smokeCs.includes("typeof(CoreWebView2DownloadOperation)") ||
-    !smokeProject.includes("Microsoft.WindowsAppSDK")) fail("Windows CI must independently compile the WebView2 CsWinRT API projection before building the native host.");
-else pass("Windows CI isolates the WinUI/WebView2 CsWinRT API projection in a minimal compile-smoke project before native host publish.");
+    smokeProject.includes("Microsoft.WindowsAppSDK") ||
+    !smokeProject.includes("<EnableDefaultCompileItems>false</EnableDefaultCompileItems>") ||
+    !smokeProject.includes('<Compile Include="ProjectionApi.cs" />')) fail("Windows CI must independently compile the WebView2 CsWinRT API projection without globbing sibling WinUI smoke projects.");
+else pass("Windows CI compiles the WebView2 Core API projection in an isolated .NET probe, then compiles the real WinUI host separately.");
 if (!js.includes("clean.privateMode = node.privateMode === true") ||
     !js.includes("privateMode: node.privateMode === true") ||
     !js.includes('data-action="native-private"') ||
