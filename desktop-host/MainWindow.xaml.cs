@@ -111,7 +111,6 @@ public sealed partial class MainWindow : Window
     private Button ClearHistoryButton = null!;
     private TextBox LibrarySearchBox = null!;
     private ComboBox LibraryProfileFilter = null!;
-    private ComboBox DownloadsProfileFilter = null!;
     private StackPanel LibraryItems = null!;
     private int _downloadRefreshQueued;
     private int _downloadHistoryDirty;

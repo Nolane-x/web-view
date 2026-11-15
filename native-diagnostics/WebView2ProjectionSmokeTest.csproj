@@ -3,7 +3,8 @@
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <OutputType>Library</OutputType>
-    <UseWinUI>true</UseWinUI>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <UseWinUI>false</UseWinUI>
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <WebView2EnableCsWinRTProjection>true</WebView2EnableCsWinRTProjection>
@@ -11,12 +12,11 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260921001" />
+    <Compile Include="ProjectionApi.cs" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3179.45" />
     <Reference Include="Microsoft.Web.WebView2.Core.Projection">
       <HintPath>$(NuGetPackageRoot)microsoft.web.webview2/1.0.3179.45/lib_manual/net8.0-windows10.0.17763.0/Microsoft.Web.WebView2.Core.Projection.dll</HintPath>
       <Private>true</Private>
     </Reference>
-    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.9169" PrivateAssets="all" />
   </ItemGroup>
 </Project>

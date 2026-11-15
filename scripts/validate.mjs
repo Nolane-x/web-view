@@ -629,3 +629,12 @@ else pass("Downloads profile matching is case-insensitive for names, keeps Defau
 if (!workflow.includes("Exercise profile-aware Downloads filtering") ||
     !workflow.includes("DownloadProfileFilterSmokeTest.csproj")) fail("Windows CI must execute the profile-aware Downloads filtering smoke test.");
 else pass("Windows CI executes profile isolation tests for Downloads.");
+
+if (!smokeProject.includes("<EnableDefaultCompileItems>false</EnableDefaultCompileItems>") ||
+    !smokeProject.includes('<Compile Include="ProjectionApi.cs" />') ||
+    smokeProject.includes("Microsoft.WindowsAppSDK") ||
+    smokeProject.includes("Microsoft.Windows.SDK.BuildTools")) fail("The Core WebView2 projection probe must compile only ProjectionApi.cs and must not glob runnable sibling WinUI smoke projects.");
+else pass("The Core WebView2 projection probe is isolated from nested Windows smoke-test projects.");
+if (nativeHost.includes("private ComboBox DownloadsProfileFilter = null!;") ||
+    !nativeXaml.includes('x:Name="DownloadsProfileFilter"')) fail("DownloadsProfileFilter must be generated once from XAML rather than redeclared in the partial C# class.");
+else pass("Downloads profile filter uses the single XAML-generated control field.");
