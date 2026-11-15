@@ -17,11 +17,12 @@ internal sealed class BackgroundTrayIcon : IDisposable
     private const uint WM_NULL = 0, WM_RBUTTONUP = 0x0205, WM_LBUTTONDBLCLK = 0x0203;
     private const uint TPM_RIGHTBUTTON = 0x0002, TPM_RETURNCMD = 0x0100, TPM_NONOTIFY = 0x0080;
     private const uint MF_STRING = 0, MF_SEPARATOR = 0x0800, MF_CHECKED = 0x0008, MF_UNCHECKED = 0;
-    private const uint IDM_OPEN = 1001, IDM_STARTUP = 1002, IDM_EXIT = 1003;
+    private const uint IDM_OPEN = 1001, IDM_STARTUP = 1002, IDM_EXIT = 1003, IDM_RESTART = 1004;
     private const uint WM_TRAY_CALLBACK = 0x8000 + 0x51;
     private const int GWLP_WNDPROC = -4;
     private readonly IntPtr _hwnd;
     private readonly Action _exit;
+    private readonly Action _restart;
     private readonly WindowProc _windowProc;
     private readonly IntPtr _previousProc;
     private bool _disposed;
@@ -76,10 +77,11 @@ internal sealed class BackgroundTrayIcon : IDisposable
     [DllImport("user32.dll")]
     private static extern bool PostMessage(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
 
-    public BackgroundTrayIcon(IntPtr hwnd, Action exit)
+    public BackgroundTrayIcon(IntPtr hwnd, Action exit, Action restart)
     {
         _hwnd = hwnd;
         _exit = exit;
+        _restart = restart;
         _windowProc = OnWindowMessage;
         _previousProc = SetWindowLongPtr(_hwnd, GWLP_WNDPROC, Marshal.GetFunctionPointerForDelegate(_windowProc));
         var data = new NotifyIconData
@@ -136,6 +138,7 @@ internal sealed class BackgroundTrayIcon : IDisposable
             _ = AppendMenu(menu, MF_SEPARATOR, UIntPtr.Zero, null);
             _ = AppendMenu(menu, MF_STRING, new UIntPtr(IDM_STARTUP), "Start with Windows");
             _ = CheckMenuItem(menu, IDM_STARTUP, MF_BYCOMMAND | (IsStartupEnabled() ? MF_CHECKED : MF_UNCHECKED));
+            _ = AppendMenu(menu, MF_STRING, new UIntPtr(IDM_RESTART), "Restart bridge (close browser cards)");
             _ = AppendMenu(menu, MF_SEPARATOR, UIntPtr.Zero, null);
             _ = AppendMenu(menu, MF_STRING, new UIntPtr(IDM_EXIT), "Exit background bridge");
             _ = GetCursorPos(out var point);
@@ -144,6 +147,7 @@ internal sealed class BackgroundTrayIcon : IDisposable
             _ = PostMessage(_hwnd, WM_NULL, IntPtr.Zero, IntPtr.Zero);
             if (selected == IDM_OPEN) OpenWorkspace();
             else if (selected == IDM_STARTUP) ToggleStartup();
+            else if (selected == IDM_RESTART) _restart();
             else if (selected == IDM_EXIT) _exit();
         }
         finally { _ = DestroyMenu(menu); }
