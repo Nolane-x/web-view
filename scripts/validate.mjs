@@ -659,6 +659,7 @@ else pass("The overlay timer can restore hidden native panels after focus return
 
 
 const spatialIndexSource = read("spatial-index.js");
+const spatialIndexTests = read("tests/spatial-index.test.mjs");
 if (!html.includes('<script src="./spatial-index.js" defer></script>') ||
     html.indexOf('src="./spatial-index.js"') > html.indexOf('src="./app.js"')) fail("The spatial index must load before the workspace application.");
 else pass("The spatial index is loaded before the virtualized canvas.");
@@ -836,9 +837,10 @@ else pass("Profile summaries use compact tuples and the Windows parser remains b
 
 const nodeValidationFunction = js.slice(js.indexOf("function validateNode"), js.indexOf("function workspaceSnapshot"));
 const urlNormalizationFunction = js.slice(js.indexOf("function normalizeUrl"), js.indexOf("function openDatabase"));
-if (!nodeValidationFunction.includes("const safeId = /^[A-Za-z0-9_-]{1,80}$/") ||
+if (!nodeValidationFunction.includes("claimUniqueId(node.id, usedIds || new Set(), uid)") ||
+    !spatialIndexSource.includes("^[A-Za-z0-9_-]{1,80}$") ||
     !urlNormalizationFunction.includes("if (parsed.href.length > 4096)")) fail("Native sync IDs and normalized URLs must have strict serialized-size bounds.");
-else pass("Workspace IDs are ASCII-bounded and normalized website URLs remain within the native 4,096-character descriptor limit.");
+else pass("Workspace IDs are ASCII-bounded through the shared unique-ID allocator and normalized URLs remain within the native 4,096-character descriptor limit.");
 
 
 // Exercise the actual UTF-8 JSON size against the native loopback bridge's 2 MiB limit.
@@ -884,7 +886,7 @@ if (!nodeCollectionFunction.includes("usedIds = new Set()") ||
 else pass("Workspace normalization assigns unique safe IDs and enforces 2,000 nodes per space and 12 spaces during ingestion.");
 
 if (!spatialIndexSource.includes("function claimUniqueId(candidate, usedIds, generateId)") ||
-    !testsSource.includes('test("workspace IDs are safe, unique and retained in first-occurrence order"')) fail("Unique ID allocation must be covered by deterministic regression tests.");
+    !spatialIndexTests.includes('test("workspace IDs are safe, unique and retained in first-occurrence order"')) fail("Unique ID allocation must be covered by deterministic regression tests.");
 else pass("Duplicate and unsafe workspace ID handling is exercised by unit tests.");
 
 
