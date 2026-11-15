@@ -922,6 +922,10 @@ const worldCoordinateFunction = spatialIndexSource.slice(
 );
 const normalizedNodeFunction = js.slice(js.indexOf("function validateNode"), js.indexOf("function workspaceSnapshot"));
 const normalizedPointerMoveFunction = js.slice(js.indexOf("function pointerMove"), js.indexOf("function pointerUp"));
+const companionImportFunction = js.slice(
+  js.indexOf("function addBrowserTabsToWorkspace"),
+  js.indexOf("function handleCompanionMessage")
+);
 if (!worldCoordinateFunction.includes("function normalizeWorldCoordinate") ||
     !worldCoordinateFunction.includes("Number.MAX_SAFE_INTEGER") ||
     !worldCoordinateFunction.includes("function normalizeViewState") ||
@@ -931,6 +935,8 @@ if (!worldCoordinateFunction.includes("function normalizeWorldCoordinate") ||
     !normalizedNodeFunction.includes("normalizeCanvasCoordinate(node.y, 0)") ||
     !normalizedPointerMoveFunction.includes("normalizeCanvasCoordinate(") ||
     !normalizedPointerMoveFunction.includes("view = normalizeCanvasView(") ||
+    !companionImportFunction.includes("normalizeCanvasCoordinate(Math.round(center.x") ||
+    !companionImportFunction.includes("normalizeCanvasCoordinate(Math.round(center.y") ||
     !spatialIndexTests.includes('test("world coordinates preserve large valid positions beyond the former 100,000-unit clamp"') ||
     !spatialIndexTests.includes('test("camera translations use the normalized scale-aware world-coordinate budget"')) {
   fail("World coordinates and camera translations must share tested finite bounds across import, restore and pointer interactions.");
