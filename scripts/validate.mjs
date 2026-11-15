@@ -17,7 +17,6 @@ const nativeProfileUsageSmoke = read("native-diagnostics/ProfileUsageSnapshotSmo
 const workspaceSnapshotReceiver = read("desktop-host/WorkspaceSnapshotReceiver.cs");
 const workspaceSnapshotSmoke = read("native-diagnostics/WorkspaceSnapshotSmokeTest/Program.cs");
 const nativeBridgeSource = read("native-bridge.js");
-const nativeBridgeTests = read("tests/native-bridge.test.mjs");
 
 const ids = [...html.matchAll(/\bid=["']([^"']+)["']/g)].map((match) => match[1]);
 const idSet = new Set(ids);
