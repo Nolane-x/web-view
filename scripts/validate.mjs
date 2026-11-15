@@ -769,7 +769,8 @@ else pass("Native sync sends only the top visible viewport working set; complete
 if (!nativeHost.includes("UpdateWorkspaceSurfaceIds(root)") ||
     !nativeHost.includes("_knownWorkspaceSurfaceIds") ||
     !nativeHost.includes("ids.GetArrayLength() > 2000") ||
-    !nativeHost.includes("Take(MaxVisibleSurfaces)") ||
+    !nativeHost.includes("MaxSurfaceCandidates = 8") ||
+    !nativeHost.includes("Take(MaxSurfaceCandidates)") ||
     !nativeHost.includes("!present.Contains(surface.Id)") ||
     !nativeHost.includes("!known.Contains(surface.Id)")) fail("Windows host must distinguish deleted workspace cards from off-screen cached cards and enforce its visible working-set budget.");
 else pass("Windows host reconciles deleted IDs separately, hides off-screen surfaces, and caps parsed descriptors at its adaptive renderer budget.");
@@ -803,8 +804,10 @@ else pass("Search indexes all workspace matches without mounting them; Enter and
 
 if (!spatialIndexSource.includes("function sortByZIndex(items)") ||
     !nativeWorkingSetFunction.includes("window.NolaneSpatialIndex.sortByZIndex") ||
-    !nativeWorkingSetFunction.includes("if (items.length >= nativeMaxVisibleSurfaces) break;")) fail("Native working-set candidates must be z-ranked and stop at the adaptive visible-surface budget.");
-else pass("Native surface selection ranks overlapping cards by z-order and stops at the device renderer budget.");
+    !js.includes("const MAX_NATIVE_SURFACE_CANDIDATES = 8;") ||
+    !nativeWorkingSetFunction.includes("const candidateLimit = Math.min(MAX_NATIVE_SURFACE_CANDIDATES, nativeMaxVisibleSurfaces + 4);") ||
+    !nativeWorkingSetFunction.includes("if (items.length >= candidateLimit) break;")) fail("Native working-set candidates must be z-ranked, viewport-only and capped at eight, while actual renderer activation remains bounded by the host's adaptive budget.");
+else pass("Native surface selection ranks viewport candidates, sends a bounded fallback pool of up to eight, and lets the host enforce its adaptive active-renderer budget.");
 
 const searchNavigatorFunction = js.slice(js.indexOf("function updateViewFilter"), js.indexOf("function selectNode"));
 if (!searchNavigatorFunction.includes('if (query) searchResultIds.push(node.id)') ||
@@ -845,13 +848,13 @@ else pass("Workspace IDs are ASCII-bounded through the shared unique-ID allocato
 
 // Exercise the actual UTF-8 JSON size against the native loopback bridge's 2 MiB limit.
 // Workspace bounds: 2,000 safe IDs × 80 chars, 24,000 distinct profile names × 64 chars,
-// and the host-reported maximum of four visible browser descriptors.
+// and up to eight bounded viewport candidates (the host still activates only 2–4).
 const worstCaseNativePayload = {
   type: "nolane.surfaces.sync",
   protocol: 2,
   viewport: { screenLeft: -100000, screenTop: -100000, width: 12000, height: 12000, deviceScale: 4 },
   workspaceVisible: true,
-  items: Array.from({ length: 4 }, () => ({
+  items: Array.from({ length: 8 }, () => ({
     id: "n".repeat(80),
     url: "https://example.com/" + "a".repeat(4076),
     title: "\\u0000".repeat(120),
@@ -870,8 +873,8 @@ const worstCaseNativePayload = {
   ])
 };
 const worstCasePayloadBytes = Buffer.byteLength(JSON.stringify(worstCaseNativePayload), "utf8");
-if (worstCasePayloadBytes >= 2 * 1024 * 1024 - 16 * 1024) fail("Worst-case 2,000-card workspace membership, 24,000 compact profiles and four visible descriptors must stay at least 16 KiB below the bridge's 2 MiB frame limit.");
-else pass("Worst-case native sync payload is " + worstCasePayloadBytes + " UTF-8 bytes, below the 2 MiB frame limit with at least 16 KiB headroom.");
+if (worstCasePayloadBytes >= 2 * 1024 * 1024 - 16 * 1024) fail("Worst-case 2,000-card workspace membership, 24,000 compact profiles and eight bounded viewport candidates must stay at least 16 KiB below the bridge's 2 MiB frame limit.");
+else pass("Worst-case native sync payload is " + worstCasePayloadBytes + " UTF-8 bytes for eight viewport candidates, below the 2 MiB frame limit with at least 16 KiB headroom.");
 
 
 const nodeCollectionFunction = js.slice(js.indexOf("function normalizeNodeCollection"), js.indexOf("function validateNode"));
