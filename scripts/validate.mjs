@@ -640,3 +640,11 @@ else pass("The Core WebView2 projection probe is isolated from nested Windows sm
 if (nativeHost.includes("private ComboBox DownloadsProfileFilter = null!;") ||
     !nativeXaml.includes('x:Name="DownloadsProfileFilter"')) fail("DownloadsProfileFilter must be generated once from XAML rather than redeclared in the partial C# class.");
 else pass("Downloads profile filter uses the single XAML-generated control field.");
+
+if (!nativeHost.includes("var foreground = GetForegroundWindow();") ||
+    !nativeHost.includes("foreground != _browserHwnd && foreground != _overlayHwnd && rootOwner != _browserHwnd") ||
+    !nativeHost.includes("LibraryPanel.Visibility == Visibility.Visible || _profilesDialogOpen")) fail("The overlay must never rise above an unrelated foreground app and must restore native panels when the browser returns.");
+else pass("Overlay activation is foreground-safe and restores Downloads/Library/Profiles even when no website surface is visible.");
+if (!js.includes('nativeBridgePermission = "granted";') ||
+    js.includes('socket.addEventListener("open", () => {\n      nativeBridgeReconnectAttempts = 0;')) fail("Loopback reconnect fallback must be based on a completed bridge handshake, not a bare WebSocket open.");
+else pass("Loopback permission fallback and reconnect backoff only reset after a successful native handshake.");

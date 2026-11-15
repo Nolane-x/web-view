@@ -618,6 +618,13 @@ public sealed partial class MainWindow : Window
     {
         if (!_workspaceVisible || !_bridgeHandshakeComplete || _browserHwnd == IntPtr.Zero ||
             _overlayWidth <= 0 || _overlayHeight <= 0) return;
+        var foreground = GetForegroundWindow();
+        var rootOwner = foreground == IntPtr.Zero ? IntPtr.Zero : GetAncestor(foreground, GA_ROOTOWNER);
+        if (foreground != _browserHwnd && foreground != _overlayHwnd && rootOwner != _browserHwnd)
+        {
+            HideOverlayWindow();
+            return;
+        }
         _ = SetWindowPos(_overlayHwnd, IntPtr.Zero, _overlayScreenX, _overlayScreenY,
             _overlayWidth, _overlayHeight, SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
         _overlayShown = true;
@@ -637,6 +644,10 @@ public sealed partial class MainWindow : Window
         var rootOwner = foreground == IntPtr.Zero ? IntPtr.Zero : GetAncestor(foreground, GA_ROOTOWNER);
         if (foreground != _browserHwnd && foreground != _overlayHwnd && rootOwner != _browserHwnd)
             HideOverlayWindow();
+        else if (!_overlayShown &&
+            (_activeOverlayItems.Count > 0 || DownloadsPanel.Visibility == Visibility.Visible ||
+             LibraryPanel.Visibility == Visibility.Visible || _profilesDialogOpen))
+            UpdateOverlayRegion(_activeOverlayItems);
     }    private void Workspace_NavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
     {
         if (IsTrustedWorkspaceUri(e.Uri)) return;

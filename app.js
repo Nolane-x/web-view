@@ -521,6 +521,7 @@
     if (!message || typeof message !== "object") return;
     if (message.type === "nolane.native.ready") {
       nativeHostAvailable = true;
+      nativeBridgePermission = "granted";
       nativeBridgeReconnectAttempts = 0;
       const reportedBudget = Number(message.maxVisibleSurfaces);
       nativeMaxVisibleSurfaces = Number.isInteger(reportedBudget) ? clamp(reportedBudget, 1, 8) : 2;
@@ -1997,7 +1998,6 @@
     catch (_) { return toast("Could not open the local connection. Check that the Windows bridge is running.", "error"); }
     nativeBridgeSocket = socket;
     socket.addEventListener("open", () => {
-      nativeBridgeReconnectAttempts = 0;
       socket.send(JSON.stringify({ type: "nolane.bridge.hello", protocol: 2, page: location.href }));
     }, { once: true });
     socket.addEventListener("message", (event) => {
