@@ -110,16 +110,27 @@
     ];
   }
 
-  function normalizeSpace(space, index) {
-    if (!space || typeof space !== "object") return null;
-    const id = String(space.id || uid()).slice(0, 80);
+  function normalizeSpace(space, index, usedSpaceIds) {
+    if (!space || typeof space !== "object" || Array.isArray(space)) return null;
+    const id = window.NolaneSpatialIndex.claimUniqueId(space.id, usedSpaceIds, uid);
     const name = String(space.name || ("Space " + (index + 1))).trim().slice(0, 48) || ("Space " + (index + 1));
-    const cleanNodes = Array.isArray(space.nodes) ? space.nodes.map(validateNode).filter(Boolean).slice(0, MAX_NODES) : [];
+    const cleanNodes = normalizeNodeCollection(space.nodes);
     const rawView = space.view || {};
     const cleanView = Number.isFinite(rawView.x) && Number.isFinite(rawView.y) && Number.isFinite(rawView.scale)
       ? { x: clamp(rawView.x, -100000, 100000), y: clamp(rawView.y, -100000, 100000), scale: clamp(rawView.scale, MIN_SCALE, MAX_SCALE) }
       : { x: 25, y: 0, scale: 1 };
     return { id, name, nodes: cleanNodes, view: cleanView };
+  }
+
+  function normalizeSpaceCollection(rawSpaces) {
+    if (!Array.isArray(rawSpaces)) return [];
+    const usedSpaceIds = new Set();
+    const normalized = [];
+    for (let index = 0; index < rawSpaces.length && normalized.length < 12; index += 1) {
+      const space = normalizeSpace(rawSpaces[index], index, usedSpaceIds);
+      if (space) normalized.push(space);
+    }
+    return normalized;
   }
 
   function activeSpace() {
@@ -316,14 +327,14 @@
     }
 
     if (saved && Array.isArray(saved.spaces) && saved.spaces.length) {
-      spaces = saved.spaces.map(normalizeSpace).filter(Boolean).slice(0, 12);
+      spaces = normalizeSpaceCollection(saved.spaces);
       activeSpaceId = spaces.some((space) => space.id === saved.activeSpaceId) ? saved.activeSpaceId : spaces[0].id;
       const current = activeSpace();
       nodes = current.nodes.map((node) => ({ ...node }));
       view = { ...current.view };
       toast("Your local workspaces were restored.");
     } else if (saved && Array.isArray(saved.nodes)) {
-      nodes = saved.nodes.map(validateNode).filter(Boolean).slice(0, MAX_NODES);
+      nodes = normalizeNodeCollection(saved.nodes);
       if (saved.view && Number.isFinite(saved.view.x) && Number.isFinite(saved.view.y) && Number.isFinite(saved.view.scale)) {
         view = { x: saved.view.x, y: saved.view.y, scale: clamp(saved.view.scale, MIN_SCALE, MAX_SCALE) };
       }
@@ -355,12 +366,23 @@
     scheduleSave(600);
   }
 
-  function validateNode(node) {
-    if (!node || typeof node !== "object" || !["website", "note"].includes(node.type)) return null;
-    const candidateId = String(node.id || "").slice(0, 80);
-    const safeId = /^[A-Za-z0-9_-]{1,80}$/.test(candidateId) ? candidateId : uid();
+  function normalizeNodeCollection(rawNodes) {
+    if (!Array.isArray(rawNodes)) return [];
+    const usedIds = new Set();
+    const normalized = [];
+    for (const candidate of rawNodes) {
+      const node = validateNode(candidate, usedIds);
+      if (!node) continue;
+      normalized.push(node);
+      if (normalized.length >= MAX_NODES) break;
+    }
+    return normalized;
+  }
+
+  function validateNode(node, usedIds) {
+    if (!node || typeof node !== "object" || Array.isArray(node) || !["website", "note"].includes(node.type)) return null;
     const clean = {
-      id: safeId,
+      id: window.NolaneSpatialIndex.claimUniqueId(node.id, usedIds || new Set(), uid),
       type: node.type,
       title: String(node.title || (node.type === "note" ? "Untitled note" : "Website")).slice(0, 120),
       x: clamp(Number(node.x) || 0, -100000, 100000),
@@ -2501,11 +2523,11 @@
       let importedSpaces = [];
       let importedActiveId = "personal";
       if (Array.isArray(data.spaces) && data.spaces.length) {
-        importedSpaces = data.spaces.map(normalizeSpace).filter(Boolean).slice(0, 12);
+        importedSpaces = normalizeSpaceCollection(data.spaces);
         if (!importedSpaces.length) throw new Error("No valid workspaces were found in this file.");
         importedActiveId = importedSpaces.some((space) => space.id === data.activeSpaceId) ? data.activeSpaceId : importedSpaces[0].id;
       } else if (Array.isArray(data.nodes)) {
-        const importedNodes = data.nodes.map(validateNode).filter(Boolean).slice(0, MAX_NODES);
+        const importedNodes = normalizeNodeCollection(data.nodes);
         importedSpaces = [{
           id: "personal",
           name: "My workspace",
