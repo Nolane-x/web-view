@@ -164,3 +164,6 @@ The camera queries the world-space viewport with a 280 CSS-pixel overscan margin
 The Windows bridge no longer measures native card bodies from `.node` DOM elements. Each body rectangle is derived from world position/size, canvas origin, camera translation and scale, plus the one-pixel card border and 39-pixel header. Native descriptors therefore remain complete when lightweight card DOM is unmounted. Every eligible card descriptor is still sent; the native host keeps responsibility for z-order selection and its adaptive 2/3/4 visible-renderer budget (cache bounded to 8).
 
 The 2,000-node ceiling is an explicit resource guard, not an infinite-storage promise. Raising it requires measured evidence across IndexedDB save/load, import/export, search, minimap, native sync payload size and camera movement. Manual Windows checks remain necessary for WebView2 clipping and overlay hit-testing after virtualization.
+
+
+Browser profile choices and per-profile card usage are memoized from workspace data. Workspace persistence invalidates those derived caches, so camera frames and repeated card construction do not rescan every node for the same metadata.
