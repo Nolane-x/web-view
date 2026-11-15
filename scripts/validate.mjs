@@ -235,6 +235,7 @@ const smokeProject = read("native-diagnostics/WebView2ProjectionSmokeTest.csproj
 const smokeWindowXaml = read("native-diagnostics/WinUIWebView2ControlSmokeTest/MainWindow.xaml");
 const smokeWindowCs = read("native-diagnostics/WinUIWebView2ControlSmokeTest/MainWindow.xaml.cs");
 const workflow = read(".github/workflows/desktop-host.yml");
+const pagesWorkflow = read(".github/workflows/pages.yml");
 const nativeProject = read("desktop-host/Nolane.DesktopHost.csproj");
 const nativeWorkflow = read(".github/workflows/desktop-host.yml");
 const nativeBridge = read("native-bridge.js");
@@ -269,6 +270,11 @@ else pass("An isolated WinUI executable compiles the XAML WebView2 control and i
 if (!workflow.includes("dotnet restore desktop-host/Nolane.DesktopHost.csproj -r win-x64") ||
     !workflow.includes("dotnet build desktop-host/Nolane.DesktopHost.csproj -c Release -r win-x64 --no-restore -p:WindowsAppSDKSelfContained=true -p:WebView2EnableCsWinRTProjection=true")) fail("Native CI must compile the exact shipping WinUI host project, not a parallel source-linked approximation.");
 else pass("Native CI compiles the exact shipping WinUI host project with the pinned WebView2 package graph.");
+
+if (!workflow.includes('group: "native-webview2-host-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}"') ||
+    !pagesWorkflow.includes('group: "pages-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}"'))
+    fail("Pages and native Windows CI concurrency must be isolated per pull request so separate branches cannot cancel one another.");
+else pass("Pages and native Windows CI use per-PR concurrency groups, while newer commits still replace older runs for the same PR.");
 if (!js.includes("clean.browserProfile = browserProfile") ||
     !js.includes('profileName: node.browserProfile || ""') ||
     !js.includes("native-profile-select") ||
@@ -457,6 +463,11 @@ if (!js.includes("scheduleNativeSurfaceSync") || !js.includes("sendNativeBridgeM
 else pass("Static workspace syncs website-card geometry, receives native status and hides browser overlays for workspace dialogs.");
 if (!nativeHost.includes("_pendingSurfaceSync") || !nativeHost.includes("DrainSurfaceSyncQueueAsync") || !nativeHost.includes("nolane.host.hello")) fail("Native surface synchronization must coalesce layout updates and use a reliable workspace handshake.");
 else pass("Native surface synchronization coalesces stale layouts and uses an explicit ready handshake.");
+if (!nativeSyncFunction.includes("for (const node of nodes)") ||
+    nativeSyncFunction.includes("items.length >= 80") ||
+    !nativeHost.includes("items.OrderByDescending(item => item.ZIndex)") ||
+    !nativeHost.includes("activeCount >= MaxVisibleSurfaces")) fail("Every eligible website card must reach the native host, where z-order and the adaptive memory budget choose live surfaces.");
+else pass("All eligible website cards are synchronized; native z-order and memory limits select active surfaces without insertion-order truncation.");
 if (!nativeHost.includes('uri.AbsolutePath.Equals("/web-view"') || !nativeHost.includes('uri.AbsolutePath.StartsWith("/web-view/"')) fail("Native host workspace origin/path allowlist is too broad.");
 else pass("Native host accepts only the exact Nolane workspace path family.");
 
