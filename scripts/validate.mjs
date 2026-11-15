@@ -463,6 +463,7 @@ else pass("Native host accepts only the exact Nolane workspace path family.");
 const localBridge = read("desktop-host/LocalBridgeServer.cs");
 const bridgeSmoke = read("native-diagnostics/LocalBridgeServerSmokeTest/Program.cs");
 const trayIcon = read("desktop-host/BackgroundTrayIcon.cs");
+const appHost = read("desktop-host/App.xaml.cs");
 if (!localBridge.includes("IPAddress.Loopback") ||
     !localBridge.includes("Port = 43172") ||
     !localBridge.includes('"127.0.0.1:" + Port') ||
@@ -486,6 +487,16 @@ if (!nativeHost.includes("BackgroundTrayIcon.EnableStartupAfterFirstConnection()
     !trayIcon.includes("Exit background bridge") ||
     !read("desktop-host/App.xaml.cs").includes("NolaneInfiniteBackgroundBridge")) fail("Background host startup, single-instance protection or tray exit path is missing.");
 else pass("Background bridge is single-instance, registers startup after connection and exposes a tray exit action.");
+
+if (!nativeHost.includes("_environment.NewBrowserVersionAvailable") ||
+    !nativeHost.includes("if (_runtimeUpdateAvailable) return;") ||
+    !nativeHost.includes("_trayNotification?.Invoke(") ||
+    !nativeHost.includes("SetTrayNotificationHandler") ||
+    !trayIcon.includes("public void ShowNotification(string title, string message)") ||
+    !trayIcon.includes("NIF_INFO") ||
+    !trayIcon.includes("Shell_NotifyIcon(NIM_MODIFY") ||
+    !appHost.includes("SetTrayNotificationHandler(_tray.ShowNotification)")) fail("A detected WebView2 Runtime update must produce a one-time Windows tray notification and a visible native status message.");
+else pass("WebView2 Runtime updates are surfaced once through the Windows notification area and native host status.");
 
 if (!js.includes('new WebSocket("ws://127.0.0.1:43172/bridge", "nolane.infinite.v2")') ||
     !js.includes('navigator.permissions.query({ name: "loopback-network" })') ||
