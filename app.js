@@ -831,6 +831,7 @@
   function renderNodes() {
     invalidateWorkspaceDerivedCaches();
     clearUnavailableChromeTabBindings();
+    refreshNativeWorkspaceIdsSnapshot();
     spatialIndex.rebuild(nodes);
     syncCanvasNodeElements(true);
     updateViewFilter();
