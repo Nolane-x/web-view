@@ -40,6 +40,7 @@
   let nativeHostAvailable = false;
   let nativeMaxVisibleSurfaces = 2;
   let nativeWorkspaceIdsDirty = true;
+  let nativeWorkspaceIdsCache = [];
   let nativeSyncFrame = 0;
   let nativeHostReadyNotified = false;
   let nativeBridgeSocket = null;
@@ -238,6 +239,7 @@
   function normalizeUrl(raw) {
     let value = String(raw || "").trim();
     if (!value) throw new Error("Enter a website address first.");
+    if (value.length > 4096) throw new Error("Website addresses must be 4,096 characters or fewer.");
     if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) value = "https://" + value;
     let parsed;
     try { parsed = new URL(value); } catch (_) { throw new Error("That address does not look valid."); }
@@ -397,7 +399,7 @@
   function scheduleSave(delay) {
     // Keep the active space's sanitized model current when data changes, not on every camera frame.
     syncActiveSpace();
-    nativeWorkspaceIdsDirty = true;
+    refreshNativeWorkspaceIdsSnapshot();
     invalidateWorkspaceDerivedCaches();
     clearTimeout(saveTimer);
     setSaveState("saving", "Saving locally…");
@@ -618,7 +620,7 @@
       // Workspace membership changes infrequently; transmit the complete native
       // website ID set only after a data mutation or a new host handshake.
       if (nativeWorkspaceIdsDirty) {
-        message.workspaceIds = nodes.filter(canUseNativeSurface).map((node) => node.id);
+        message.workspaceIds = nativeWorkspaceIdsCache;
       }
       if (sendNativeBridgeMessage(message) && nativeWorkspaceIdsDirty) {
         nativeWorkspaceIdsDirty = false;
@@ -635,6 +637,7 @@
       nativeBridgeReconnectAttempts = 0;
       const reportedBudget = Number(message.maxVisibleSurfaces);
       nativeMaxVisibleSurfaces = Number.isInteger(reportedBudget) ? clamp(reportedBudget, 1, 8) : 2;
+      refreshNativeWorkspaceIdsSnapshot();
       nativeWorkspaceIdsDirty = true;
       setBridgeConnected(false, "");
       if (!nativeHostReadyNotified) {
@@ -861,6 +864,15 @@
       nativeProfileUsageCache = window.NolaneNativeBridge?.summarizeProfileUsage(spaces) || [];
     }
     return nativeProfileUsageCache;
+  }
+
+  function refreshNativeWorkspaceIdsSnapshot() {
+    const next = nodes.filter(canUseNativeSurface).map((node) => node.id);
+    if (next.length !== nativeWorkspaceIdsCache.length ||
+        next.some((id, index) => id !== nativeWorkspaceIdsCache[index])) {
+      nativeWorkspaceIdsCache = next;
+      nativeWorkspaceIdsDirty = true;
+    }
   }
 
   function createNodeElement(node) {
@@ -2143,6 +2155,7 @@
       const wasConnected = nativeHostAvailable;
       nativeHostAvailable = false;
       nativeHostReadyNotified = false;
+      refreshNativeWorkspaceIdsSnapshot();
       nativeSurfaceStates.clear();
       renderNodes();
       setBridgeConnected(false, "");
