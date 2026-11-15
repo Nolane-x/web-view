@@ -495,8 +495,12 @@ if (!nativeHost.includes("_environment.NewBrowserVersionAvailable") ||
     !trayIcon.includes("public void ShowNotification(string title, string message)") ||
     !trayIcon.includes("NIF_INFO") ||
     !trayIcon.includes("Shell_NotifyIcon(NIM_MODIFY") ||
-    !appHost.includes("SetTrayNotificationHandler(_tray.ShowNotification)")) fail("A detected WebView2 Runtime update must produce a one-time Windows tray notification and a visible native status message.");
-else pass("WebView2 Runtime updates are surfaced once through the Windows notification area and native host status.");
+    !appHost.includes("SetTrayNotificationHandler(_tray.ShowNotification)") ||
+    !trayIcon.includes("IDM_RESTART") ||
+    !trayIcon.includes("Restart bridge (close browser cards)") ||
+    !appHost.includes("RestartBackgroundBridge") ||
+    !appHost.includes("Process.Start(new ProcessStartInfo(executable, \"--background\")")) fail("A detected WebView2 Runtime update must surface a one-time tray notification and provide a controlled restart action.");
+else pass("WebView2 Runtime updates are surfaced once through the Windows tray, with an explicit restart action that releases the single-instance mutex before relaunch.");
 
 if (!js.includes('new WebSocket("ws://127.0.0.1:43172/bridge", "nolane.infinite.v2")') ||
     !js.includes('navigator.permissions.query({ name: "loopback-network" })') ||
