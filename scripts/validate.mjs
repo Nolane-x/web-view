@@ -959,6 +959,7 @@ const worldCoordinateFunction = spatialIndexSource.slice(
 );
 const normalizedNodeFunction = js.slice(js.indexOf("function validateNode"), js.indexOf("function workspaceSnapshot"));
 const normalizedPointerMoveFunction = js.slice(js.indexOf("function pointerMove"), js.indexOf("function pointerUp"));
+const focusSearchFunction = js.slice(js.indexOf("function focusSearchResult"), js.indexOf("function selectNode"));
 const companionImportFunction = js.slice(
   js.indexOf("function addBrowserTabsToWorkspace"),
   js.indexOf("function handleCompanionMessage")
@@ -972,13 +973,15 @@ if (!worldCoordinateFunction.includes("function normalizeWorldCoordinate") ||
     !normalizedNodeFunction.includes("normalizeCanvasCoordinate(node.y, 0)") ||
     !normalizedPointerMoveFunction.includes("normalizeCanvasCoordinate(") ||
     !normalizedPointerMoveFunction.includes("view = normalizeCanvasView(") ||
+    !focusSearchFunction.includes("view = normalizeCanvasView(") ||
+    !focusSearchFunction.includes("scale,") ||
     !companionImportFunction.includes("normalizeCanvasCoordinate(Math.round(center.x") ||
     !companionImportFunction.includes("normalizeCanvasCoordinate(Math.round(center.y") ||
     !spatialIndexTests.includes('test("world coordinates preserve large valid positions beyond the former 100,000-unit clamp"') ||
     !spatialIndexTests.includes('test("camera translations use the normalized scale-aware world-coordinate budget"')) {
   fail("World coordinates and camera translations must share tested finite bounds across import, restore and pointer interactions.");
 } else {
-  pass("World coordinates and zoom-scaled camera translations share finite normalization across import, restore, drag, pan, zoom and fit-to-content.");
+  pass("World coordinates and zoom-scaled camera translations share finite normalization across import, restore, drag, pan, zoom, fit-to-content and search-result focus.");
 }
 
 
