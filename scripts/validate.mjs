@@ -712,3 +712,13 @@ if (!saveFunction.includes("invalidateWorkspaceDerivedCaches()") ||
 else pass("Browser profile choices and native profile-usage summaries are cached across camera frames and invalidated on workspace saves.");
 if ((js.match(/summarizeProfileUsage\(spaces\)/g) || []).length !== 1) fail("Native profile usage must not be recomputed directly in every camera synchronization frame.");
 else pass("Native surface sync no longer recomputes profile usage on each camera frame.");
+
+
+const virtualizerFunction = js.slice(js.indexOf("function syncCanvasNodeElements"), js.indexOf("function scheduleNativeSurfaceSync"));
+const liveStartFunction = js.slice(js.indexOf("function startLiveSurface"), js.indexOf("function bindLiveFrameMonitor"));
+if (!virtualizerFunction.includes('element?.querySelector(".live-surface-video")') ||
+    !virtualizerFunction.includes("preserveLiveVideoDom") ||
+    !liveStartFunction.includes("liveSurfaces.set(node.id") ||
+    !liveStartFunction.includes("renderNodes()") ||
+    !liveStartFunction.includes('$(".live-surface-video", nodeElement)')) fail("The first live-stream render must create its video element, while later virtualization refreshes preserve the mounted video.");
+else pass("Live Chrome streams create their first video element and keep that element attached across later virtualizer refreshes.");
