@@ -69,6 +69,11 @@ jobs:
         run: |
           dotnet run --project native-diagnostics/OverlayGeometrySmokeTest/OverlayGeometrySmokeTest.csproj -c Release
 
+      - name: Exercise profile-aware Downloads filtering
+        shell: pwsh
+        run: |
+          dotnet run --project native-diagnostics/DownloadProfileFilterSmokeTest/DownloadProfileFilterSmokeTest.csproj -c Release
+
       - name: Compile isolated WebView2 projection smoke test
         shell: pwsh
         run: |

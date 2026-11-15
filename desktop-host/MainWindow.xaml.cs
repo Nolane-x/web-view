@@ -1623,10 +1623,9 @@ public sealed partial class MainWindow : Window
         SameProfile(profileName, _libraryProfileFilter);
 
     private bool MatchesDownloadsProfile(DownloadEntry entry) =>
-        _downloadsProfileFilter == AllLibraryProfilesFilter ||
-        (_downloadsProfileFilter == PrivateDownloadsProfileFilter
-            ? entry.IsPrivate
-            : !entry.IsPrivate && SameProfile(entry.ProfileName, _downloadsProfileFilter));
+        DownloadProfileFilter.Matches(
+            _downloadsProfileFilter, entry.ProfileName, entry.IsPrivate,
+            AllLibraryProfilesFilter, PrivateDownloadsProfileFilter);
 
     private string DownloadsProfileFilterLabel() =>
         _downloadsProfileFilter switch

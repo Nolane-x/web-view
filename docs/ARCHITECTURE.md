@@ -150,3 +150,6 @@ Card and panel clipping uses the same `OverlayGeometry` helper to convert CSS vi
 ## Profile-scoped Downloads
 
 Every WebView2 download records the originating card's browser profile. The Downloads panel can filter All profiles, Default, named profiles or Private sessions; the Clear finished action only removes completed/interrupted entries inside the selected filter. Historical records created before this field existed deserialize into Default. Private download metadata remains memory-only and is excluded from the local download-history file. The native Save dialog and user-selected destination remain unchanged: profile filtering is attribution and organization, not automatic filesystem segregation.
+
+
+A standalone `DownloadProfileFilter` smoke test checks All, Default, named profiles and Private sessions independently. Matching is case-insensitive for named profile labels; private downloads never appear in a persistent named-profile filter.

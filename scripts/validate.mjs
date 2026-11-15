@@ -615,3 +615,17 @@ if (!nativeHost.includes("_downloadsProfileOptionsSignature") ||
     !nativeHost.includes("StringComparer.Ordinal.Equals(signature, _downloadsProfileOptionsSignature)") ||
     !nativeHost.includes("if (StringComparer.Ordinal.Equals(signature, _downloadsProfileOptionsSignature)) return;")) fail("Downloads profile filter options must be rebuilt only when the available profile set changes, not on progress refreshes.");
 else pass("Downloads profile choices are signature-cached so byte-progress updates do not rebuild the filter ComboBox.");
+
+const downloadFilter = read("desktop-host/DownloadProfileFilter.cs");
+const downloadFilterSmoke = read("native-diagnostics/DownloadProfileFilterSmokeTest/Program.cs");
+const downloadFilterProject = read("native-diagnostics/DownloadProfileFilterSmokeTest/DownloadProfileFilterSmokeTest.csproj");
+if (!nativeHost.includes("DownloadProfileFilter.Matches") ||
+    !downloadFilter.includes("StringComparer.OrdinalIgnoreCase") ||
+    !downloadFilterSmoke.includes("Private sessions do not enter named profile lists") ||
+    !downloadFilterSmoke.includes("Named profiles stay isolated") ||
+    !downloadFilterProject.includes("DownloadProfileFilter.cs")) fail("Downloads profile filtering must isolate Default, named and Private sessions through a shared tested helper.");
+else pass("Downloads profile matching is case-insensitive for names, keeps Default separate and excludes Private from named profile filters.");
+
+if (!workflow.includes("Exercise profile-aware Downloads filtering") ||
+    !workflow.includes("DownloadProfileFilterSmokeTest.csproj")) fail("Windows CI must execute the profile-aware Downloads filtering smoke test.");
+else pass("Windows CI executes profile isolation tests for Downloads.");
