@@ -55,6 +55,7 @@
   const CANVAS_OVERSCAN_PX = 280;
   let canvasRenderFrame = 0;
   let minimapFrame = 0;
+  let canvasResizeObserver = null;
 
   const uid = () => "node-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -2484,6 +2485,14 @@
       updateMinimap();
       scheduleNativeSurfaceSync();
     });
+    if (typeof ResizeObserver === "function") {
+      canvasResizeObserver = new ResizeObserver(() => {
+        scheduleCanvasVirtualization();
+        updateMinimap();
+        scheduleNativeSurfaceSync();
+      });
+      canvasResizeObserver.observe(canvas);
+    }
     window.addEventListener("pagehide", () => {
       for (const surface of liveSurfaces.values()) {
         window.postMessage({
