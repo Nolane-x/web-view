@@ -138,7 +138,7 @@ internal sealed class BackgroundTrayIcon : IDisposable
             _ = AppendMenu(menu, MF_SEPARATOR, UIntPtr.Zero, null);
             _ = AppendMenu(menu, MF_STRING, new UIntPtr(IDM_STARTUP), "Start with Windows");
             _ = CheckMenuItem(menu, IDM_STARTUP, MF_BYCOMMAND | (IsStartupEnabled() ? MF_CHECKED : MF_UNCHECKED));
-            _ = AppendMenu(menu, MF_STRING, new UIntPtr(IDM_RESTART), "Restart bridge (close browser cards)");
+            _ = AppendMenu(menu, MF_STRING, new UIntPtr(IDM_RESTART), "Restart bridge…");
             _ = AppendMenu(menu, MF_SEPARATOR, UIntPtr.Zero, null);
             _ = AppendMenu(menu, MF_STRING, new UIntPtr(IDM_EXIT), "Exit background bridge");
             _ = GetCursorPos(out var point);
