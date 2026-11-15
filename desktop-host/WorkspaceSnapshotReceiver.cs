@@ -174,6 +174,6 @@ internal sealed class WorkspaceSnapshotReceiver
         internal Dictionary<string, int> ProfileUsage { get; }
         internal HashSet<int> ReceivedChunks { get; } = new();
         internal int ProfileEntriesReceived { get; set; }
-        internal long TotalProfileCards { get; set; }
+        internal long TotalProfileCards;
     }
 }
