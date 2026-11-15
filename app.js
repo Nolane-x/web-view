@@ -618,7 +618,7 @@
         items
       };
       if (nativeProfileUsageDirty) {
-        message.profileUsage = cachedNativeProfileUsage();
+        message.profileUsage = cachedNativeProfileUsage().map((item) => [item.name, item.count]);
       }
       // Workspace membership changes infrequently; transmit the complete native
       // website ID set only after a data mutation or a new host handshake.
