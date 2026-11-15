@@ -235,6 +235,7 @@ const smokeProject = read("native-diagnostics/WebView2ProjectionSmokeTest.csproj
 const smokeWindowXaml = read("native-diagnostics/WinUIWebView2ControlSmokeTest/MainWindow.xaml");
 const smokeWindowCs = read("native-diagnostics/WinUIWebView2ControlSmokeTest/MainWindow.xaml.cs");
 const workflow = read(".github/workflows/desktop-host.yml");
+const pagesWorkflow = read(".github/workflows/pages.yml");
 const nativeProject = read("desktop-host/Nolane.DesktopHost.csproj");
 const nativeWorkflow = read(".github/workflows/desktop-host.yml");
 const nativeBridge = read("native-bridge.js");
@@ -463,6 +464,7 @@ else pass("Native host accepts only the exact Nolane workspace path family.");
 const localBridge = read("desktop-host/LocalBridgeServer.cs");
 const bridgeSmoke = read("native-diagnostics/LocalBridgeServerSmokeTest/Program.cs");
 const trayIcon = read("desktop-host/BackgroundTrayIcon.cs");
+const appHost = read("desktop-host/App.xaml.cs");
 if (!localBridge.includes("IPAddress.Loopback") ||
     !localBridge.includes("Port = 43172") ||
     !localBridge.includes('"127.0.0.1:" + Port') ||
@@ -480,6 +482,37 @@ if (!nativeHost.includes("UpdateOverlayBounds(root)") ||
     !nativeHost.includes("RefreshOverlayActivation") ||
     !nativeHost.includes("BrowserSurfaceLayer.Loaded += MainWindow_Loaded")) fail("Native host must create the transparent browser-aligned overlay and manage focus/visibility.");
 else pass("Native host builds a transparent click-through overlay over the active browser viewport.");
+
+if (!nativeHost.includes("_environment.NewBrowserVersionAvailable") ||
+    !nativeHost.includes("if (_runtimeUpdateAvailable) return;") ||
+    !nativeHost.includes("_trayNotification?.Invoke(") ||
+    !nativeHost.includes("SetTrayNotificationHandler") ||
+    !trayIcon.includes("public void ShowNotification(string title, string message)") ||
+    !trayIcon.includes("NIF_INFO") ||
+    !trayIcon.includes("Shell_NotifyIcon(NIM_MODIFY") ||
+    !appHost.includes("SetTrayNotificationHandler(_tray.ShowNotification)") ||
+    !trayIcon.includes("IDM_RESTART") ||
+    !trayIcon.includes("Restart bridge…") ||
+    !nativeHost.includes("ConfirmRestartAsync") ||
+    !nativeHost.includes("Restart the Nolane background bridge?") ||
+    !nativeHost.includes("active or resumable download(s) will be interrupted") ||
+    !appHost.includes("!await window.ConfirmRestartAsync()") ||
+    !appHost.includes("RestartBackgroundBridge") ||
+    !appHost.includes("Process.Start(new ProcessStartInfo(executable, \"--background\")"))
+  fail("A detected WebView2 Runtime update must surface a one-time tray notification and provide a controlled restart action.");
+else pass("WebView2 Runtime updates are surfaced once through the Windows tray; restart requires confirmation and warns about active downloads.");
+
+const shutdownWaitIndex = appHost.indexOf("await window.ShutdownTask;");
+const mutexReleaseIndex = appHost.indexOf("_instanceMutex?.ReleaseMutex();");
+const processRestartIndex = appHost.indexOf("Process.Start(new ProcessStartInfo(executable, \"--background\")");
+if (!nativeHost.includes("private Task _shutdownTask = Task.CompletedTask;") ||
+    !nativeHost.includes("public Task ShutdownTask => _shutdownTask;") ||
+    !nativeHost.includes("Closed += (_, _) => _shutdownTask = ShutdownAsync();") ||
+    shutdownWaitIndex < 0 || mutexReleaseIndex <= shutdownWaitIndex || processRestartIndex <= mutexReleaseIndex ||
+    !bridgeSmoke.includes("afterShutdown.ConnectAsync") ||
+    !bridgeSmoke.includes("listener still accepted connections after native host shutdown"))
+  fail("Restart must await WebView2/bridge shutdown before releasing the single-instance mutex and launching a replacement host.");
+else pass("Restart waits for all native surfaces and the loopback listener to shut down before relaunching.");
 
 if (!nativeHost.includes("BackgroundTrayIcon.EnableStartupAfterFirstConnection()") ||
     !trayIcon.includes("CurrentVersion\\Run") ||
