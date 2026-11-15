@@ -141,6 +141,32 @@ public sealed partial class MainWindow : Window
         _trayNotification = notificationHandler ?? throw new ArgumentNullException(nameof(notificationHandler));
     }
 
+    public async Task<bool> ConfirmRestartAsync()
+    {
+        var activeDownloads = _downloads.Count(entry =>
+            entry.Operation is { } operation &&
+            (operation.State == CoreWebView2DownloadState.InProgress ||
+             (operation.State == CoreWebView2DownloadState.Interrupted && operation.CanResume)));
+
+        var message = "All open native website cards will close. Your Nolane workspace and saved browser profiles remain on this device, but page state that a website has not saved may be lost.";
+        if (activeDownloads > 0)
+        {
+            message += Environment.NewLine + Environment.NewLine +
+                activeDownloads + " active or resumable download(s) will be interrupted. Resume may not be available after the bridge restarts.";
+        }
+
+        var dialog = new ContentDialog
+        {
+            Title = "Restart the Nolane background bridge?",
+            Content = message,
+            PrimaryButtonText = "Restart bridge",
+            CloseButtonText = "Keep working",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = Content.XamlRoot
+        };
+        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+    }
+
     public Task ShutdownTask => _shutdownTask;
 
     public MainWindow()
