@@ -1121,6 +1121,72 @@
   }
 
 
+  function updateViewFilter() {
+    const query = $("#searchInput").value.trim().toLowerCase();
+    searchResultIds = [];
+    searchResultIndex = -1;
+    let visibleCount = 0;
+    for (const node of nodes) {
+      if (!matchesNodeFilters(node, query)) continue;
+      visibleCount += 1;
+      if (query) searchResultIds.push(node.id);
+    }
+    const nodesById = new Map(nodes.map((node) => [node.id, node]));
+    for (const [id, element] of renderedNodeElements) {
+      element.classList.toggle("hidden-by-search", !matchesNodeFilters(nodesById.get(id), query));
+    }
+    const titles = { canvas: "My workspace", websites: "Web surfaces", notes: "Notes" };
+    $("#viewTitle").textContent = activeView === "canvas" ? (activeSpace()?.name || titles.canvas) : titles[activeView];
+    $("#canvasHeading").textContent = activeView === "websites" ? "Your web, gathered." : activeView === "notes" ? "Thoughts, in context." : (activeSpace()?.name || "A space for everything.");
+    $("#canvasSubheading").textContent = query
+      ? (visibleCount ? visibleCount + " matching items · Press Enter to jump, Shift+Enter to go back." : "No items match this search.")
+      : activeView === "websites" ? "Open, arrange and revisit the websites you use."
+        : activeView === "notes" ? "Keep ideas close to the things they belong to."
+          : "Bring your web tools together. Arrange them your way.";
+    const empty = $("#emptyState");
+    empty.hidden = visibleCount > 0;
+    $("#emptyTitle").textContent = query ? "No matches yet." : activeView === "websites" ? "No websites here yet." : activeView === "notes" ? "No notes here yet." : "A fresh space.";
+    $("#emptyDescription").textContent = query ? "Try a different search, or clear the search field." : "Start with a website, a note, or both. Your workspace grows with you.";
+    $$(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === activeView));
+    scheduleCanvasVirtualization();
+    scheduleNativeSurfaceSync();
+  }
+
+  function focusSearchResult(reverse) {
+    if (!$("#searchInput").value.trim() || !searchResultIds.length) return;
+    searchResultIndex = window.NolaneSpatialIndex.cycleIndex(
+      searchResultIndex, searchResultIds.length, reverse
+    );
+    if (searchResultIndex < 0) return;
+    const node = nodes.find((item) => item.id === searchResultIds[searchResultIndex]);
+    if (!node) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const scale = clamp(Math.max(view.scale, 0.6), MIN_SCALE, MAX_SCALE);
+    view = normalizeCanvasView({
+      scale,
+      x: rect.width / 2 - (node.x + node.w / 2) * scale,
+      y: rect.height / 2 - (node.y + node.h / 2) * scale
+    });
+    selectNode(node.id);
+    applyView();
+    toast("Match " + (searchResultIndex + 1) + " of " + searchResultIds.length + ": " + node.title);
+  }
+
+  function selectNode(id) {
+    selectedId = id;
+    $$(".node", world).forEach((element) => element.classList.toggle("selected", element.dataset.id === id));
+    const node = nodes.find((item) => item.id === id);
+    if (node) {
+      node.z = ++zCounter;
+      const element = $('.node[data-id="' + CSS.escape(id) + '"]', world);
+      if (element) element.style.zIndex = node.z;
+      scheduleSave();
+      scheduleCanvasVirtualization();
+      scheduleNativeSurfaceSync();
+    }
+  }
+
   function handleNodeAction(event) {
     const button = event.target.closest("[data-action]");
     if (!button) return;
