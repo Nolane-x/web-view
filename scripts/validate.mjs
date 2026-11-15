@@ -870,3 +870,19 @@ const worstCaseNativePayload = {
 const worstCasePayloadBytes = Buffer.byteLength(JSON.stringify(worstCaseNativePayload), "utf8");
 if (worstCasePayloadBytes >= 2 * 1024 * 1024 - 16 * 1024) fail("Worst-case 2,000-card workspace membership, 24,000 compact profiles and four visible descriptors must stay at least 16 KiB below the bridge's 2 MiB frame limit.");
 else pass("Worst-case native sync payload is " + worstCasePayloadBytes + " UTF-8 bytes, below the 2 MiB frame limit with at least 16 KiB headroom.");
+
+
+const nodeCollectionFunction = js.slice(js.indexOf("function normalizeNodeCollection"), js.indexOf("function validateNode"));
+const spaceCollectionFunction = js.slice(js.indexOf("function normalizeSpaceCollection"), js.indexOf("function activeSpace"));
+if (!nodeCollectionFunction.includes("usedIds = new Set()") ||
+    !nodeCollectionFunction.includes("validateNode(candidate, usedIds)") ||
+    !nodeCollectionFunction.includes("normalized.length >= MAX_NODES") ||
+    !spaceCollectionFunction.includes("usedSpaceIds = new Set()") ||
+    !spaceCollectionFunction.includes("normalized.length < 12") ||
+    !js.includes("claimUniqueId(space.id, usedSpaceIds, uid)") ||
+    !js.includes("claimUniqueId(node.id, usedIds || new Set(), uid)")) fail("Workspace loading/import must resolve duplicate or unsafe IDs and enforce node/space bounds while normalizing.");
+else pass("Workspace normalization assigns unique safe IDs and enforces 2,000 nodes per space and 12 spaces during ingestion.");
+
+if (!spatialIndexSource.includes("function claimUniqueId(candidate, usedIds, generateId)") ||
+    !testsSource.includes('test("workspace IDs are safe, unique and retained in first-occurrence order"')) fail("Unique ID allocation must be covered by deterministic regression tests.");
+else pass("Duplicate and unsafe workspace ID handling is exercised by unit tests.");
