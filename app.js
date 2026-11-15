@@ -2284,7 +2284,7 @@
 
   function pointerMove(event) {
     if (dragState) {
-      const node = nodes.find((item) => item.id === dragState.id);
+      const node = spatialIndex.get(dragState.id);
       if (!node) return;
       node.x = Math.round(dragState.x + (event.clientX - dragState.pointerX) / view.scale);
       node.y = Math.round(dragState.y + (event.clientY - dragState.pointerY) / view.scale);
@@ -2296,7 +2296,7 @@
       return;
     }
     if (resizeState) {
-      const node = nodes.find((item) => item.id === resizeState.id);
+      const node = spatialIndex.get(resizeState.id);
       if (!node) return;
       node.w = Math.round(clamp(resizeState.w + (event.clientX - resizeState.pointerX) / view.scale, 230, 1800));
       node.h = Math.round(clamp(resizeState.h + (event.clientY - resizeState.pointerY) / view.scale, 150, 1200));
