@@ -182,3 +182,7 @@ Profile summaries are serialized as compact `[name,count]` tuples (while the hos
 
 Workspace ingestion assigns a safe unique ID to each node and space. The first valid occurrence of an ID is preserved; later duplicate or unsafe IDs are regenerated. Invalid website records are rejected before they can reserve an ID. Normalization processes no more than 2,000 valid nodes per space and 12 valid spaces.
 Spatial-index geometry also guards IEEE-754 edge cases: rectangles whose computed right/bottom edge collapses back to the origin are rejected, and non-safe-integer grid-cell coordinates use the overflow/fallback path instead of entering an increment loop that may stop making progress.
+
+### Coordinate and camera normalization
+
+Workspace node coordinates are normalized to the finite ±1,000,000,000 world-unit range. Camera translations are normalized against the same world-space budget multiplied by the active zoom scale, because the camera transform is expressed in CSS pixels. The same helpers are used by current and legacy workspace loading, JSON import, drag, pan, zoom and fit-to-content. Non-finite input falls back to a deterministic safe coordinate; scale remains inside the existing zoom limits. This avoids the former mismatch where a card could be dragged beyond ±100,000 units and then moved on reload because the persisted node and camera were clamped independently.
