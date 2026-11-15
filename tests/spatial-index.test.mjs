@@ -206,3 +206,49 @@ test("very broad safe viewport queries fall back to exact rectangle filtering", 
   assert.deepEqual(index.query({ x: -100000, y: -100000, w: 800000, h: 800000 })
     .map(item => item.id).sort(), ["far", "near"]);
 });
+
+
+test("world coordinates preserve large valid positions beyond the former 100,000-unit clamp", () => {
+  const { normalizeWorldCoordinate } = require("../spatial-index.js");
+  assert.equal(normalizeWorldCoordinate(500000, 0, 1_000_000_000), 500000);
+  assert.equal(normalizeWorldCoordinate(-750000, 0, 1_000_000_000), -750000);
+});
+
+test("world coordinates clamp finite values and replace non-finite values with a safe fallback", () => {
+  const { normalizeWorldCoordinate } = require("../spatial-index.js");
+  assert.equal(normalizeWorldCoordinate(2_000_000_000, 17, 1_000_000_000), 1_000_000_000);
+  assert.equal(normalizeWorldCoordinate(-2_000_000_000, -17, 1_000_000_000), -1_000_000_000);
+  assert.equal(normalizeWorldCoordinate(Number.POSITIVE_INFINITY, 42, 1_000_000_000), 42);
+  assert.equal(normalizeWorldCoordinate(Number.NaN, -42, 1_000_000_000), -42);
+});
+
+test("camera translations use the normalized scale-aware world-coordinate budget", () => {
+  const { normalizeViewState } = require("../spatial-index.js");
+  const options = {
+    defaultX: 25, defaultY: 0, defaultScale: 1,
+    minScale: 0.25, maxScale: 2.2, maxWorldCoordinate: 1_000_000_000
+  };
+  assert.deepEqual(normalizeViewState({ x: -500000, y: 700000, scale: 1 }, options), {
+    x: -500000, y: 700000, scale: 1
+  });
+  assert.deepEqual(normalizeViewState({ x: 9_000_000_000, y: -9_000_000_000, scale: 0.5 }, options), {
+    x: 500_000_000, y: -500_000_000, scale: 0.5
+  });
+});
+
+test("camera scale is bounded and invalid camera values receive deterministic defaults", () => {
+  const { normalizeViewState } = require("../spatial-index.js");
+  const options = {
+    defaultX: 25, defaultY: 7, defaultScale: 1,
+    minScale: 0.25, maxScale: 2.2, maxWorldCoordinate: 1_000_000_000
+  };
+  assert.deepEqual(normalizeViewState({ x: Number.NaN, y: Number.POSITIVE_INFINITY, scale: 99 }, options), {
+    x: 25, y: 7, scale: 2.2
+  });
+  assert.deepEqual(normalizeViewState({ x: 500, y: -500, scale: 0.01 }, options), {
+    x: 500, y: -500, scale: 0.25
+  });
+  assert.deepEqual(normalizeViewState(null, options), {
+    x: 25, y: 7, scale: 1
+  });
+});
