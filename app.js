@@ -1836,8 +1836,12 @@
 
   function focusSearchResult(reverse) {
     if (!searchResultIds.length) return;
-    const direction = reverse ? -1 : 1;
-    searchResultIndex = (searchResultIndex + direction + searchResultIds.length) % searchResultIds.length;
+    if (searchResultIndex < 0) {
+      searchResultIndex = reverse ? searchResultIds.length - 1 : 0;
+    } else {
+      const direction = reverse ? -1 : 1;
+      searchResultIndex = (searchResultIndex + direction + searchResultIds.length) % searchResultIds.length;
+    }
     const node = nodes.find((item) => item.id === searchResultIds[searchResultIndex]);
     if (!node) return;
 
