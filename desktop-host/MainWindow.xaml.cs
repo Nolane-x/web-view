@@ -782,7 +782,6 @@ public sealed partial class MainWindow : Window
                     continue;
                 }
 
-                activeCount++;
                 if (_surfaces.TryGetValue(item.Id, out var configured) &&
                     (configured.IsPrivate != item.PrivateMode ||
                      !StringComparer.OrdinalIgnoreCase.Equals(configured.ProfileName, item.ProfileName)))
@@ -791,6 +790,8 @@ public sealed partial class MainWindow : Window
                     {
                         ApplyBounds(configured.View, item);
                         await SetSurfaceVisibleAsync(configured, true);
+                        activeItems.Add(item);
+                        activeCount++;
                         PublishSurfaceState(configured, "ready",
                             "Finish or cancel this card's active download before changing its browser profile or privacy mode.");
                         continue;
@@ -799,6 +800,7 @@ public sealed partial class MainWindow : Window
                 }
                 var surface = await GetOrCreateSurfaceAsync(item);
                 if (surface is null) continue;
+                activeCount++;
                 surface.LastVisibleAt = DateTimeOffset.UtcNow;
                 surface.PendingRemoval = false;
                 ApplyBounds(surface.View, item);
