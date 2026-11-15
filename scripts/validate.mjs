@@ -755,7 +755,9 @@ else pass("Minimap item markers are cached; camera frames update only the viewpo
 const nativeWorkingSetFunction = js.slice(js.indexOf("function scheduleNativeSurfaceSync"), js.indexOf("function handleNativeHostMessage"));
 if (!nativeWorkingSetFunction.includes("spatialIndex.query(currentCanvasWorldBounds(0))") ||
     !nativeWorkingSetFunction.includes("nativeMaxVisibleSurfaces") ||
-    !nativeWorkingSetFunction.includes("message.workspaceIds = nodes.filter(canUseNativeSurface).map((node) => node.id)") ||
+    !nativeWorkingSetFunction.includes("message.workspaceIds = nativeWorkspaceIdsCache") ||
+    !js.includes("function refreshNativeWorkspaceIdsSnapshot()") ||
+    !js.includes("next.some((id, index) => id !== nativeWorkspaceIdsCache[index])") ||
     !nativeWorkingSetFunction.includes("if (sendNativeBridgeMessage(message) && nativeWorkspaceIdsDirty)") ||
     nativeWorkingSetFunction.includes("for (const node of nodes)")) fail("Native per-frame synchronization must be bounded to visible viewport candidates and send complete workspace membership only after mutations or a new handshake.");
 else pass("Native sync sends only the top visible viewport working set; complete website-card membership is sent separately and only when dirty.");
