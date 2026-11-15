@@ -43,6 +43,7 @@ public sealed partial class MainWindow : Window
     private bool _surfaceSyncRunning;
     private readonly SemaphoreSlim _permissionDialogGate = new(1, 1);
     private bool _runtimeUpdateAvailable;
+    private Action<string, string>? _trayNotification;
     private string? _downloadHistoryPath;
     private string? _browserLibraryPath;
     private readonly List<DownloadEntry> _downloads = new();
@@ -132,6 +133,11 @@ public sealed partial class MainWindow : Window
         if (availableGiB <= 10) return 2;
         if (availableGiB <= 16) return 3;
         return 4;
+    }
+
+    public void SetTrayNotificationHandler(Action<string, string> notificationHandler)
+    {
+        _trayNotification = notificationHandler ?? throw new ArgumentNullException(nameof(notificationHandler));
     }
 
     public MainWindow()
@@ -329,7 +335,14 @@ public sealed partial class MainWindow : Window
             RefreshDownloadsUi();
             RefreshLibraryUi();
             _environment = await CoreWebView2Environment.CreateWithOptionsAsync(null, userData, new CoreWebView2EnvironmentOptions());
-            _environment.NewBrowserVersionAvailable += (_, _) => _runtimeUpdateAvailable = true;
+            _environment.NewBrowserVersionAvailable += (_, _) => DispatcherQueue.TryEnqueue(() =>
+            {
+                if (_runtimeUpdateAvailable) return;
+                _runtimeUpdateAvailable = true;
+                const string updateMessage = "A newer WebView2 Runtime is ready. Restart the Nolane Infinite background bridge to apply it.";
+                StatusText.Text = "WebView2 update ready · restart the background bridge to apply it.";
+                _trayNotification?.Invoke("WebView2 update ready", updateMessage);
+            });
             _environment.BrowserProcessExited += (_, _) => DispatcherQueue.TryEnqueue(() =>
             {
                 foreach (var surface in _surfaces.Values.ToArray())
