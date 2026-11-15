@@ -909,3 +909,7 @@ if (!spatialIndexSource.includes("const safeRange = [range.minX, range.minY, ran
     !spatialIndexTests.includes('test("extreme but representable world coordinates use overflow lookup without unsafe cell loops"') ||
     !spatialIndexTests.includes('test("rectangles whose extent disappears at floating-point precision are rejected"')) fail("Spatial indexing must safely handle extreme numeric coordinates and floating-point collapsed rectangles.");
 else pass("Spatial indexing rejects non-representable extents and routes non-safe grid coordinates through bounded fallback paths.");
+
+
+if (!js.includes("while (nodes.some((node) => node.id === candidate) || spaces.some((space) => space.id === candidate))")) fail("Newly generated node and space IDs must avoid existing workspace IDs.");
+else pass("Generated IDs are checked against all existing nodes and spaces before use.");
