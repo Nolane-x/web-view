@@ -800,8 +800,8 @@ if (!nativeWorkingSetFunction.includes("spatialIndex.query(currentCanvasWorldBou
     !nativeWorkingSetFunction.includes("message.workspaceIds = nativeWorkspaceIdsCache") ||
     !js.includes("function refreshNativeWorkspaceIdsSnapshot()") ||
     !js.includes("next.some((id, index) => id !== nativeWorkspaceIdsCache[index])") ||
-    !nativeWorkingSetFunction.includes("if (sendNativeBridgeMessage(message))") ||
-    !nativeWorkingSetFunction.includes("if (nativeWorkspaceIdsDirty) nativeWorkspaceIdsDirty = false") ||
+    !nativeWorkingSetFunction.includes("if (sendNativeBridgeMessage(message) && !nativeWorkspaceSnapshotProtocol)") ||
+    !js.slice(js.indexOf("function sendNativeWorkspaceSnapshot"), js.indexOf("function scheduleNativeSurfaceSync")).includes("nativeWorkspaceIdsDirty = false") ||
     nativeWorkingSetFunction.includes("for (const node of nodes)")) fail("Native per-frame synchronization must be bounded to visible viewport candidates and send complete workspace membership only after mutations or a new handshake.");
 else pass("Native sync sends only the top visible viewport working set; complete website-card membership is sent separately and only when dirty.");
 
@@ -811,8 +811,8 @@ if (!nativeHost.includes("UpdateWorkspaceSurfaceIds(root)") ||
     !nativeHost.includes("MaxSurfaceCandidates = 8") ||
     !nativeHost.includes("Take(MaxSurfaceCandidates)") ||
     !nativeHost.includes("items.GetArrayLength() > MaxSurfaceCandidates") ||
-    !nativeHost.includes("!present.Contains(surface.Id)") ||
-    !nativeHost.includes("!known.Contains(surface.Id)")) fail("Windows host must distinguish deleted workspace cards from off-screen cached cards and enforce its visible working-set budget.");
+    !nativeHost.includes("if (_workspaceSurfaceIdsReceived)") ||
+    !nativeHost.includes("!_knownWorkspaceSurfaceIds.Contains(surface.Id)")) fail("Windows host must distinguish deleted workspace cards from off-screen cached cards and enforce its visible working-set budget.");
 else pass("Windows host reconciles deleted IDs separately, hides off-screen surfaces, and caps parsed descriptors at its adaptive renderer budget.");
 
 if (!nativeProfileUsageParser.includes("count > MaxWorkspaceCardCount") || !nativeProfileUsageParser.includes("MaxWorkspaceCardCount = 12 * 2000")) fail("Native browser profile usage must allow up to 12 spaces × 2,000 cards.");
