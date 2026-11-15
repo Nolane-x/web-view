@@ -39,6 +39,7 @@ public sealed partial class MainWindow : Window
     private readonly HashSet<string> _deletedProfileNames = new(StringComparer.OrdinalIgnoreCase);
     private bool _profileUsageReceived;
     private readonly HashSet<string> _knownWorkspaceSurfaceIds = new(StringComparer.Ordinal);
+    private readonly WorkspaceSnapshotReceiver _workspaceSnapshotReceiver = new();
     private bool _workspaceSurfaceIdsReceived;
     private bool _workspaceReady;
     private long _syncRevision;
@@ -419,6 +420,7 @@ public sealed partial class MainWindow : Window
     private void OnBridgeClientConnected()
     {
         _knownWorkspaceSurfaceIds.Clear();
+        _workspaceSnapshotReceiver.Reset();
         _workspaceSurfaceIdsReceived = false;
         _pendingSurfaceSync = null;
         _syncRevision++;
@@ -483,7 +485,7 @@ public sealed partial class MainWindow : Window
                 _bridgeHandshakeComplete = true;
                 _workspaceReady = true;
                 BackgroundTrayIcon.EnableStartupAfterFirstConnection();
-                PostWorkspaceMessage(new { type = "nolane.native.ready", protocol = 2, engine = "WebView2-background", maxVisibleSurfaces = MaxVisibleSurfaces });
+                PostWorkspaceMessage(new { type = "nolane.native.ready", protocol = 2, engine = "WebView2-background", maxVisibleSurfaces = MaxVisibleSurfaces, workspaceSnapshotProtocol = 1 });
                 return;
             }
             if (!_bridgeHandshakeComplete) return;
@@ -718,7 +720,7 @@ public sealed partial class MainWindow : Window
         if (type == "nolane.host.hello")
         {
             _workspaceReady = true;
-            PostWorkspaceMessage(new { type = "nolane.native.ready", protocol = 2, engine = "WebView2-background", maxVisibleSurfaces = MaxVisibleSurfaces });
+            PostWorkspaceMessage(new { type = "nolane.native.ready", protocol = 2, engine = "WebView2-background", maxVisibleSurfaces = MaxVisibleSurfaces, workspaceSnapshotProtocol = 1 });
             return;
         }
         if (type == "nolane.panel.command")
@@ -735,6 +737,22 @@ public sealed partial class MainWindow : Window
                 if (root.TryGetProperty("url", out var urlElement) && urlElement.ValueKind == JsonValueKind.String) targetUrl = urlElement.GetString();
                 ExecuteSurfaceCommand(surfaceId, action, targetUrl);
             }
+            return;
+        }
+        if (type == "nolane.workspace.snapshot.begin")
+        {
+            _workspaceSnapshotReceiver.TryBegin(root);
+            return;
+        }
+        if (type == "nolane.workspace.snapshot.chunk")
+        {
+            _workspaceSnapshotReceiver.TryAddChunk(root);
+            return;
+        }
+        if (type == "nolane.workspace.snapshot.commit")
+        {
+            if (_workspaceSnapshotReceiver.TryCommit(root, out var snapshot) && snapshot is not null)
+                ApplyWorkspaceSnapshot(snapshot);
             return;
         }
         if (type != "nolane.surfaces.sync") return;
@@ -795,14 +813,16 @@ public sealed partial class MainWindow : Window
         if (revision != _syncRevision) return;
             var activeItems = new List<SurfaceDescriptor>();
             var present = items.Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
-            var known = _workspaceSurfaceIdsReceived ? _knownWorkspaceSurfaceIds : present;
 
-            // The descriptor list is now a bounded viewport working set. Full workspace
-            // membership arrives separately and changes only after card mutations.
-            foreach (var stale in _surfaces.Values
-                         .Where(surface => !known.Contains(surface.Id) && !surface.PendingRemoval)
-                         .ToArray())
-                await RemoveSurfaceAsync(stale.Id);
+            // A viewport is not a complete membership set. Cached surfaces are not
+            // evicted until a legacy or revisioned full membership snapshot commits.
+            if (_workspaceSurfaceIdsReceived)
+            {
+                foreach (var stale in _surfaces.Values
+                             .Where(surface => !_knownWorkspaceSurfaceIds.Contains(surface.Id) && !surface.PendingRemoval)
+                             .ToArray())
+                    await RemoveSurfaceAsync(stale.Id);
+            }
 
             // Cards absent from the current viewport remain eligible for the host's
             // small hidden-surface cache, but must not remain visible in the overlay.
@@ -1936,13 +1956,23 @@ public sealed partial class MainWindow : Window
     {
         if (!root.TryGetProperty("profileUsage", out var profiles) ||
             !ProfileUsageSnapshot.TryParse(profiles, out var updated)) return;
+        ApplyProfileCardUsage(updated);
+    }
 
-        // Parse and validate the complete snapshot before replacing the last good
-        // state; malformed or oversized input must never partially update profiles.
+    private void ApplyProfileCardUsage(Dictionary<string, int> updated)
+    {
         _profileCardUsage.Clear();
         foreach (var item in updated) _profileCardUsage[item.Key] = item.Value;
         _profileUsageReceived = true;
         ProfilesButton.IsEnabled = true;
+    }
+
+    private void ApplyWorkspaceSnapshot(WorkspaceSnapshotCommit snapshot)
+    {
+        _knownWorkspaceSurfaceIds.Clear();
+        foreach (var id in snapshot.WorkspaceIds) _knownWorkspaceSurfaceIds.Add(id);
+        _workspaceSurfaceIdsReceived = true;
+        ApplyProfileCardUsage(snapshot.ProfileUsage);
     }
 
     private string[] GetKnownBrowserProfiles()
