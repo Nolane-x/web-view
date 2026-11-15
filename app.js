@@ -1760,6 +1760,7 @@
       const element = $('.node[data-id="' + CSS.escape(id) + '"]', world);
       if (element) element.style.zIndex = node.z;
       scheduleSave();
+      scheduleCanvasVirtualization();
       scheduleNativeSurfaceSync();
     }
   }
