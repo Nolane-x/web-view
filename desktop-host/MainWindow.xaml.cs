@@ -37,6 +37,8 @@ public sealed partial class MainWindow : Window
     private readonly Dictionary<string, int> _profileCardUsage = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _deletedProfileNames = new(StringComparer.OrdinalIgnoreCase);
     private bool _profileUsageReceived;
+    private readonly HashSet<string> _knownWorkspaceSurfaceIds = new(StringComparer.Ordinal);
+    private bool _workspaceSurfaceIdsReceived;
     private bool _workspaceReady;
     private long _syncRevision;
     private List<SurfaceDescriptor>? _pendingSurfaceSync;
@@ -371,6 +373,9 @@ public sealed partial class MainWindow : Window
 
     private void OnBridgeClientConnected()
     {
+        _knownWorkspaceSurfaceIds.Clear();
+        _workspaceSurfaceIdsReceived = false;
+        _pendingSurfaceSync = null;
         _bridgeHandshakeComplete = false;
         _workspaceReady = false;
         _workspaceVisible = true;
@@ -687,6 +692,7 @@ public sealed partial class MainWindow : Window
             return;
         }
         if (type != "nolane.surfaces.sync") return;
+        UpdateWorkspaceSurfaceIds(root);
         UpdateProfileCardUsage(root);
         if (!UpdateOverlayBounds(root))
         {
@@ -741,8 +747,22 @@ public sealed partial class MainWindow : Window
         if (revision != _syncRevision) return;
             var activeItems = new List<SurfaceDescriptor>();
             var present = items.Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
-            foreach (var staleId in _surfaces.Keys.Where(id => !present.Contains(id)).ToArray())
-                await RemoveSurfaceAsync(staleId);
+            var known = _workspaceSurfaceIdsReceived ? _knownWorkspaceSurfaceIds : present;
+
+            // The descriptor list is now a bounded viewport working set. Full workspace
+            // membership arrives separately and changes only after card mutations.
+            foreach (var stale in _surfaces.Values
+                         .Where(surface => !known.Contains(surface.Id) && !surface.PendingRemoval)
+                         .ToArray())
+                await RemoveSurfaceAsync(stale.Id);
+
+            // Cards absent from the current viewport remain eligible for the host's
+            // small hidden-surface cache, but must not remain visible in the overlay.
+            foreach (var hidden in _surfaces.Values
+                         .Where(surface => !present.Contains(surface.Id) &&
+                             surface.View.Visibility == Visibility.Visible)
+                         .ToArray())
+                await SetSurfaceVisibleAsync(hidden, false);
 
             var activeCount = 0;
             foreach (var item in items.OrderByDescending(item => item.ZIndex))
@@ -1841,6 +1861,25 @@ public sealed partial class MainWindow : Window
                 try { File.Delete(temporaryPath); } catch { }
             }
         }
+    }
+
+    private void UpdateWorkspaceSurfaceIds(JsonElement root)
+    {
+        if (!root.TryGetProperty("workspaceIds", out var ids) || ids.ValueKind != JsonValueKind.Array ||
+            ids.GetArrayLength() > 2000) return;
+
+        var updated = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var entry in ids.EnumerateArray())
+        {
+            if (entry.ValueKind != JsonValueKind.String) return;
+            var id = entry.GetString();
+            if (string.IsNullOrWhiteSpace(id) || id.Length > 128) return;
+            updated.Add(id);
+        }
+
+        _knownWorkspaceSurfaceIds.Clear();
+        foreach (var id in updated) _knownWorkspaceSurfaceIds.Add(id);
+        _workspaceSurfaceIdsReceived = true;
     }
 
     private void UpdateProfileCardUsage(JsonElement root)
