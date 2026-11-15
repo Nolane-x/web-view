@@ -4,7 +4,7 @@ import { performance } from "node:perf_hooks";
 const require = createRequire(import.meta.url);
 const { SpatialIndex } = require("../spatial-index.js");
 
-const SIZES = [2000, 10000, 50000];
+const SIZES = [2000, 10000, 50000, 100000];
 const QUERY_COUNT = 250;
 const round = value => Math.round(value * 1000) / 1000;
 
