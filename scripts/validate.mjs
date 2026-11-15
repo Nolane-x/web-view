@@ -772,3 +772,6 @@ else pass("Windows host reconciles deleted IDs separately, hides off-screen surf
 
 if (!nativeHost.includes("count > 24000")) fail("Native browser profile usage must allow up to 12 spaces × 2,000 cards.");
 else pass("Native profile usage validation covers the 24,000-card upper bound across all local spaces.");
+
+if (!js.slice(js.indexOf("function normalizeUrl"), js.indexOf("function openDatabase")).includes("value.length > 4096")) fail("Website URLs must be bounded before they enter native surface payloads.");
+else pass("Website URLs are capped at 4,096 characters before entering native browser descriptors.");
