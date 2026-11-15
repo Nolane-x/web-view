@@ -16,10 +16,12 @@ public partial class App : Application
 
     public App() => InitializeComponent();
 
-    private void RestartBackgroundBridge()
+    private async void RestartBackgroundBridge()
     {
+        var window = _window;
+        if (window is null || !await window.ConfirmRestartAsync()) return;
         _restartAfterClose = true;
-        _window?.Close();
+        window.Close();
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
