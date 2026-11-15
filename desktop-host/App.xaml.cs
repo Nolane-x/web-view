@@ -7,7 +7,7 @@ namespace Nolane.DesktopHost;
 
 public partial class App : Application
 {
-    private Window? _window;
+    private MainWindow? _window;
     private BackgroundTrayIcon? _tray;
     private Mutex? _instanceMutex;
 
