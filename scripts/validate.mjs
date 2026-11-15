@@ -839,3 +839,34 @@ const urlNormalizationFunction = js.slice(js.indexOf("function normalizeUrl"), j
 if (!nodeValidationFunction.includes("const safeId = /^[A-Za-z0-9_-]{1,80}$/") ||
     !urlNormalizationFunction.includes("if (parsed.href.length > 4096)")) fail("Native sync IDs and normalized URLs must have strict serialized-size bounds.");
 else pass("Workspace IDs are ASCII-bounded and normalized website URLs remain within the native 4,096-character descriptor limit.");
+
+
+// Exercise the actual UTF-8 JSON size against the native loopback bridge's 2 MiB limit.
+// Workspace bounds: 2,000 safe IDs × 80 chars, 24,000 distinct profile names × 64 chars,
+// and the host-reported maximum of four visible browser descriptors.
+const worstCaseNativePayload = {
+  type: "nolane.surfaces.sync",
+  protocol: 2,
+  viewport: { screenLeft: -100000, screenTop: -100000, width: 12000, height: 12000, deviceScale: 4 },
+  workspaceVisible: true,
+  items: Array.from({ length: 4 }, () => ({
+    id: "n".repeat(80),
+    url: "https://example.com/" + "a".repeat(4076),
+    title: "\\u0000".repeat(120),
+    privateMode: false,
+    profileName: "P".repeat(64),
+    x: 100000, y: 100000, width: 8000, height: 6000,
+    clipX: 0, clipY: 0, clipWidth: 8000, clipHeight: 6000,
+    zIndex: 100000, visible: true
+  })),
+  workspaceIds: Array.from({ length: 2000 }, (_, index) =>
+    "n" + index.toString(36).padStart(4, "0") + "x".repeat(75)
+  ),
+  profileUsage: Array.from({ length: 24000 }, (_, index) => [
+    index.toString(36).toUpperCase().padStart(5, "0") + "P".repeat(59),
+    1
+  ])
+};
+const worstCasePayloadBytes = Buffer.byteLength(JSON.stringify(worstCaseNativePayload), "utf8");
+if (worstCasePayloadBytes >= 2 * 1024 * 1024 - 16 * 1024) fail("Worst-case 2,000-card workspace membership, 24,000 compact profiles and four visible descriptors must stay at least 16 KiB below the bridge's 2 MiB frame limit.");
+else pass("Worst-case native sync payload is " + worstCasePayloadBytes + " UTF-8 bytes, below the 2 MiB frame limit with at least 16 KiB headroom.");
