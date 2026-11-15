@@ -771,6 +771,7 @@ if (!nativeHost.includes("UpdateWorkspaceSurfaceIds(root)") ||
     !nativeHost.includes("ids.GetArrayLength() > 2000") ||
     !nativeHost.includes("MaxSurfaceCandidates = 8") ||
     !nativeHost.includes("Take(MaxSurfaceCandidates)") ||
+    !nativeHost.includes("items.GetArrayLength() > MaxSurfaceCandidates") ||
     !nativeHost.includes("!present.Contains(surface.Id)") ||
     !nativeHost.includes("!known.Contains(surface.Id)")) fail("Windows host must distinguish deleted workspace cards from off-screen cached cards and enforce its visible working-set budget.");
 else pass("Windows host reconciles deleted IDs separately, hides off-screen surfaces, and caps parsed descriptors at its adaptive renderer budget.");
