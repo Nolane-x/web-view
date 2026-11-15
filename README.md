@@ -161,3 +161,5 @@ The 2,000-item ceiling is a resource guard, not a claim of mathematically unboun
 
 Browser profile choices and per-profile card usage are memoized from workspace data. Workspace persistence invalidates those derived caches, so camera frames and repeated card construction do not rescan every node for the same metadata.
 Search indexing also memoizes each node's normalized title, URL, content and description in a `WeakMap`; workspace mutations replace the cache, allowing repeated filter and native-visibility checks to reuse the normalized text without keeping deleted nodes alive.
+
+Native Windows synchronization is also bounded independently of workspace size: each camera update contains only the topmost website cards intersecting the current viewport, capped at the native host's 2–4 renderer budget. A complete list of native website-card IDs is sent only when workspace membership changes or the bridge reconnects. Off-screen native surfaces are hidden and can remain in the host's small cache (up to 8); deleted cards are released, except while an active download is being retained.
