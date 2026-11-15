@@ -736,3 +736,16 @@ if (!/nodeSearchTextCache = new WeakMap\(\)/.test(cacheInvalidationFunction) ||
     !searchFunction.includes("nodeSearchTextCache.set(node, searchText)") ||
     !searchFunction.includes("cachedNodeSearchText(node).includes(query)")) fail("Normalized node search text must be memoized by node and invalidated when workspace data changes.");
 else pass("Search text is normalized once per node and reused by viewport and native filtering until workspace data changes.");
+
+
+if (!spatialIndexSource.includes("get(id)") ||
+    !virtualizerFunction.includes("spatialIndex.get(selectedId)") ||
+    !virtualizerFunction.includes("spatialIndex.get(id)")) fail("Pinned selected/live cards must be retrieved by spatial-index key rather than scanning the full node array.");
+else pass("Selected and active live cards are pinned through constant-time spatial-index lookups.");
+
+const minimapFunction = js.slice(js.indexOf("function updateMinimap"), js.indexOf("function toast(message"));
+if (!minimapFunction.includes("minimapGeometryDirty") ||
+    !minimapFunction.includes("minimapGeometryCache") ||
+    !minimapFunction.includes("if (minimapGeometryDirty || !minimapGeometryCache)") ||
+    !minimapFunction.includes("updateMinimap(true)")) fail("The minimap must cache static item geometry and redraw markers only after geometry changes.");
+else pass("Minimap item markers are cached; camera frames update only the viewport rectangle.");
