@@ -1,0 +1,91 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const { SpatialIndex } = require("../spatial-index.js");
+
+test("queries negative coordinates and exact grid-cell boundaries", () => {
+  const index = new SpatialIndex(100);
+  const left = { id: "left", x: -100, y: -20, w: 100, h: 40 };
+  const right = { id: "right", x: 0, y: -20, w: 100, h: 40 };
+  index.rebuild([left, right]);
+  assert.deepEqual(index.query({ x: -100, y: -20, w: 100, h: 40 }).map(item => item.id), ["left"]);
+  assert.deepEqual(index.query({ x: 0, y: -20, w: 100, h: 40 }).map(item => item.id), ["right"]);
+  assert.deepEqual(index.query({ x: 100, y: -20, w: 1, h: 40 }), []);
+});
+
+test("upsert moves an item and remove releases its previous cells", () => {
+  const index = new SpatialIndex(128);
+  const item = { id: "moving", x: 0, y: 0, w: 80, h: 80 };
+  index.upsert(item);
+  assert.equal(index.query({ x: 0, y: 0, w: 128, h: 128 }).length, 1);
+  item.x = 2048;
+  item.y = -1024;
+  index.upsert(item);
+  assert.equal(index.query({ x: 0, y: 0, w: 128, h: 128 }).length, 0);
+  assert.equal(index.query({ x: 2048, y: -1024, w: 128, h: 128 })[0], item);
+  assert.equal(index.remove(item.id), true);
+  assert.equal(index.size, 0);
+});
+
+test("large cards use a bounded overflow bucket", () => {
+  const index = new SpatialIndex(64);
+  const large = { id: "large", x: -10000, y: -10000, w: 50000, h: 50000 };
+  const small = { id: "small", x: 100000, y: 100000, w: 10, h: 10 };
+  index.rebuild([large, small]);
+  assert.deepEqual(index.query({ x: 20000, y: 20000, w: 10, h: 10 }).map(item => item.id), ["large"]);
+  assert.deepEqual(index.query({ x: 100000, y: 100000, w: 10, h: 10 }).map(item => item.id), ["small"]);
+});
+
+test("invalid geometry is rejected and duplicate IDs replace previous entries", () => {
+  const index = new SpatialIndex();
+  assert.equal(index.upsert({ id: "bad", x: 0, y: 0, w: 0, h: 10 }), false);
+  assert.equal(index.upsert({ id: "valid", x: 0, y: 0, w: 100, h: 100 }), true);
+  const replacement = { id: "valid", x: 2000, y: 2000, w: 50, h: 50 };
+  assert.equal(index.upsert(replacement), true);
+  assert.equal(index.size, 1);
+  assert.deepEqual(index.query({ x: 0, y: 0, w: 100, h: 100 }), []);
+  assert.equal(index.query({ x: 2000, y: 2000, w: 50, h: 50 })[0], replacement);
+});
+
+test("randomized queries match a brute-force geometry oracle", () => {
+  const index = new SpatialIndex(256);
+  const items = [];
+  let seed = 0x6d2b79f5;
+  const random = () => {
+    seed = (Math.imul(seed ^ (seed >>> 15), 1 | seed) + 0x6d2b79f5) | 0;
+    seed ^= seed + Math.imul(seed ^ (seed >>> 7), 61 | seed);
+    return ((seed ^ (seed >>> 14)) >>> 0) / 4294967296;
+  };
+  for (let i = 0; i < 700; i += 1) items.push({
+    id: "n" + i,
+    x: Math.floor(random() * 12000) - 6000,
+    y: Math.floor(random() * 12000) - 6000,
+    w: 30 + Math.floor(random() * 1700),
+    h: 30 + Math.floor(random() * 1100)
+  });
+  index.rebuild(items);
+  for (let i = 0; i < 250; i += 1) {
+    const query = {
+      x: Math.floor(random() * 12000) - 6000,
+      y: Math.floor(random() * 12000) - 6000,
+      w: 100 + Math.floor(random() * 2400),
+      h: 100 + Math.floor(random() * 1800)
+    };
+    const expected = items.filter(item =>
+      item.x < query.x + query.w && item.x + item.w > query.x &&
+      item.y < query.y + query.h && item.y + item.h > query.y
+    ).map(item => item.id).sort();
+    const actual = index.query(query).map(item => item.id).sort();
+    assert.deepEqual(actual, expected, "query " + i);
+  }
+});
+
+test("invalid query rectangles return empty results without mutating the index", () => {
+  const index = new SpatialIndex();
+  index.upsert({ id: "one", x: 0, y: 0, w: 10, h: 10 });
+  assert.deepEqual(index.query({ x: 0, y: 0, w: -1, h: 10 }), []);
+  assert.deepEqual(index.query({ x: Number.NaN, y: 0, w: 10, h: 10 }), []);
+  assert.equal(index.size, 1);
+});
