@@ -572,9 +572,10 @@
       // renderer budget is reported during the handshake, so this working set stays
       // bounded even when thousands of cards overlap the same canvas region.
       if (!uiBlocked && document.visibilityState === "visible") {
-        const candidates = spatialIndex.query(currentCanvasWorldBounds(0))
-          .filter((node) => canUseNativeSurface(node) && matchesNodeFilters(node, query))
-          .sort((left, right) => (Number(right.z) || 0) - (Number(left.z) || 0));
+        const candidates = window.NolaneSpatialIndex.sortByZIndex(
+          spatialIndex.query(currentCanvasWorldBounds(0))
+            .filter((node) => canUseNativeSurface(node) && matchesNodeFilters(node, query))
+        );
 
         for (const node of candidates) {
           const rect = {
