@@ -648,35 +648,7 @@ public sealed partial class MainWindow : Window
             (_activeOverlayItems.Count > 0 || DownloadsPanel.Visibility == Visibility.Visible ||
              LibraryPanel.Visibility == Visibility.Visible || _profilesDialogOpen))
             UpdateOverlayRegion(_activeOverlayItems);
-    }    private void Workspace_NavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
-    {
-        if (IsTrustedWorkspaceUri(e.Uri)) return;
-        e.Cancel = true;
-        OpenExternal(e.Uri);
-    }
-
-    private void Workspace_NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
-    {
-        if (!e.IsSuccess) { StatusText.Text = "Workspace load failed: " + e.WebErrorStatus; return; }
-        _workspaceReady = true;
-        StatusText.Text = $"Native browser connected · adaptive budget {MaxVisibleSurfaces} visible / {MaxCachedSurfaces} cached";
-        PostWorkspaceMessage(new { type = "nolane.native.ready", protocol = 1, engine = "WebView2", maxVisibleSurfaces = MaxVisibleSurfaces });
-    }
-
-    private void Workspace_NewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
-    {
-        e.Handled = true;
-        if (e.IsUserInitiated) OpenExternal(e.Uri);
-    }
-
-    private void Workspace_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
-    {
-        if (!IsTrustedWorkspaceUri(e.Source)) return;
-        try { ProcessWorkspaceMessage(JsonDocument.Parse(e.WebMessageAsJson).RootElement); }
-        catch (Exception ex) when (ex is JsonException or InvalidOperationException) { }
-    }
-
-    private void ProcessWorkspaceMessage(JsonElement root)
+    }    private void ProcessWorkspaceMessage(JsonElement root)
     {
         if (!TryGetString(root, "type", out var type)) return;
         if (!root.TryGetProperty("protocol", out var protocol) ||
@@ -2721,7 +2693,6 @@ public sealed partial class MainWindow : Window
         await dialog.ShowAsync();
     }
 
-    private void ReloadWorkspace_Click(object sender, RoutedEventArgs e) => WorkspaceView.CoreWebView2?.Reload();
 
     private sealed class DownloadEntry
     {

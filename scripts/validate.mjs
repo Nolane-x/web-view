@@ -312,8 +312,10 @@ else pass("Native background host starts from its surface layer without opening 
 if (!nativeHost.includes("surface.View.Close()") ||
     !nativeHost.includes("Closed +=") ||
     nativeHost.includes('surface.View.CoreWebView2.Navigate("about:blank")') ||
-    !nativeXaml.includes('x:Name="WorkspaceView" Visibility="Collapsed"')) fail("Background host must close all native browser surfaces and must not create a visible second workspace.");
-else pass("Native WebView2 surfaces are explicitly released and the legacy parent workspace view stays hidden.");
+    nativeXaml.includes("WorkspaceView") ||
+    nativeHost.includes("Workspace_NavigationStarting") ||
+    nativeHost.includes("ReloadWorkspace_Click")) fail("Background host must release its native website surfaces and must not retain an unused parent workspace WebView.");
+else pass("Windows host contains only website-card browser surfaces; the unused parent WebView and legacy handlers have been removed.");
 if (!workflow.includes("Compile isolated WebView2 projection smoke test") ||
     !workflow.includes("native-diagnostics/WebView2ProjectionSmokeTest.csproj") ||
     !workflow.includes("dotnet build desktop-host/Nolane.DesktopHost.csproj") ||
