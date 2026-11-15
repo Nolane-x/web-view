@@ -37,7 +37,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: "native-webview2-host-${{ github.event_name }}"
+  group: "native-webview2-host-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}"
   cancel-in-progress: true
 
 jobs:
