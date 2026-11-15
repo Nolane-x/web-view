@@ -75,6 +75,15 @@
     return candidate;
   };
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+  const MAX_WORLD_COORDINATE = 1_000_000_000;
+  const normalizeCanvasCoordinate = (value, fallback = 0) =>
+    window.NolaneSpatialIndex.normalizeWorldCoordinate(value, fallback, MAX_WORLD_COORDINATE);
+  const normalizeCanvasView = (value) =>
+    window.NolaneSpatialIndex.normalizeViewState(value, {
+      defaultX: 25, defaultY: 0, defaultScale: 1,
+      minScale: MIN_SCALE, maxScale: MAX_SCALE,
+      maxWorldCoordinate: MAX_WORLD_COORDINATE
+    });
   const escapeHTML = (value) => String(value == null ? "" : value).replace(/[&<>"']/g, (char) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
   })[char]);
@@ -122,9 +131,7 @@
     const name = String(space.name || ("Space " + (index + 1))).trim().slice(0, 48) || ("Space " + (index + 1));
     const cleanNodes = normalizeNodeCollection(space.nodes);
     const rawView = space.view || {};
-    const cleanView = Number.isFinite(rawView.x) && Number.isFinite(rawView.y) && Number.isFinite(rawView.scale)
-      ? { x: clamp(rawView.x, -100000, 100000), y: clamp(rawView.y, -100000, 100000), scale: clamp(rawView.scale, MIN_SCALE, MAX_SCALE) }
-      : { x: 25, y: 0, scale: 1 };
+    const cleanView = normalizeCanvasView(rawView);
     return { id, name, nodes: cleanNodes, view: cleanView };
   }
 
@@ -341,8 +348,8 @@
       toast("Your local workspaces were restored.");
     } else if (saved && Array.isArray(saved.nodes)) {
       nodes = normalizeNodeCollection(saved.nodes);
-      if (saved.view && Number.isFinite(saved.view.x) && Number.isFinite(saved.view.y) && Number.isFinite(saved.view.scale)) {
-        view = { x: saved.view.x, y: saved.view.y, scale: clamp(saved.view.scale, MIN_SCALE, MAX_SCALE) };
+      if (saved.view && typeof saved.view === "object" && !Array.isArray(saved.view)) {
+        view = normalizeCanvasView(saved.view);
       }
       spaces = [
         { id: "personal", name: "My workspace", nodes: nodes.map((node) => ({ ...node })), view: { ...view } },
@@ -391,8 +398,8 @@
       id: "",
       type: node.type,
       title: String(node.title || (node.type === "note" ? "Untitled note" : "Website")).slice(0, 120),
-      x: clamp(Number(node.x) || 0, -100000, 100000),
-      y: clamp(Number(node.y) || 0, -100000, 100000),
+      x: normalizeCanvasCoordinate(node.x, 0),
+      y: normalizeCanvasCoordinate(node.y, 0),
       w: clamp(Number(node.w) || 360, 230, 1800),
       h: clamp(Number(node.h) || 280, 150, 1200),
       z: clamp(Number(node.z) || 1, 1, 100000),
@@ -820,9 +827,11 @@
     const anchorX = (px - view.x) / view.scale;
     const anchorY = (py - view.y) / view.scale;
     const next = clamp(view.scale * factor, MIN_SCALE, MAX_SCALE);
-    view.x = px - anchorX * next;
-    view.y = py - anchorY * next;
-    view.scale = next;
+    view = normalizeCanvasView({
+      x: px - anchorX * next,
+      y: py - anchorY * next,
+      scale: next
+    });
     applyView();
     scheduleSave();
   }
@@ -837,9 +846,11 @@
     const rect = canvas.getBoundingClientRect();
     const pad = 100;
     const scale = clamp(Math.min((rect.width - pad * 2) / Math.max(1, maxX - minX), (rect.height - pad * 2) / Math.max(1, maxY - minY)), MIN_SCALE, 1.25);
-    view.scale = scale;
-    view.x = (rect.width - (maxX - minX) * scale) / 2 - minX * scale;
-    view.y = (rect.height - (maxY - minY) * scale) / 2 - minY * scale;
+    view = normalizeCanvasView({
+      scale,
+      x: (rect.width - (maxX - minX) * scale) / 2 - minX * scale,
+      y: (rect.height - (maxY - minY) * scale) / 2 - minY * scale
+    });
     applyView();
     scheduleSave();
   }
@@ -2292,8 +2303,12 @@
     if (dragState) {
       const node = spatialIndex.get(dragState.id);
       if (!node) return;
-      node.x = Math.round(dragState.x + (event.clientX - dragState.pointerX) / view.scale);
-      node.y = Math.round(dragState.y + (event.clientY - dragState.pointerY) / view.scale);
+      node.x = normalizeCanvasCoordinate(
+        Math.round(dragState.x + (event.clientX - dragState.pointerX) / view.scale), dragState.x
+      );
+      node.y = normalizeCanvasCoordinate(
+        Math.round(dragState.y + (event.clientY - dragState.pointerY) / view.scale), dragState.y
+      );
       spatialIndex.upsert(node);
       const element = renderedNodeElements.get(node.id);
       if (element) { element.style.left = node.x + "px"; element.style.top = node.y + "px"; }
@@ -2314,8 +2329,11 @@
       return;
     }
     if (panState) {
-      view.x = panState.x + (event.clientX - panState.pointerX);
-      view.y = panState.y + (event.clientY - panState.pointerY);
+      view = normalizeCanvasView({
+        x: panState.x + (event.clientX - panState.pointerX),
+        y: panState.y + (event.clientY - panState.pointerY),
+        scale: view.scale
+      });
       applyView();
     }
   }
@@ -2349,7 +2367,8 @@
       id: uid(), type: "website", title: (title || host).trim().slice(0, 120) || host, url,
       description: "Open this site in Chrome, then use Browser Companion to stream its real tab into this workspace.",
       embedMode: "safe",
-      x: Math.round(point.x - 190), y: Math.round(point.y - 145), w: 390, h: 300,
+      x: normalizeCanvasCoordinate(Math.round(point.x - 190)),
+      y: normalizeCanvasCoordinate(Math.round(point.y - 145)), w: 390, h: 300,
       z: ++zCounter, createdAt: new Date().toISOString()
     };
     nodes.push(node);
@@ -2368,7 +2387,8 @@
     const node = {
       id: editingId || uid(), type: "note", title: (title || "Untitled note").trim().slice(0, 120) || "Untitled note",
       content: String(content || "").slice(0, 12000), color: color || "lavender",
-      x: Math.round(point.x - 170), y: Math.round(point.y - 130), w: 350, h: 260,
+      x: normalizeCanvasCoordinate(Math.round(point.x - 170)),
+      y: normalizeCanvasCoordinate(Math.round(point.y - 130)), w: 350, h: 260,
       z: ++zCounter, createdAt: new Date().toISOString()
     };
     if (editingId) {
@@ -2541,11 +2561,7 @@
           id: "personal",
           name: "My workspace",
           nodes: importedNodes,
-          view: {
-            x: Number(data.view?.x) || 25,
-            y: Number(data.view?.y) || 0,
-            scale: clamp(Number(data.view?.scale) || 1, MIN_SCALE, MAX_SCALE)
-          }
+          view: normalizeCanvasView(data.view)
         }];
         importedActiveId = "personal";
       } else {
