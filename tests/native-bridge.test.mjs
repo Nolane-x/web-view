@@ -140,3 +140,49 @@ test("viewport metadata is bounded and normalized for the Windows overlay", () =
   assert.equal(bridge.normalizeViewport({ screenLeft: 0, screenTop: 0, width: 20, height: 900, deviceScale: 1 }), null);
   assert.equal(bridge.normalizeViewport({ screenLeft: "NaN", screenTop: 0, width: 1440, height: 900, deviceScale: 1 }), null);
 });
+
+
+test("workspace snapshots are chunked into revisioned bounded messages", () => {
+  const ids = Array.from({ length: 300 }, (_, index) => "card-" + index);
+  const profiles = Array.from({ length: 513 }, (_, index) => ({ name: "Profile-" + index, count: 1 }));
+  const messages = bridge.createWorkspaceSnapshotMessages(7, ids, profiles);
+  assert.equal(messages.length, 5);
+  assert.deepEqual(messages[0], {
+    type: "nolane.workspace.snapshot.begin", protocol: 2, revision: 7,
+    workspaceIdCount: 300, profileCount: 513, chunkCount: 3
+  });
+  assert.equal(messages[1].workspaceIds.length, 256);
+  assert.equal(messages[1].profileUsage.length, 256);
+  assert.equal(messages[2].workspaceIds.length, 44);
+  assert.equal(messages[2].profileUsage.length, 256);
+  assert.equal(messages[3].workspaceIds.length, 0);
+  assert.equal(messages[3].profileUsage.length, 1);
+  assert.deepEqual(messages[4], { type: "nolane.workspace.snapshot.commit", protocol: 2, revision: 7 });
+  assert.deepEqual(messages[1].workspaceIds, ids.slice(0, 256));
+});
+
+test("workspace snapshots collapse case-insensitive profiles and support empty snapshots", () => {
+  const messages = bridge.createWorkspaceSnapshotMessages(8, [], [
+    { name: "Work", count: 2 }, { name: "work", count: 3 }, { name: "", count: 1 }
+  ]);
+  assert.equal(messages.length, 3);
+  assert.deepEqual(messages[0], {
+    type: "nolane.workspace.snapshot.begin", protocol: 2, revision: 8,
+    workspaceIdCount: 0, profileCount: 2, chunkCount: 1
+  });
+  assert.deepEqual(messages[1].profileUsage, [["", 1], ["Work", 5]]);
+  assert.deepEqual(bridge.createWorkspaceSnapshotMessages(9, [], []), [
+    { type: "nolane.workspace.snapshot.begin", protocol: 2, revision: 9, workspaceIdCount: 0, profileCount: 0, chunkCount: 0 },
+    { type: "nolane.workspace.snapshot.commit", protocol: 2, revision: 9 }
+  ]);
+});
+
+test("workspace snapshots reject malformed IDs, duplicate IDs and out-of-quota profiles", () => {
+  assert.equal(bridge.createWorkspaceSnapshotMessages(0, [], []), null);
+  assert.equal(bridge.createWorkspaceSnapshotMessages(1, ["bad/id"], []), null);
+  assert.equal(bridge.createWorkspaceSnapshotMessages(1, ["duplicate", "duplicate"], []), null);
+  assert.equal(bridge.createWorkspaceSnapshotMessages(1, [], [{ name: "bad/name", count: 1 }]), null);
+  assert.equal(bridge.createWorkspaceSnapshotMessages(1, [], [{ name: "Work", count: 0 }]), null);
+  assert.equal(bridge.createWorkspaceSnapshotMessages(1, [], [{ name: "Work", count: 24000 }, { name: "Personal", count: 1 }]), null);
+  assert.equal(bridge.createWorkspaceSnapshotMessages(1, ["x".repeat(81)], []), null);
+});

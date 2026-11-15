@@ -44,6 +44,8 @@
   let nativeWorkspaceIdsDirty = true;
   let nativeWorkspaceIdsCache = [];
   let nativeProfileUsageDirty = true;
+  let nativeWorkspaceSnapshotProtocol = false;
+  let nativeWorkspaceSnapshotRevision = 0;
   let nativeSyncFrame = 0;
   let nativeHostReadyNotified = false;
   let nativeBridgeSocket = null;
@@ -632,6 +634,24 @@
     }
   }
 
+  function sendNativeWorkspaceSnapshot() {
+    if (!nativeWorkspaceSnapshotProtocol ||
+        (!nativeWorkspaceIdsDirty && !nativeProfileUsageDirty)) return true;
+    const revision = nativeWorkspaceSnapshotRevision + 1;
+    const profiles = cachedNativeProfileUsage().map((item) => ({ name: item.name, count: item.count }));
+    const messages = window.NolaneNativeBridge?.createWorkspaceSnapshotMessages(
+      revision, nativeWorkspaceIdsCache, profiles
+    );
+    if (!messages) return false;
+    for (const message of messages) {
+      if (!sendNativeBridgeMessage(message)) return false;
+    }
+    nativeWorkspaceSnapshotRevision = revision;
+    nativeWorkspaceIdsDirty = false;
+    nativeProfileUsageDirty = false;
+    return true;
+  }
+
   function scheduleNativeSurfaceSync() {
     if (!nativeHostAvailable || !nativeBridgeSocket || nativeBridgeSocket.readyState !== WebSocket.OPEN || nativeSyncFrame) return;
     nativeSyncFrame = requestAnimationFrame(() => {
@@ -686,20 +706,26 @@
         screenTop: (Number(window.screenY) || 0) + Math.max(0, outerHeight - window.innerHeight - 8),
         width: window.innerWidth, height: window.innerHeight, deviceScale: window.devicePixelRatio || 1
       };
+      if (nativeWorkspaceSnapshotProtocol) {
+        // Metadata is chunked and sent only when dirty; camera frames stay compact.
+        if (!sendNativeWorkspaceSnapshot() && nativeBridgeSocket?.readyState === WebSocket.OPEN) {
+          window.setTimeout(scheduleNativeSurfaceSync, 250);
+        }
+      }
       const message = {
         type: "nolane.surfaces.sync", protocol: 2, viewport,
         workspaceVisible: document.visibilityState === "visible",
         items
       };
-      if (nativeProfileUsageDirty) {
-        message.profileUsage = cachedNativeProfileUsage().map((item) => [item.name, item.count]);
+      // Older installed hosts do not advertise snapshot support. Keep the original
+      // protocol-v2 inline fields until those hosts are upgraded.
+      if (!nativeWorkspaceSnapshotProtocol) {
+        if (nativeProfileUsageDirty) {
+          message.profileUsage = cachedNativeProfileUsage().map((item) => [item.name, item.count]);
+        }
+        if (nativeWorkspaceIdsDirty) message.workspaceIds = nativeWorkspaceIdsCache;
       }
-      // Workspace membership changes infrequently; transmit the complete native
-      // website ID set only after a data mutation or a new host handshake.
-      if (nativeWorkspaceIdsDirty) {
-        message.workspaceIds = nativeWorkspaceIdsCache;
-      }
-      if (sendNativeBridgeMessage(message)) {
+      if (sendNativeBridgeMessage(message) && !nativeWorkspaceSnapshotProtocol) {
         if (nativeWorkspaceIdsDirty) nativeWorkspaceIdsDirty = false;
         if (nativeProfileUsageDirty) nativeProfileUsageDirty = false;
       }
@@ -711,6 +737,7 @@
     if (!message || typeof message !== "object") return;
     if (message.type === "nolane.native.ready") {
       nativeHostAvailable = true;
+      nativeWorkspaceSnapshotProtocol = message.workspaceSnapshotProtocol === 1;
       nativeBridgePermission = "granted";
       nativeBridgeReconnectAttempts = 0;
       const reportedBudget = Number(message.maxVisibleSurfaces);
@@ -2278,6 +2305,9 @@
       const wasConnected = nativeHostAvailable;
       nativeHostAvailable = false;
       nativeHostReadyNotified = false;
+      nativeWorkspaceSnapshotProtocol = false;
+      nativeWorkspaceIdsDirty = true;
+      nativeProfileUsageDirty = true;
       refreshNativeWorkspaceIdsSnapshot();
       nativeSurfaceStates.clear();
       renderNodes();

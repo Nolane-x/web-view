@@ -58,6 +58,72 @@
       .map(([name, count]) => ({ name, count }));
   }
 
+  const MAX_WORKSPACE_SNAPSHOT_IDS = 24000;
+  const MAX_WORKSPACE_SNAPSHOT_PROFILES = 24000;
+  const MAX_WORKSPACE_SNAPSHOT_CARD_COUNT = 24000;
+  const WORKSPACE_SNAPSHOT_CHUNK_SIZE = 256;
+
+  function createWorkspaceSnapshotMessages(revision, workspaceIds, profileUsage) {
+    if (!Number.isSafeInteger(revision) || revision < 1 ||
+        !Array.isArray(workspaceIds) || workspaceIds.length > MAX_WORKSPACE_SNAPSHOT_IDS ||
+        !Array.isArray(profileUsage) || profileUsage.length > MAX_WORKSPACE_SNAPSHOT_PROFILES) return null;
+
+    const ids = [];
+    const seenIds = new Set();
+    for (const id of workspaceIds) {
+      if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,80}$/.test(id) || seenIds.has(id)) return null;
+      seenIds.add(id);
+      ids.push(id);
+    }
+
+    const profilesByName = new Map();
+    let totalProfileCards = 0;
+    for (const item of profileUsage) {
+      if (!item || typeof item !== "object") return null;
+      const name = item.name === "" ? "" : normalizeProfileName(item.name);
+      const count = item.count;
+      if (name === null || !Number.isSafeInteger(count) || count < 1 ||
+          count > MAX_WORKSPACE_SNAPSHOT_CARD_COUNT) return null;
+      totalProfileCards += count;
+      if (totalProfileCards > MAX_WORKSPACE_SNAPSHOT_CARD_COUNT) return null;
+      const key = name.toLowerCase();
+      const existing = profilesByName.get(key);
+      const combined = (existing?.count || 0) + count;
+      if (combined > MAX_WORKSPACE_SNAPSHOT_CARD_COUNT) return null;
+      profilesByName.set(key, { name: existing?.name || name, count: combined });
+    }
+
+    const profiles = [...profilesByName.values()]
+      .sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)
+      .map((item) => [item.name, item.count]);
+    const chunkCount = Math.max(
+      Math.ceil(ids.length / WORKSPACE_SNAPSHOT_CHUNK_SIZE),
+      Math.ceil(profiles.length / WORKSPACE_SNAPSHOT_CHUNK_SIZE)
+    );
+    const messages = [{
+      type: "nolane.workspace.snapshot.begin",
+      protocol: 2,
+      revision,
+      workspaceIdCount: ids.length,
+      profileCount: profiles.length,
+      chunkCount
+    }];
+
+    for (let index = 0; index < chunkCount; index += 1) {
+      const offset = index * WORKSPACE_SNAPSHOT_CHUNK_SIZE;
+      messages.push({
+        type: "nolane.workspace.snapshot.chunk",
+        protocol: 2,
+        revision,
+        index,
+        workspaceIds: ids.slice(offset, offset + WORKSPACE_SNAPSHOT_CHUNK_SIZE),
+        profileUsage: profiles.slice(offset, offset + WORKSPACE_SNAPSHOT_CHUNK_SIZE)
+      });
+    }
+    messages.push({ type: "nolane.workspace.snapshot.commit", protocol: 2, revision });
+    return messages;
+  }
+
   function normalizeSurfaceState(message) {
     if (!message || typeof message !== "object" || message.type !== "nolane.native.surface") return null;
     if (typeof message.id !== "string" || !message.id.trim() || message.id.length > 128) return null;
@@ -105,7 +171,10 @@
     return Object.freeze(result);
   }
 
-  const api = Object.freeze({ createCommand, createNavigationCommand, normalizeProfileName, summarizeProfileUsage, normalizeSurfaceState, normalizeViewport });
+  const api = Object.freeze({
+    createCommand, createNavigationCommand, normalizeProfileName, summarizeProfileUsage,
+    createWorkspaceSnapshotMessages, normalizeSurfaceState, normalizeViewport
+  });
   const root = typeof window !== "undefined" ? window : globalThis;
   root.NolaneNativeBridge = api;
 })();
