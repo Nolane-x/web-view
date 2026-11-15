@@ -18,6 +18,55 @@
     return { x, y, w: width, h: height, right, bottom };
   }
 
+  function normalizeWorldCoordinate(value, fallback = 0, maxAbs = 1_000_000_000) {
+    const requestedLimit = Number(maxAbs);
+    const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? Math.min(requestedLimit, Number.MAX_SAFE_INTEGER)
+      : 1_000_000_000;
+    const requestedFallback = Number(fallback);
+    const safeFallback = Number.isFinite(requestedFallback) ? requestedFallback : 0;
+    const numericValue = Number(value);
+    const normalized = Number.isFinite(numericValue) ? numericValue : safeFallback;
+    return Math.max(-limit, Math.min(limit, normalized));
+  }
+
+  function normalizeViewState(value, options = {}) {
+    const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    const settings = options && typeof options === "object" ? options : {};
+    const requestedMinScale = Number(settings.minScale);
+    const minScale = Number.isFinite(requestedMinScale) && requestedMinScale > 0 ? requestedMinScale : 0.25;
+    const requestedMaxScale = Number(settings.maxScale);
+    const maxScale = Number.isFinite(requestedMaxScale) && requestedMaxScale >= minScale
+      ? requestedMaxScale
+      : Math.max(minScale, 2.2);
+    const requestedDefaultScale = Number(settings.defaultScale);
+    const defaultScale = Number.isFinite(requestedDefaultScale)
+      ? Math.max(minScale, Math.min(maxScale, requestedDefaultScale))
+      : Math.max(minScale, Math.min(maxScale, 1));
+    const requestedScale = Number(source.scale);
+    const scale = Number.isFinite(requestedScale)
+      ? Math.max(minScale, Math.min(maxScale, requestedScale))
+      : defaultScale;
+
+    const requestedWorldLimit = Number(settings.maxWorldCoordinate);
+    const maxWorldCoordinate = Number.isFinite(requestedWorldLimit) && requestedWorldLimit > 0
+      ? Math.min(requestedWorldLimit, Number.MAX_SAFE_INTEGER)
+      : 1_000_000_000;
+    // x/y are CSS-pixel translations. Dividing them by scale yields the world's
+    // top-left coordinate, so scale the translation budget with the camera.
+    const maxTranslation = Math.min(Number.MAX_SAFE_INTEGER, maxWorldCoordinate * scale);
+    const requestedDefaultX = Number(settings.defaultX);
+    const requestedDefaultY = Number(settings.defaultY);
+    const defaultX = Number.isFinite(requestedDefaultX) ? requestedDefaultX : 25;
+    const defaultY = Number.isFinite(requestedDefaultY) ? requestedDefaultY : 0;
+
+    return {
+      x: normalizeWorldCoordinate(source.x, defaultX, maxTranslation),
+      y: normalizeWorldCoordinate(source.y, defaultY, maxTranslation),
+      scale
+    };
+  }
+
   function intersects(a, b) {
     return a.x < b.right && a.right > b.x && a.y < b.bottom && a.bottom > b.y;
   }
@@ -167,7 +216,7 @@
     return id;
   }
 
-  const api = Object.freeze({ SpatialIndex, sortByZIndex, cycleIndex, claimUniqueId });
+  const api = Object.freeze({ SpatialIndex, sortByZIndex, cycleIndex, claimUniqueId, normalizeWorldCoordinate, normalizeViewState });
   if (typeof module === "object" && module.exports) module.exports = api;
   else globalThis.NolaneSpatialIndex = api;
 })();
