@@ -727,3 +727,12 @@ else pass("Live Chrome streams create their first video element and keep that el
 if (nativeSyncSource.includes("syncActiveSpace()") ||
     !saveFunction.includes("syncActiveSpace()")) fail("Sanitized active-space snapshots must be refreshed on workspace mutations, not allocated on every native camera frame.");
 else pass("Native camera frames avoid re-sanitizing and cloning the full active workspace; snapshots refresh when save is scheduled.");
+
+
+const searchFunction = js.slice(js.indexOf("function cachedNodeSearchText"), js.indexOf("function scheduleCanvasVirtualization"));
+const cacheInvalidationFunction = js.slice(js.indexOf("function invalidateWorkspaceDerivedCaches"), js.indexOf("function availableBrowserProfiles"));
+if (!/nodeSearchTextCache = new WeakMap\(\)/.test(cacheInvalidationFunction) ||
+    !searchFunction.includes("nodeSearchTextCache.get(node)") ||
+    !searchFunction.includes("nodeSearchTextCache.set(node, searchText)") ||
+    !searchFunction.includes("cachedNodeSearchText(node).includes(query)")) fail("Normalized node search text must be memoized by node and invalidated when workspace data changes.");
+else pass("Search text is normalized once per node and reused by viewport and native filtering until workspace data changes.");
