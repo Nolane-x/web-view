@@ -157,3 +157,17 @@ test("search result cycling advances, reverses and wraps without an empty-list i
   assert.equal(cycleIndex(0, 0, false), -1);
   assert.equal(cycleIndex(0, -2, true), -1);
 });
+
+
+test("workspace IDs are safe, unique and retained in first-occurrence order", () => {
+  const { claimUniqueId } = require("../spatial-index.js");
+  const used = new Set();
+  let generated = 0;
+  const generate = () => "generated-" + (++generated);
+  assert.equal(claimUniqueId("stable-id", used, generate), "stable-id");
+  assert.equal(claimUniqueId("stable-id", used, generate), "generated-1");
+  assert.equal(claimUniqueId("../unsafe", used, generate), "generated-2");
+  assert.equal(claimUniqueId("x".repeat(81), used, generate), "generated-3");
+  assert.equal(claimUniqueId("other", used, generate), "other");
+  assert.equal(used.size, 5);
+});
