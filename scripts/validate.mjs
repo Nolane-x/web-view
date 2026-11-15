@@ -695,3 +695,8 @@ if (!desktopHostWorkflow.includes('node --check spatial-index.js') ||
     !desktopHostWorkflow.includes('      - "spatial-index.js"') ||
     !desktopHostWorkflow.includes('group: "native-webview2-host-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}"')) fail("Windows CI must validate, watch and isolate the spatial canvas changes.");
 else pass("Windows CI validates the spatial index and isolates workflow runs per pull request.");
+
+
+if (!js.includes("new ResizeObserver(") || !js.includes("canvasResizeObserver.observe(canvas)") ||
+    !js.includes("scheduleCanvasVirtualization();")) fail("Canvas viewport changes from layout transitions must refresh the virtualized DOM projection.");
+else pass("Canvas ResizeObserver refreshes virtualization, minimap and native geometry after layout changes.");
