@@ -186,3 +186,14 @@ Spatial-index geometry also guards IEEE-754 edge cases: rectangles whose compute
 ### Coordinate and camera normalization
 
 Workspace node coordinates are normalized to the finite ±8,000,000 world-unit range. Camera translations are normalized against the same world-space budget multiplied by the active zoom scale, capping camera translation at 17,600,000 CSS pixels. This leaves headroom below Chromium's CSS length clamp while keeping the world far larger than the previous ±100,000-unit range. The same helpers are used by current and legacy workspace loading, JSON import, drag, pan, zoom, fit-to-content and search-result focus. Non-finite input falls back to a deterministic safe coordinate; scale remains inside the existing zoom limits. This avoids the former mismatch where a card could be dragged beyond ±100,000 units and then moved on reload because the persisted node and camera were clamped independently.
+
+
+### Viewport origin rebasing (DOM coordinate frame)
+
+The workspace model and `SpatialIndex` continue to store/query logical world coordinates. The browser DOM uses a render-only origin selected by `computeRenderOrigin(view, viewport, 4096)`, snapped to a 4,096-world-unit quantum around the viewport center. For a node at world coordinate `p` and origin `o`, the DOM child is positioned at `p - o`; the transformed world container uses `view.translation + o × view.scale`. Therefore:
+
+`(p - o) × scale + (translation + o × scale) = p × scale + translation`
+
+This keeps mounted card CSS coordinates local without changing any visible pixel. The origin is recalculated when camera/viewport geometry changes, and existing mounted nodes are repositioned in the same synchronous update as the parent transform. It is deliberately not persisted in workspace schema, indexed, or sent to WebView2: the Windows overlay continues to derive screen rectangles from logical node coordinates and the logical camera. Selected and live-stream cards may remain mounted outside the viewport; the current finite ±8,000,000 world bound keeps even those local coordinates below the browser CSS length guard. Any future expansion to effectively unbounded logical coordinates must add a dedicated parking layer for off-screen live video cards before relaxing that bound.
+
+The spatial index has a deterministic 15,000-card correctness stress test. `node scripts/benchmark-spatial.mjs` separately measures index build, viewport-query p50/p95 and 500 incremental updates at 2k, 10k and 50k cards; it deliberately reports measurements without brittle wall-clock pass/fail thresholds.
