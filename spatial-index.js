@@ -137,7 +137,15 @@
     );
   }
 
-  const api = Object.freeze({ SpatialIndex, sortByZIndex });
+  function cycleIndex(currentIndex, itemCount, reverse) {
+    const count = Math.floor(Number(itemCount));
+    if (!Number.isFinite(count) || count <= 0) return -1;
+    const current = Number.isInteger(currentIndex) ? currentIndex : -1;
+    if (current < 0 || current >= count) return reverse ? count - 1 : 0;
+    return (current + (reverse ? -1 : 1) + count) % count;
+  }
+
+  const api = Object.freeze({ SpatialIndex, sortByZIndex, cycleIndex });
   if (typeof module === "object" && module.exports) module.exports = api;
   else globalThis.NolaneSpatialIndex = api;
 })();
