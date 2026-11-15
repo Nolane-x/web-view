@@ -12,6 +12,7 @@ on:
       - "app.js"
       - "native-bridge.js"
       - "workspace-storage.js"
+      - "spatial-index.js"
       - "tests/**"
       - "scripts/validate.mjs"
       - "styles.css"
@@ -27,6 +28,7 @@ on:
       - "app.js"
       - "native-bridge.js"
       - "workspace-storage.js"
+      - "spatial-index.js"
       - "tests/**"
       - "scripts/validate.mjs"
       - "styles.css"
@@ -37,7 +39,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: "native-webview2-host-${{ github.event_name }}"
+  group: "native-webview2-host-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}"
   cancel-in-progress: true
 
 jobs:
@@ -56,6 +58,7 @@ jobs:
           node --version
           node --check app.js
           node --check native-bridge.js
+          node --check spatial-index.js
           node --test tests/*.test.mjs
           node scripts/validate.mjs
 
