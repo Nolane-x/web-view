@@ -38,7 +38,7 @@ else pass("All referenced interface icons have SVG symbols.");
 if (manifest.name !== "Nolane Infinite" || manifest.start_url !== "./" || manifest.scope !== "./") fail("PWA manifest identity or relative scope is invalid.");
 else pass("PWA manifest is valid and uses repository-relative paths.");
 
-for (const asset of ["index.html", "styles.css", "native-bridge.js", "workspace-storage.js", "app.js", "manifest.webmanifest", "sw.js", "icon.svg"]) {
+for (const asset of ["index.html", "styles.css", "native-bridge.js", "workspace-storage.js", "app.js", "manifest.webmanifest", "sw.js", "icon.svg", "scripts/benchmark-spatial.mjs"]) {
   if (!fs.existsSync(path.join(root, asset))) fail("Required asset missing: " + asset);
 }
 if (sw.includes("https://") && !sw.includes("self.location.origin")) fail("Service worker contains an unexpected remote dependency.");
@@ -693,6 +693,7 @@ else pass("The overlay timer can restore hidden native panels after focus return
 
 const spatialIndexSource = read("spatial-index.js");
 const spatialIndexTests = read("tests/spatial-index.test.mjs");
+const spatialBenchmark = read("scripts/benchmark-spatial.mjs");
 if (!html.includes('<script src="./spatial-index.js" defer></script>') ||
     html.indexOf('src="./spatial-index.js"') > html.indexOf('src="./app.js"')) fail("The spatial index must load before the workspace application.");
 else pass("The spatial index is loaded before the virtualized canvas.");
@@ -982,6 +983,54 @@ if (!worldCoordinateFunction.includes("function normalizeWorldCoordinate") ||
   fail("World coordinates and camera translations must share tested finite bounds across import, restore and pointer interactions.");
 } else {
   pass("World coordinates and zoom-scaled camera translations share finite normalization across import, restore, drag, pan, zoom, fit-to-content and search-result focus.");
+}
+
+
+// Origin rebasing is render-only: logical node coordinates and native overlay geometry stay unchanged.
+const renderOriginHelpers = spatialIndexSource.slice(
+  spatialIndexSource.indexOf("function computeRenderOrigin"),
+  spatialIndexSource.indexOf("function intersects")
+);
+const rebasedTransformFunction = js.slice(
+  js.indexOf("function applyCanvasWorldTransform"),
+  js.indexOf("function positionCanvasNodeElement")
+);
+const localNodePositionFunction = js.slice(
+  js.indexOf("function positionCanvasNodeElement"),
+  js.indexOf("function updateCanvasRenderOrigin")
+);
+const renderOriginUpdateFunction = js.slice(
+  js.indexOf("function updateCanvasRenderOrigin"),
+  js.indexOf("function cachedNodeSearchText")
+);
+const nativeViewportSyncFunction = js.slice(
+  js.indexOf("function scheduleNativeSurfaceSync"),
+  js.indexOf("function handleNativeHostMessage")
+);
+if (!renderOriginHelpers.includes("function computeRenderOrigin") ||
+    !renderOriginHelpers.includes("function rebasePoint") ||
+    !renderOriginHelpers.includes("function createRebasedTransform") ||
+    !js.includes("const CANVAS_RENDER_ORIGIN_QUANTUM = 4096;") ||
+    !rebasedTransformFunction.includes("createRebasedTransform(view, canvasRenderOrigin)") ||
+    !localNodePositionFunction.includes("rebasePoint(node, canvasRenderOrigin)") ||
+    !renderOriginUpdateFunction.includes("computeRenderOrigin(") ||
+    !renderOriginUpdateFunction.includes("positionCanvasNodeElement(element, node)") ||
+    !nativeViewportSyncFunction.includes("view.x + (node.x + 1) * scale") ||
+    nativeViewportSyncFunction.includes("canvasRenderOrigin") ||
+    /(?:article|element)\.style\.(?:left|top)\s*=\s*node\.(?:x|y)\s*\+\s*["']px/.test(js)) {
+  fail("Canvas origin rebasing must localize DOM coordinates while preserving logical/native screen geometry.");
+} else {
+  pass("Canvas DOM positions are rebased around a snapped viewport origin; logical, saved and native overlay coordinates remain unchanged.");
+}
+if (!spatialIndexTests.includes('test("viewport origin rebasing preserves exact screen positions for large world coordinates"') ||
+    !spatialIndexTests.includes('test("viewport origin rebasing remains stable across negative coordinates and invalid inputs"') ||
+    !spatialIndexTests.includes('test("spatial index keeps exact viewport query results across a 15,000-card workspace"') ||
+    !spatialBenchmark.includes("const SIZES = [2000, 10000, 50000];") ||
+    !spatialBenchmark.includes("queryP95Ms") ||
+    !spatialBenchmark.includes("bruteForceCorrectnessChecks")) {
+  fail("Origin rebasing, large-workspace correctness tests and the repeatable 50k-card benchmark are incomplete.");
+} else {
+  pass("Origin rebasing invariance, 15k-card exact queries and 2k/10k/50k spatial benchmarks are covered.");
 }
 
 
