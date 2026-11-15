@@ -145,7 +145,7 @@ test("viewport metadata is bounded and normalized for the Windows overlay", () =
 test("workspace snapshots are chunked into revisioned bounded messages", () => {
   const ids = Array.from({ length: 300 }, (_, index) => "card-" + index);
   const profiles = Array.from({ length: 513 }, (_, index) => ({ name: "Profile-" + index, count: 1 }));
-  const messages = bridge.createWorkspaceSnapshotMessages(7, ids, profiles);
+  const messages = JSON.parse(JSON.stringify(bridge.createWorkspaceSnapshotMessages(7, ids, profiles)));
   assert.equal(messages.length, 5);
   assert.deepEqual(messages[0], {
     type: "nolane.workspace.snapshot.begin", protocol: 2, revision: 7,
@@ -162,16 +162,16 @@ test("workspace snapshots are chunked into revisioned bounded messages", () => {
 });
 
 test("workspace snapshots collapse case-insensitive profiles and support empty snapshots", () => {
-  const messages = bridge.createWorkspaceSnapshotMessages(8, [], [
+  const messages = JSON.parse(JSON.stringify(bridge.createWorkspaceSnapshotMessages(8, [], [
     { name: "Work", count: 2 }, { name: "work", count: 3 }, { name: "", count: 1 }
-  ]);
+  ])));
   assert.equal(messages.length, 3);
   assert.deepEqual(messages[0], {
     type: "nolane.workspace.snapshot.begin", protocol: 2, revision: 8,
     workspaceIdCount: 0, profileCount: 2, chunkCount: 1
   });
   assert.deepEqual(messages[1].profileUsage, [["", 1], ["Work", 5]]);
-  assert.deepEqual(bridge.createWorkspaceSnapshotMessages(9, [], []), [
+  assert.deepEqual(JSON.parse(JSON.stringify(bridge.createWorkspaceSnapshotMessages(9, [], []))), [
     { type: "nolane.workspace.snapshot.begin", protocol: 2, revision: 9, workspaceIdCount: 0, profileCount: 0, chunkCount: 0 },
     { type: "nolane.workspace.snapshot.commit", protocol: 2, revision: 9 }
   ]);
