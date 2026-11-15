@@ -913,3 +913,27 @@ else pass("Spatial indexing rejects non-representable extents and routes non-saf
 
 if (!js.includes("while (nodes.some((node) => node.id === candidate) || spaces.some((space) => space.id === candidate))")) fail("Newly generated node and space IDs must avoid existing workspace IDs.");
 else pass("Generated IDs are checked against all existing nodes and spaces before use.");
+
+
+// Coordinate and camera normalization must be shared by import, restore and live interaction.
+const worldCoordinateFunction = spatialIndexSource.slice(
+  spatialIndexSource.indexOf("function normalizeWorldCoordinate"),
+  spatialIndexSource.indexOf("function intersects")
+);
+const normalizedNodeFunction = js.slice(js.indexOf("function validateNode"), js.indexOf("function workspaceSnapshot"));
+const normalizedPointerMoveFunction = js.slice(js.indexOf("function pointerMove"), js.indexOf("function pointerUp"));
+if (!worldCoordinateFunction.includes("function normalizeWorldCoordinate") ||
+    !worldCoordinateFunction.includes("Number.MAX_SAFE_INTEGER") ||
+    !worldCoordinateFunction.includes("function normalizeViewState") ||
+    !js.includes("const normalizeCanvasView") ||
+    !js.includes("maxWorldCoordinate: MAX_WORLD_COORDINATE") ||
+    !normalizedNodeFunction.includes("normalizeCanvasCoordinate(node.x, 0)") ||
+    !normalizedNodeFunction.includes("normalizeCanvasCoordinate(node.y, 0)") ||
+    !normalizedPointerMoveFunction.includes("normalizeCanvasCoordinate(") ||
+    !normalizedPointerMoveFunction.includes("view = normalizeCanvasView(") ||
+    !spatialIndexTests.includes('test("world coordinates preserve large valid positions beyond the former 100,000-unit clamp"') ||
+    !spatialIndexTests.includes('test("camera translations use the normalized scale-aware world-coordinate budget"')) {
+  fail("World coordinates and camera translations must share tested finite bounds across import, restore and pointer interactions.");
+} else {
+  pass("World coordinates and zoom-scaled camera translations share finite normalization across import, restore, drag, pan, zoom and fit-to-content.");
+}
