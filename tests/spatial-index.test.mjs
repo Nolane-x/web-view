@@ -171,3 +171,38 @@ test("workspace IDs are safe, unique and retained in first-occurrence order", ()
   assert.equal(claimUniqueId("other", used, generate), "other");
   assert.equal(used.size, 5);
 });
+
+
+test("extreme but representable world coordinates use overflow lookup without unsafe cell loops", () => {
+  const index = new SpatialIndex(128);
+  const huge = {
+    id: "huge-coordinate",
+    x: Number.MAX_SAFE_INTEGER * 1000,
+    y: -Number.MAX_SAFE_INTEGER * 1000,
+    w: 4096,
+    h: 4096
+  };
+  assert.equal(index.upsert(huge), true);
+  assert.equal(index.get(huge.id), huge);
+  assert.deepEqual(index.query({
+    x: huge.x, y: huge.y, w: huge.w, h: huge.h
+  }).map(item => item.id), ["huge-coordinate"]);
+});
+
+test("rectangles whose extent disappears at floating-point precision are rejected", () => {
+  const index = new SpatialIndex(128);
+  assert.equal(index.upsert({
+    id: "collapsed",
+    x: 1e300, y: 1e300, w: 1, h: 1
+  }), false);
+  assert.equal(index.size, 0);
+});
+
+test("very broad safe viewport queries fall back to exact rectangle filtering", () => {
+  const index = new SpatialIndex(128);
+  const near = { id: "near", x: 0, y: 0, w: 100, h: 100 };
+  const far = { id: "far", x: 500000, y: 500000, w: 100, h: 100 };
+  index.rebuild([near, far]);
+  assert.deepEqual(index.query({ x: -100000, y: -100000, w: 800000, h: 800000 })
+    .map(item => item.id).sort(), ["far", "near"]);
+});
