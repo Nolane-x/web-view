@@ -56,6 +56,8 @@
   let canvasRenderFrame = 0;
   let minimapFrame = 0;
   let canvasResizeObserver = null;
+  let availableBrowserProfilesCache = null;
+  let nativeProfileUsageCache = null;
 
   const uid = () => "node-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -389,6 +391,7 @@
   }
 
   function scheduleSave(delay) {
+    invalidateWorkspaceDerivedCaches();
     clearTimeout(saveTimer);
     setSaveState("saving", "Saving locally…");
     saveTimer = setTimeout(saveWorkspace, typeof delay === "number" ? delay : 450);
@@ -534,7 +537,7 @@
       syncActiveSpace();
       const area = canvas.getBoundingClientRect();
       const items = [];
-      const profileUsage = window.NolaneNativeBridge?.summarizeProfileUsage(spaces) || [];
+      const profileUsage = cachedNativeProfileUsage();
       const uiBlocked = !!document.querySelector("dialog[open], #sidebar.open");
       const scale = view.scale;
       const query = $("#searchInput").value.trim().toLowerCase();
@@ -779,6 +782,7 @@
   }
 
   function renderNodes() {
+    invalidateWorkspaceDerivedCaches();
     clearUnavailableChromeTabBindings();
     spatialIndex.rebuild(nodes);
     syncCanvasNodeElements(true);
@@ -789,7 +793,13 @@
     scheduleNativeSurfaceSync();
   }
 
+  function invalidateWorkspaceDerivedCaches() {
+    availableBrowserProfilesCache = null;
+    nativeProfileUsageCache = null;
+  }
+
   function availableBrowserProfiles() {
+    if (availableBrowserProfilesCache) return availableBrowserProfilesCache;
     const profiles = new Map();
     ["Work", "Personal", "Research"].forEach((name) => profiles.set(name.toLowerCase(), name));
     const allNodes = [...nodes, ...spaces.flatMap((space) => Array.isArray(space.nodes) ? space.nodes : [])];
@@ -797,7 +807,15 @@
       const name = window.NolaneNativeBridge?.normalizeProfileName(item?.browserProfile);
       if (name) profiles.set(name.toLowerCase(), name);
     }
-    return [...profiles.values()].sort((a, b) => a.localeCompare(b));
+    availableBrowserProfilesCache = [...profiles.values()].sort((a, b) => a.localeCompare(b));
+    return availableBrowserProfilesCache;
+  }
+
+  function cachedNativeProfileUsage() {
+    if (!nativeProfileUsageCache) {
+      nativeProfileUsageCache = window.NolaneNativeBridge?.summarizeProfileUsage(spaces) || [];
+    }
+    return nativeProfileUsageCache;
   }
 
   function createNodeElement(node) {
