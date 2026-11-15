@@ -747,5 +747,5 @@ const minimapFunction = js.slice(js.indexOf("function updateMinimap"), js.indexO
 if (!minimapFunction.includes("minimapGeometryDirty") ||
     !minimapFunction.includes("minimapGeometryCache") ||
     !minimapFunction.includes("if (minimapGeometryDirty || !minimapGeometryCache)") ||
-    !minimapFunction.includes("updateMinimap(true)")) fail("The minimap must cache static item geometry and redraw markers only after geometry changes.");
+    !js.includes("updateMinimap(true)")) fail("The minimap must cache static item geometry and redraw markers only after geometry changes.");
 else pass("Minimap item markers are cached; camera frames update only the viewport rectangle.");
