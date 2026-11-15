@@ -812,7 +812,7 @@ if (!nativeHost.includes("UpdateWorkspaceSurfaceIds(root)") ||
     !nativeHost.includes("!known.Contains(surface.Id)")) fail("Windows host must distinguish deleted workspace cards from off-screen cached cards and enforce its visible working-set budget.");
 else pass("Windows host reconciles deleted IDs separately, hides off-screen surfaces, and caps parsed descriptors at its adaptive renderer budget.");
 
-if (!nativeHost.includes("count > 24000")) fail("Native browser profile usage must allow up to 12 spaces × 2,000 cards.");
+if (!nativeProfileUsageParser.includes("count > MaxWorkspaceCardCount") || !nativeProfileUsageParser.includes("MaxWorkspaceCardCount = 12 * 2000")) fail("Native browser profile usage must allow up to 12 spaces × 2,000 cards.");
 else pass("Native profile usage validation covers the 24,000-card upper bound across all local spaces.");
 
 if (!js.slice(js.indexOf("function normalizeUrl"), js.indexOf("function openDatabase")).includes("value.length > 4096")) fail("Website URLs must be bounded before they enter native surface payloads.");
