@@ -33,19 +33,24 @@ public partial class App : Application
             return;
         }
 
-        _window = new MainWindow();
-        var hwnd = WindowNative.GetWindowHandle(_window);
-        _tray = new BackgroundTrayIcon(hwnd, () => _window?.Close(), RestartBackgroundBridge);
-        _window.SetTrayNotificationHandler(_tray.ShowNotification);
-        _window.Closed += (_, _) =>
+        var window = new MainWindow();
+        _window = window;
+        var hwnd = WindowNative.GetWindowHandle(window);
+        _tray = new BackgroundTrayIcon(hwnd, window.Close, RestartBackgroundBridge);
+        window.SetTrayNotificationHandler(_tray.ShowNotification);
+        window.Closed += async (_, _) =>
         {
             _tray?.Dispose();
             _tray = null;
+
+            // Stop the old loopback listener and close every WebView2 surface before relaunching.
+            await window.ShutdownTask;
+
+            // Release the single-instance mutex before launching the replacement process.
             _instanceMutex?.ReleaseMutex();
             _instanceMutex?.Dispose();
             _instanceMutex = null;
 
-            // Release the single-instance mutex before launching the replacement process.
             if (_restartAfterClose)
             {
                 _restartAfterClose = false;
@@ -60,6 +65,6 @@ public partial class App : Application
                 }
             }
         };
-        _window.Activate();
+        window.Activate();
     }
 }
