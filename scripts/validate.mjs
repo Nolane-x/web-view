@@ -1036,7 +1036,7 @@ if (!renderOriginHelpers.includes("function computeRenderOrigin") ||
 if (!spatialIndexTests.includes('test("viewport origin rebasing preserves exact screen positions for large world coordinates"') ||
     !spatialIndexTests.includes('test("viewport origin rebasing remains stable across negative coordinates and invalid inputs"') ||
     !spatialIndexTests.includes('test("spatial index keeps exact viewport query results across a 15,000-card workspace"') ||
-    !spatialBenchmark.includes("const SIZES = [2000, 10000, 50000];") ||
+    !spatialBenchmark.includes("const SIZES = [2000, 10000, 50000, 100000];") ||
     !spatialBenchmark.includes("queryP95Ms") ||
     !spatialBenchmark.includes("bruteForceCorrectnessChecks")) {
   fail("Origin rebasing, large-workspace correctness tests and the repeatable 50k-card benchmark are incomplete.");
