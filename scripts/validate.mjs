@@ -497,10 +497,14 @@ if (!nativeHost.includes("_environment.NewBrowserVersionAvailable") ||
     !trayIcon.includes("Shell_NotifyIcon(NIM_MODIFY") ||
     !appHost.includes("SetTrayNotificationHandler(_tray.ShowNotification)") ||
     !trayIcon.includes("IDM_RESTART") ||
-    !trayIcon.includes("Restart bridge (close browser cards)") ||
+    !trayIcon.includes("Restart bridge…") ||
+    !nativeHost.includes("ConfirmRestartAsync") ||
+    !nativeHost.includes("Restart the Nolane background bridge?") ||
+    !nativeHost.includes("active or resumable download(s) will be interrupted") ||
+    !appHost.includes("!await window.ConfirmRestartAsync()") ||
     !appHost.includes("RestartBackgroundBridge") ||
     !appHost.includes("Process.Start(new ProcessStartInfo(executable, \"--background\")")) fail("A detected WebView2 Runtime update must surface a one-time tray notification and provide a controlled restart action.");
-else pass("WebView2 Runtime updates are surfaced once through the Windows tray, with an explicit restart action that releases the single-instance mutex before relaunch.");
+else pass("WebView2 Runtime updates are surfaced once through the Windows tray; restart requires confirmation and warns about active downloads.");
 
 const shutdownWaitIndex = appHost.indexOf("await window.ShutdownTask;");
 const mutexReleaseIndex = appHost.indexOf("_instanceMutex?.ReleaseMutex();");
