@@ -152,7 +152,7 @@ The native Downloads panel labels each transfer with its originating browser pro
 
 ## Large-workspace canvas
 
-Each local space accepts up to **2,000 website cards and notes**. The complete model remains in local storage, while ordinary card DOM is mounted only near the viewport. A grid-based spatial index narrows viewport queries; selected cards and active Live Chrome Surface media elements remain mounted so camera movement does not tear down drag state or decoded video. Search remains workspace-wide and can temporarily mount all matching results.
+Each local space accepts up to **2,000 website cards and notes**. The complete model remains in local storage, while ordinary card DOM is mounted only near the viewport. A grid-based spatial index narrows viewport queries; selected cards and active Live Chrome Surface media elements remain mounted so camera movement does not tear down drag state or decoded video. Search remains workspace-wide but keeps off-screen results in the search index rather than mounting every match. Press Enter to jump to the next match and Shift+Enter to move backward.
 
 Native WebView2 synchronization derives body rectangles from the camera transform, so it still sends descriptors for off-screen cards that have no DOM element. The Windows host continues to decide which small number of actual browser renderers can be visible. The minimap draws into one Canvas instead of creating one HTML element per item.
 
