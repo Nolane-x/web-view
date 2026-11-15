@@ -14,6 +14,10 @@ const sw = read("sw.js");
 const workspaceStorage = read("workspace-storage.js");
 const nativeProfileUsageParser = read("desktop-host/ProfileUsageSnapshot.cs");
 const nativeProfileUsageSmoke = read("native-diagnostics/ProfileUsageSnapshotSmokeTest/Program.cs");
+const workspaceSnapshotReceiver = read("desktop-host/WorkspaceSnapshotReceiver.cs");
+const workspaceSnapshotSmoke = read("native-diagnostics/WorkspaceSnapshotSmokeTest/Program.cs");
+const nativeBridgeSource = read("native-bridge.js");
+const nativeBridgeTests = read("tests/native-bridge.test.mjs");
 
 const ids = [...html.matchAll(/\bid=["']([^"']+)["']/g)].map((match) => match[1]);
 const idSet = new Set(ids);
@@ -880,6 +884,47 @@ if (!nativeWorkingSetFunction.includes('message.profileUsage = cachedNativeProfi
     !nativeProfileUsageSmoke.includes("A profile summary with more than 24,000 entries was not rejected atomically.")) fail("Profile summaries must remain compact, backward-compatible and bounded by the total 12 x 2,000 workspace card quota.");
 else pass("Native profile snapshots are parsed atomically, retain legacy object compatibility, and reject over-count/overflow input.");
 
+const snapshotSyncFunction = js.slice(js.indexOf("function sendNativeWorkspaceSnapshot"), js.indexOf("function scheduleNativeSurfaceSync"));
+if (!nativeBridgeSource.includes("function createWorkspaceSnapshotMessages") ||
+    !nativeBridgeTests.includes('test("workspace snapshots are chunked into revisioned bounded messages"') ||
+    !snapshotSyncFunction.includes("createWorkspaceSnapshotMessages") ||
+    !snapshotSyncFunction.includes("nativeWorkspaceIdsDirty = false") ||
+    !nativeBridgeSource.includes("WORKSPACE_SNAPSHOT_CHUNK_SIZE = 256")) {
+  fail("The website must build and send revisioned 256-entry workspace snapshots separately from camera synchronization.");
+} else {
+  pass("Website snapshots are revisioned, chunked to 256 entries and sent out-of-band from camera frames.");
+}
+
+if (!nativeHost.includes("workspaceSnapshotProtocol = 1") ||
+    !js.includes("nativeWorkspaceSnapshotProtocol = message.workspaceSnapshotProtocol === 1") ||
+    !nativeWorkingSetFunction.includes("if (!nativeWorkspaceSnapshotProtocol)") ||
+    !nativeHost.includes("_workspaceSnapshotReceiver.TryCommit(root, out var snapshot)")) {
+  fail("Workspace snapshot protocol must be capability-negotiated and retain the legacy protocol-v2 fallback.");
+} else {
+  pass("Chunked workspace sync is capability-negotiated; older installed Windows hosts retain the original protocol-v2 fields.");
+}
+
+if (!workspaceSnapshotReceiver.includes("MaxWorkspaceIdCount = 24000") ||
+    !workspaceSnapshotReceiver.includes("ChunkSize = 256") ||
+    !workspaceSnapshotReceiver.includes("pending.ReceivedChunks.Count != pending.ChunkCount") ||
+    !workspaceSnapshotReceiver.includes("pending.WorkspaceIds.Count != pending.WorkspaceIdCount") ||
+    !workspaceSnapshotReceiver.includes("ProfileUsageSnapshot.TryAddEntry") ||
+    !workspaceSnapshotReceiver.includes("_lastCommittedRevision") ||
+    !workspaceSnapshotSmoke.includes("out-of-order chunk") ||
+    !workspaceSnapshotSmoke.includes("incomplete snapshot")) {
+  fail("The native snapshot receiver must validate revision, quota, chunk completeness, IDs and profile usage before atomic commit.");
+} else {
+  pass("Windows snapshot receiver enforces revision order, quotas and complete-chunk atomic commit before replacing membership/profile state.");
+}
+
+if (!nativeHost.includes("if (_workspaceSurfaceIdsReceived)") ||
+    !nativeHost.includes("viewport is not a complete membership set") ||
+    !nativeHost.includes("workspaceSnapshotProtocol = 1")) {
+  fail("Native surface eviction must wait for a complete membership snapshot during handshake and advertise the receiver capability.");
+} else {
+  pass("Native cache eviction waits for complete workspace membership; new hosts advertise chunked snapshot support.");
+}
+
 const nodeValidationFunction = js.slice(js.indexOf("function validateNode"), js.indexOf("function workspaceSnapshot"));
 const urlNormalizationFunction = js.slice(js.indexOf("function normalizeUrl"), js.indexOf("function openDatabase"));
 if (!nodeValidationFunction.includes("claimUniqueId(node.id, usedIds || new Set(), uid)") ||
@@ -915,6 +960,16 @@ const worstCaseNativePayload = {
   ])
 };
 const worstCasePayloadBytes = Buffer.byteLength(JSON.stringify(worstCaseNativePayload), "utf8");
+const worstCaseChunkPayload = {
+  type: "nolane.workspace.snapshot.chunk", protocol: 2, revision: 1, index: 0,
+  workspaceIds: Array.from({ length: 256 }, (_, index) => "n" + index.toString(36).padStart(4, "0") + "x".repeat(75)),
+  profileUsage: Array.from({ length: 256 }, (_, index) => [
+    index.toString(36).toUpperCase().padStart(5, "0") + "P".repeat(59), 1
+  ])
+};
+const worstCaseChunkBytes = Buffer.byteLength(JSON.stringify(worstCaseChunkPayload), "utf8");
+if (worstCaseChunkBytes >= 64 * 1024) fail("A 256-entry workspace snapshot chunk must remain below 64 KiB.");
+else pass("Worst-case 256-entry workspace snapshot chunk is " + worstCaseChunkBytes + " UTF-8 bytes, below 64 KiB.");
 if (worstCasePayloadBytes >= 2 * 1024 * 1024 - 16 * 1024) fail("Worst-case 2,000-card workspace membership, 24,000 compact profiles and eight bounded viewport candidates must stay at least 16 KiB below the bridge's 2 MiB frame limit.");
 else pass("Worst-case native sync payload is " + worstCasePayloadBytes + " UTF-8 bytes for eight viewport candidates, below the 2 MiB frame limit with at least 16 KiB headroom.");
 

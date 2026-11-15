@@ -82,6 +82,11 @@ jobs:
         run: |
           dotnet run --project native-diagnostics/ProfileUsageSnapshotSmokeTest/ProfileUsageSnapshotSmokeTest.csproj -c Release
 
+      - name: Exercise atomic chunked workspace snapshot receiver
+        shell: pwsh
+        run: |
+          dotnet run --project native-diagnostics/WorkspaceSnapshotSmokeTest/WorkspaceSnapshotSmokeTest.csproj -c Release
+
       - name: Compile isolated WebView2 projection smoke test
         shell: pwsh
         run: |
