@@ -54,6 +54,7 @@ public sealed partial class MainWindow : Window
     private bool _refreshingLibraryProfileFilter;
     private string _downloadsProfileFilter = AllLibraryProfilesFilter;
     private bool _refreshingDownloadsProfileFilter;
+    private string _downloadsProfileOptionsSignature = "";
     private LocalBridgeServer? _bridgeServer;
     private DispatcherQueueTimer? _overlayTimer;
     private IntPtr _overlayHwnd;
@@ -1646,25 +1647,32 @@ public sealed partial class MainWindow : Window
     private void RefreshDownloadsProfileFilter()
     {
         if (DownloadsProfileFilter is null) return;
+        var names = GetKnownBrowserProfiles();
+        var hasPrivate = _downloads.Any(entry => entry.IsPrivate);
+        var signature = string.Join("\u001f", names) + "\u001e" + (hasPrivate ? "private" : "public");
+        if (StringComparer.Ordinal.Equals(signature, _downloadsProfileOptionsSignature)) return;
+
         _refreshingDownloadsProfileFilter = true;
         try
         {
+            var requestedSelection = _downloadsProfileFilter;
             DownloadsProfileFilter.Items.Clear();
             DownloadsProfileFilter.Items.Add(new ComboBoxItem { Content = "All profiles", Tag = AllLibraryProfilesFilter });
             DownloadsProfileFilter.Items.Add(new ComboBoxItem { Content = "Default", Tag = "" });
 
-            foreach (var name in GetKnownBrowserProfiles())
+            foreach (var name in names)
                 DownloadsProfileFilter.Items.Add(new ComboBoxItem { Content = name, Tag = name });
 
-            if (_downloads.Any(entry => entry.IsPrivate))
+            if (hasPrivate)
                 DownloadsProfileFilter.Items.Add(new ComboBoxItem { Content = "Private sessions", Tag = PrivateDownloadsProfileFilter });
 
             var selected = DownloadsProfileFilter.Items
                 .OfType<ComboBoxItem>()
-                .FirstOrDefault(item => StringComparer.OrdinalIgnoreCase.Equals(item.Tag as string, _downloadsProfileFilter))
+                .FirstOrDefault(item => StringComparer.OrdinalIgnoreCase.Equals(item.Tag as string, requestedSelection))
                 ?? (ComboBoxItem)DownloadsProfileFilter.Items[0];
             DownloadsProfileFilter.SelectedItem = selected;
             _downloadsProfileFilter = selected.Tag as string ?? AllLibraryProfilesFilter;
+            _downloadsProfileOptionsSignature = signature;
         }
         finally { _refreshingDownloadsProfileFilter = false; }
     }

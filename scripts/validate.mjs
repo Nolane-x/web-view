@@ -610,3 +610,8 @@ if (!nativeHost.includes("ProfileName = surface.ProfileName") ||
     !nativeHost.includes("ProfileLabel(entry.ProfileName)") ||
     !nativeXaml.includes('x:Name="DownloadsProfileFilter"')) fail("Downloads must retain source profile ownership, persist it compatibly, protect private history and expose a per-profile filter.");
 else pass("Downloads preserve profile ownership, default old records to Default, keep private metadata ephemeral and filter from the website panel.");
+
+if (!nativeHost.includes("_downloadsProfileOptionsSignature") ||
+    !nativeHost.includes("StringComparer.Ordinal.Equals(signature, _downloadsProfileOptionsSignature)") ||
+    !nativeHost.includes("if (StringComparer.Ordinal.Equals(signature, _downloadsProfileOptionsSignature)) return;")) fail("Downloads profile filter options must be rebuilt only when the available profile set changes, not on progress refreshes.");
+else pass("Downloads profile choices are signature-cached so byte-progress updates do not rebuild the filter ComboBox.");
