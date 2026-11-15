@@ -23,9 +23,13 @@
     const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
       ? Math.min(requestedLimit, Number.MAX_SAFE_INTEGER)
       : 1_000_000_000;
-    const requestedFallback = Number(fallback);
+    const requestedFallback = fallback == null || (typeof fallback === "string" && !fallback.trim())
+      ? Number.NaN
+      : Number(fallback);
     const safeFallback = Number.isFinite(requestedFallback) ? requestedFallback : 0;
-    const numericValue = Number(value);
+    const numericValue = value == null || (typeof value === "string" && !value.trim())
+      ? Number.NaN
+      : Number(value);
     const normalized = Number.isFinite(numericValue) ? numericValue : safeFallback;
     return Math.max(-limit, Math.min(limit, normalized));
   }
@@ -43,7 +47,9 @@
     const defaultScale = Number.isFinite(requestedDefaultScale)
       ? Math.max(minScale, Math.min(maxScale, requestedDefaultScale))
       : Math.max(minScale, Math.min(maxScale, 1));
-    const requestedScale = Number(source.scale);
+    const requestedScale = source.scale == null || (typeof source.scale === "string" && !source.scale.trim())
+      ? Number.NaN
+      : Number(source.scale);
     const scale = Number.isFinite(requestedScale)
       ? Math.max(minScale, Math.min(maxScale, requestedScale))
       : defaultScale;
