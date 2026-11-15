@@ -112,3 +112,16 @@ test("viewport queries stay selective across a full 2,000-item space", () => {
   assert.ok(visible.length / index.size < 0.01,
     "a normal viewport should not mount even one percent of a maximum-sized space");
 });
+
+
+test("get returns the current item after upsert and is empty after removal", () => {
+  const index = new SpatialIndex();
+  const first = { id: "lookup", x: 0, y: 0, w: 10, h: 10 };
+  index.upsert(first);
+  assert.equal(index.get("lookup"), first);
+  const replacement = { id: "lookup", x: 100, y: 100, w: 20, h: 20 };
+  index.upsert(replacement);
+  assert.equal(index.get("lookup"), replacement);
+  index.remove("lookup");
+  assert.equal(index.get("lookup"), undefined);
+});
