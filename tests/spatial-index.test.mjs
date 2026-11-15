@@ -144,3 +144,16 @@ test("native working-set ranking selects topmost cards from a 2,000-card overlap
   assert.equal(items[0].id, "overlap-0");
   assert.deepEqual(sortByZIndex(null), []);
 });
+
+
+test("search result cycling advances, reverses and wraps without an empty-list index", () => {
+  const { cycleIndex } = require("../spatial-index.js");
+  assert.equal(cycleIndex(-1, 4, false), 0);
+  assert.equal(cycleIndex(-1, 4, true), 3);
+  assert.equal(cycleIndex(0, 4, true), 3);
+  assert.equal(cycleIndex(3, 4, false), 0);
+  assert.equal(cycleIndex(1, 4, false), 2);
+  assert.equal(cycleIndex(2, 4, true), 1);
+  assert.equal(cycleIndex(0, 0, false), -1);
+  assert.equal(cycleIndex(0, -2, true), -1);
+});
