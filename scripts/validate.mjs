@@ -806,3 +806,6 @@ if (!searchNavigatorFunction.includes('if (query) searchResultIds.push(node.id)'
     !searchNavigatorFunction.includes('if (!$("#searchInput").value.trim() || !searchResultIds.length) return;') ||
     !js.includes("focusSearchResult(event.shiftKey)")) fail("Global search navigation must remain virtualized and must not cycle every card when the search box is empty.");
 else pass("Search navigation tracks global matches, moves forward/backward on Enter/Shift+Enter and leaves empty search inert.");
+
+if (!js.includes('visibleCount + " matching items · Press Enter to jump, Shift+Enter to go back."')) fail("Search UI must explain keyboard navigation through workspace-wide results.");
+else pass("Search result count explains Enter/Shift+Enter navigation when matches exist.");
