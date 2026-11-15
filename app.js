@@ -39,6 +39,7 @@
   let activeSpaceId = "personal";
   let nativeHostAvailable = false;
   let nativeMaxVisibleSurfaces = 2;
+  let nativeWorkspaceIdsDirty = true;
   let nativeSyncFrame = 0;
   let nativeHostReadyNotified = false;
   let nativeBridgeSocket = null;
@@ -396,6 +397,7 @@
   function scheduleSave(delay) {
     // Keep the active space's sanitized model current when data changes, not on every camera frame.
     syncActiveSpace();
+    nativeWorkspaceIdsDirty = true;
     invalidateWorkspaceDerivedCaches();
     clearTimeout(saveTimer);
     setSaveState("saving", "Saving locally…");
@@ -560,37 +562,47 @@
     nativeSyncFrame = requestAnimationFrame(() => {
       nativeSyncFrame = 0;
       const area = canvas.getBoundingClientRect();
-      const items = [];
       const profileUsage = cachedNativeProfileUsage();
       const uiBlocked = !!document.querySelector("dialog[open], #sidebar.open");
       const scale = view.scale;
       const query = $("#searchInput").value.trim().toLowerCase();
-      for (const node of nodes) {
-        if (!canUseNativeSurface(node)) continue;
-        // Native card geometry must not depend on whether the card DOM is mounted.
-        const rect = {
-          left: area.left + view.x + (node.x + 1) * scale,
-          top: area.top + view.y + (node.y + 40) * scale,
-          width: Math.max(0, node.w - 2) * scale,
-          height: Math.max(0, node.h - 41) * scale
-        };
-        const right = rect.left + rect.width, bottom = rect.top + rect.height;
-        const clipLeft = Math.max(rect.left, area.left), clipTop = Math.max(rect.top, area.top);
-        const clipRight = Math.min(right, area.right), clipBottom = Math.min(bottom, area.bottom);
-        const clipWidth = Math.max(0, clipRight - clipLeft), clipHeight = Math.max(0, clipBottom - clipTop);
-        const visible = !uiBlocked && matchesNodeFilters(node, query) &&
-          rect.width >= 80 && rect.height >= 60 && clipWidth >= 80 && clipHeight >= 60;
-        items.push({
-          id: node.id, url: node.privateMode && node.transientUrl ? node.transientUrl : node.url,
-          title: node.title, privateMode: node.privateMode === true, profileName: node.browserProfile || "",
-          x: Math.round(rect.left * 100) / 100, y: Math.round(rect.top * 100) / 100,
-          width: Math.round(rect.width * 100) / 100, height: Math.round(rect.height * 100) / 100,
-          clipX: Math.round((clipLeft - rect.left) * 100) / 100,
-          clipY: Math.round((clipTop - rect.top) * 100) / 100,
-          clipWidth: Math.round(clipWidth * 100) / 100, clipHeight: Math.round(clipHeight * 100) / 100,
-          zIndex: Number(node.z) || 1, visible
-        });
+      const items = [];
+
+      // Only send cards whose body intersects the real viewport. The host's adaptive
+      // renderer budget is reported during the handshake, so this working set stays
+      // bounded even when thousands of cards overlap the same canvas region.
+      if (!uiBlocked && document.visibilityState === "visible") {
+        const candidates = spatialIndex.query(currentCanvasWorldBounds(0))
+          .filter((node) => canUseNativeSurface(node) && matchesNodeFilters(node, query))
+          .sort((left, right) => (Number(right.z) || 0) - (Number(left.z) || 0));
+
+        for (const node of candidates) {
+          const rect = {
+            left: area.left + view.x + (node.x + 1) * scale,
+            top: area.top + view.y + (node.y + 40) * scale,
+            width: Math.max(0, node.w - 2) * scale,
+            height: Math.max(0, node.h - 41) * scale
+          };
+          const right = rect.left + rect.width, bottom = rect.top + rect.height;
+          const clipLeft = Math.max(rect.left, area.left), clipTop = Math.max(rect.top, area.top);
+          const clipRight = Math.min(right, area.right), clipBottom = Math.min(bottom, area.bottom);
+          const clipWidth = Math.max(0, clipRight - clipLeft), clipHeight = Math.max(0, clipBottom - clipTop);
+          if (rect.width < 80 || rect.height < 60 || clipWidth < 80 || clipHeight < 60) continue;
+
+          items.push({
+            id: node.id, url: node.privateMode && node.transientUrl ? node.transientUrl : node.url,
+            title: node.title, privateMode: node.privateMode === true, profileName: node.browserProfile || "",
+            x: Math.round(rect.left * 100) / 100, y: Math.round(rect.top * 100) / 100,
+            width: Math.round(rect.width * 100) / 100, height: Math.round(rect.height * 100) / 100,
+            clipX: Math.round((clipLeft - rect.left) * 100) / 100,
+            clipY: Math.round((clipTop - rect.top) * 100) / 100,
+            clipWidth: Math.round(clipWidth * 100) / 100, clipHeight: Math.round(clipHeight * 100) / 100,
+            zIndex: Number(node.z) || 1, visible: true
+          });
+          if (items.length >= nativeMaxVisibleSurfaces) break;
+        }
       }
+
       const outerWidth = Number(window.outerWidth) || window.innerWidth;
       const outerHeight = Number(window.outerHeight) || window.innerHeight;
       const viewport = {
@@ -598,12 +610,19 @@
         screenTop: (Number(window.screenY) || 0) + Math.max(0, outerHeight - window.innerHeight - 8),
         width: window.innerWidth, height: window.innerHeight, deviceScale: window.devicePixelRatio || 1
       };
-      sendNativeBridgeMessage({
+      const message = {
         type: "nolane.surfaces.sync", protocol: 2, viewport,
         workspaceVisible: document.visibilityState === "visible",
-        items: items.map((item) => document.visibilityState === "visible" ? item : { ...item, visible: false }),
-        profileUsage
-      });
+        items, profileUsage
+      };
+      // Workspace membership changes infrequently; transmit the complete native
+      // website ID set only after a data mutation or a new host handshake.
+      if (nativeWorkspaceIdsDirty) {
+        message.workspaceIds = nodes.filter(canUseNativeSurface).map((node) => node.id);
+      }
+      if (sendNativeBridgeMessage(message) && nativeWorkspaceIdsDirty) {
+        nativeWorkspaceIdsDirty = false;
+      }
     });
   }
 
@@ -616,6 +635,7 @@
       nativeBridgeReconnectAttempts = 0;
       const reportedBudget = Number(message.maxVisibleSurfaces);
       nativeMaxVisibleSurfaces = Number.isInteger(reportedBudget) ? clamp(reportedBudget, 1, 8) : 2;
+      nativeWorkspaceIdsDirty = true;
       setBridgeConnected(false, "");
       if (!nativeHostReadyNotified) {
         nativeHostReadyNotified = true;
