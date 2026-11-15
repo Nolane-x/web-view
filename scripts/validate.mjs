@@ -656,3 +656,30 @@ if (!nativeHost.includes("var browserOwnsForeground =") ||
     !nativeHost.includes("if (!_overlayShown &&") ||
     !nativeHost.includes("DownloadsPanel.Visibility == Visibility.Visible ||")) fail("The native activation timer must restore a hidden overlay only when its owning browser is foreground.");
 else pass("The overlay timer can restore hidden native panels after focus returns, without bypassing foreground ownership checks.");
+
+
+const spatialIndexSource = read("spatial-index.js");
+if (!html.includes('<script src="./spatial-index.js" defer></script>') ||
+    html.indexOf('src="./spatial-index.js"') > html.indexOf('src="./app.js"')) fail("The spatial index must load before the workspace application.");
+else pass("The spatial index is loaded before the virtualized canvas.");
+if (!/new window\.NolaneSpatialIndex\.SpatialIndex\(640\)/.test(js) ||
+    !/spatialIndex\.query\(currentCanvasWorldBounds\(CANVAS_OVERSCAN_PX\)\)/.test(js) ||
+    !/spatialIndex\.rebuild\(nodes\)/.test(js) || !/spatialIndex\.upsert\(node\)/.test(js)) fail("Canvas spatial index wiring is incomplete.");
+else pass("Canvas virtualization queries spatial cells and updates geometry on drag/resize.");
+if (!/const MAX_NODES = 2000/.test(js) || /items\.length >= 80/.test(js)) fail("Node cap or old native insertion-order truncation remains.");
+else pass("Each local space supports up to 2,000 items without truncating native descriptors at 80.");
+if (!/function syncCanvasNodeElements\(forceRefresh\)/.test(js) ||
+    !/liveSurfaces\.has\(node\.id\)/.test(js) || !/node\.id === selectedId/.test(js) ||
+    /world\.replaceChildren\(\)/.test(js.slice(js.indexOf("function renderNodes()"), js.indexOf("function availableBrowserProfiles()")))) fail("Virtualization must preserve selected/live cards and avoid full world rebuilds.");
+else pass("Off-screen cards are virtualized while selected and live-stream cards stay mounted.");
+if (!html.includes('id="minimapCanvas"') || !/function drawMinimap\(\)/.test(js) ||
+    /createElement\("span"\)/.test(js.slice(js.indexOf("function updateMinimap()"), js.indexOf("function toast(message")))) fail("Minimap must draw to Canvas instead of creating a DOM marker for every node.");
+else pass("Minimap markers are drawn on one high-DPI Canvas.");
+const nativeSyncSource = js.slice(js.indexOf("function scheduleNativeSurfaceSync()"), js.indexOf("function handleNativeHostMessage"));
+if (!nativeSyncSource.includes("(node.x + 1) * scale") || !nativeSyncSource.includes("(node.y + 40) * scale") ||
+    nativeSyncSource.includes('querySelector(".node[data-id="')) fail("Native surface geometry must not require a mounted DOM card.");
+else pass("Native WebView2 geometry is derived directly from canvas world coordinates.");
+if (!spatialIndexSource.includes("MAX_CELLS_PER_ITEM") || !spatialIndexSource.includes("MAX_CELLS_PER_QUERY") ||
+    !spatialIndexSource.includes("this.oversized")) fail("Spatial index resource safeguards are missing.");
+else pass("Spatial index bounds per-item cell fan-out and oversized viewport queries.");
+if (!/\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}/.test(read(".github/workflows/pages.yml"))) fail("Pages CI concurrency must be isolated per PR/ref.");
