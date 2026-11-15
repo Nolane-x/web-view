@@ -941,18 +941,23 @@ if (!pointerMoveFunction.includes("spatialIndex.get(dragState.id)") ||
 else pass("Drag and resize pointer-move handlers use constant-time spatial-index lookups instead of scanning all nodes.");
 
 
-if (!spatialIndexSource.includes("right <= x || bottom <= y") ||
-    !spatialIndexSource.includes("this.coarseCellSize = size * 64") ||
-    !spatialIndexSource.includes("_rangeMetrics(rect, this.cellSize)") ||
-    !spatialIndexSource.includes("_rangeMetrics(rect, this.coarseCellSize)") ||
-    !spatialIndexSource.includes("this.coarseOversized") ||
-    !spatialIndexTests.includes('test("extreme but representable world coordinates use overflow lookup without unsafe cell loops"') ||
-    !spatialIndexTests.includes('test("rectangles whose extent disappears at floating-point precision are rejected"') ||
-    !spatialIndexTests.includes('test("broad viewport queries use the coarse grid instead of scanning every entry"') ||
-    !spatialIndexTests.includes('test("coarse overflow entries remain discoverable and removable at every query scale"') ||
-    !spatialIndexTests.includes('test("upsert moves entries across fine and coarse cells without leaving stale candidates"') ||
-    !spatialIndexTests.includes('test("clear and rebuild remove all fine/coarse memberships and overflow state"') fail("Spatial indexing must safely handle extreme numeric coordinates, fine/coarse cell fallback and floating-point collapsed rectangles.");
-else pass("Spatial indexing uses exact geometry checks with bounded fine/coarse grids and dedicated overflow paths.");
+if (
+  !spatialIndexSource.includes("right <= x || bottom <= y") ||
+  !spatialIndexSource.includes("this.coarseCellSize = size * 64") ||
+  !spatialIndexSource.includes("_rangeMetrics(rect, this.cellSize)") ||
+  !spatialIndexSource.includes("_rangeMetrics(rect, this.coarseCellSize)") ||
+  !spatialIndexSource.includes("this.coarseOversized") ||
+  !spatialIndexTests.includes('test("extreme but representable world coordinates use overflow lookup without unsafe cell loops"') ||
+  !spatialIndexTests.includes('test("rectangles whose extent disappears at floating-point precision are rejected"') ||
+  !spatialIndexTests.includes('test("broad viewport queries use the coarse grid instead of scanning every entry"') ||
+  !spatialIndexTests.includes('test("coarse overflow entries remain discoverable and removable at every query scale"') ||
+  !spatialIndexTests.includes('test("upsert moves entries across fine and coarse cells without leaving stale candidates"') ||
+  !spatialIndexTests.includes('test("clear and rebuild remove all fine/coarse memberships and overflow state"')
+) {
+  fail("Spatial indexing must safely handle extreme coordinates, fine/coarse fallback, overflow and clear/rebuild.");
+} else {
+  pass("Spatial indexing uses exact geometry checks with bounded fine/coarse grids, migration and dedicated overflow paths.");
+}
 
 
 if (!js.includes("while (nodes.some((node) => node.id === candidate) || spaces.some((space) => space.id === candidate))")) fail("Newly generated node and space IDs must avoid existing workspace IDs.");
