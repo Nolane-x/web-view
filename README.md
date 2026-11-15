@@ -157,3 +157,6 @@ Each local space accepts up to **2,000 website cards and notes**. The complete m
 Native WebView2 synchronization derives body rectangles from the camera transform, so it still sends descriptors for off-screen cards that have no DOM element. The Windows host continues to decide which small number of actual browser renderers can be visible. The minimap draws into one Canvas instead of creating one HTML element per item.
 
 The 2,000-item ceiling is a resource guard, not a claim of mathematically unbounded storage. Raising it requires profiling import/export size, IndexedDB latency, camera movement and native synchronization on low-memory Windows devices.
+
+
+Browser profile choices and per-profile card usage are memoized from workspace data. Workspace persistence invalidates those derived caches, so camera frames and repeated card construction do not rescan every node for the same metadata.
