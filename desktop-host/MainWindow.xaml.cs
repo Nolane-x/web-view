@@ -43,6 +43,7 @@ public sealed partial class MainWindow : Window
     private bool _surfaceSyncRunning;
     private readonly SemaphoreSlim _permissionDialogGate = new(1, 1);
     private bool _runtimeUpdateAvailable;
+    private Task _shutdownTask = Task.CompletedTask;
     private Action<string, string>? _trayNotification;
     private string? _downloadHistoryPath;
     private string? _browserLibraryPath;
@@ -140,6 +141,8 @@ public sealed partial class MainWindow : Window
         _trayNotification = notificationHandler ?? throw new ArgumentNullException(nameof(notificationHandler));
     }
 
+    public Task ShutdownTask => _shutdownTask;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -148,18 +151,20 @@ public sealed partial class MainWindow : Window
         BrowserSurfaceLayer.Loaded += MainWindow_Loaded;
         SizeChanged += (_, _) => BrowserSurfaceLayer.InvalidateArrange();
         InitializeOverlayWindow();
-        Closed += async (_, _) =>
+        Closed += (_, _) => _shutdownTask = ShutdownAsync();
+    }
+
+    private async Task ShutdownAsync()
+    {
+        _overlayTimer?.Stop();
+        HideOverlayWindow();
+        SaveDownloadHistory();
+        foreach (var surface in _surfaces.Values.ToArray())
         {
-            _overlayTimer?.Stop();
-            HideOverlayWindow();
-            SaveDownloadHistory();
-            foreach (var surface in _surfaces.Values.ToArray())
-            {
-                try { surface.View.Close(); } catch { }
-            }
-            _surfaces.Clear();
-            if (_bridgeServer is not null) await _bridgeServer.DisposeAsync();
-        };
+            try { surface.View.Close(); } catch { }
+        }
+        _surfaces.Clear();
+        if (_bridgeServer is not null) await _bridgeServer.DisposeAsync();
     }
 
     private static Microsoft.UI.Xaml.Media.SolidColorBrush LibraryBrush(byte red, byte green, byte blue) =>
