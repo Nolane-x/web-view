@@ -55,6 +55,8 @@
   const CANVAS_OVERSCAN_PX = 280;
   let canvasRenderFrame = 0;
   let minimapFrame = 0;
+  let minimapGeometryDirty = true;
+  let minimapGeometryCache = null;
   let canvasResizeObserver = null;
   let availableBrowserProfilesCache = null;
   let nativeProfileUsageCache = null;
@@ -513,8 +515,13 @@
       if (matchesNodeFilters(node, query)) wanted.set(node.id, node);
     }
     // Pin selected cards and active streams; do not detach a live video element on pan.
-    for (const node of nodes) {
-      if (node.id === selectedId || liveSurfaces.has(node.id)) wanted.set(node.id, node);
+    if (selectedId) {
+      const selectedNode = spatialIndex.get(selectedId);
+      if (selectedNode) wanted.set(selectedNode.id, selectedNode);
+    }
+    for (const id of liveSurfaces.keys()) {
+      const liveNode = spatialIndex.get(id);
+      if (liveNode) wanted.set(liveNode.id, liveNode);
     }
     for (const [id, element] of renderedNodeElements) {
       if (wanted.has(id)) continue;
@@ -804,7 +811,7 @@
     updateViewFilter();
     updateCounts();
     renderSpaces();
-    updateMinimap();
+    updateMinimap(true);
     scheduleNativeSurfaceSync();
   }
 
@@ -2181,7 +2188,7 @@
       spatialIndex.upsert(node);
       const element = renderedNodeElements.get(node.id);
       if (element) { element.style.left = node.x + "px"; element.style.top = node.y + "px"; }
-      updateMinimap();
+      updateMinimap(true);
       scheduleNativeSurfaceSync();
       return;
     }
@@ -2193,7 +2200,7 @@
       spatialIndex.upsert(node);
       const element = renderedNodeElements.get(node.id);
       if (element) { element.style.width = node.w + "px"; element.style.height = node.h + "px"; }
-      updateMinimap();
+      updateMinimap(true);
       scheduleNativeSurfaceSync();
       return;
     }
@@ -2317,7 +2324,8 @@
     }
   }
 
-  function updateMinimap() {
+  function updateMinimap(geometryChanged) {
+    if (geometryChanged) minimapGeometryDirty = true;
     if (minimapFrame) return;
     minimapFrame = requestAnimationFrame(() => { minimapFrame = 0; drawMinimap(); });
   }
@@ -2332,36 +2340,56 @@
     const pixelRatio = clamp(Number(window.devicePixelRatio) || 1, 1, 2);
     const pixelWidth = Math.max(1, Math.round(width * pixelRatio));
     const pixelHeight = Math.max(1, Math.round(height * pixelRatio));
-    if (minimapCanvas.width !== pixelWidth) minimapCanvas.width = pixelWidth;
-    if (minimapCanvas.height !== pixelHeight) minimapCanvas.height = pixelHeight;
+    const resized = minimapCanvas.width !== pixelWidth || minimapCanvas.height !== pixelHeight;
+    if (resized) {
+      minimapCanvas.width = pixelWidth;
+      minimapCanvas.height = pixelHeight;
+      minimapGeometryDirty = true;
+    }
     const context = minimapCanvas.getContext("2d");
     if (!context) return;
-    context.clearRect(0, 0, pixelWidth, pixelHeight);
-    const valid = nodes.filter((node) => node && Number.isFinite(node.x) && Number.isFinite(node.y) &&
-      Number.isFinite(node.w) && Number.isFinite(node.h));
-    if (!valid.length) { viewport.hidden = true; return; }
-    const minX = Math.min(...valid.map((node) => node.x));
-    const minY = Math.min(...valid.map((node) => node.y));
-    const maxX = Math.max(...valid.map((node) => node.x + node.w));
-    const maxY = Math.max(...valid.map((node) => node.y + node.h));
-    const spanX = Math.max(1, maxX - minX), spanY = Math.max(1, maxY - minY);
-    const pad = 4, mapWidth = Math.max(1, width - pad * 2), mapHeight = Math.max(1, height - pad * 2);
-    context.save();
-    context.scale(pixelRatio, pixelRatio);
-    for (const node of valid) {
-      context.fillStyle = node.type === "note" ? "rgba(182, 154, 117, 0.88)" : "rgba(131, 113, 213, 0.82)";
-      const x = pad + (node.x - minX) / spanX * mapWidth;
-      const y = pad + (node.y - minY) / spanY * mapHeight;
-      context.fillRect(x, y, Math.max(2, node.w / spanX * mapWidth), Math.max(2, node.h / spanY * mapHeight));
+
+    if (minimapGeometryDirty || !minimapGeometryCache) {
+      context.clearRect(0, 0, pixelWidth, pixelHeight);
+      const valid = nodes.filter((node) => node && Number.isFinite(node.x) && Number.isFinite(node.y) &&
+        Number.isFinite(node.w) && Number.isFinite(node.h));
+      if (!valid.length) {
+        minimapGeometryCache = null;
+        minimapGeometryDirty = false;
+        viewport.hidden = true;
+        return;
+      }
+      const minX = Math.min(...valid.map((node) => node.x));
+      const minY = Math.min(...valid.map((node) => node.y));
+      const maxX = Math.max(...valid.map((node) => node.x + node.w));
+      const maxY = Math.max(...valid.map((node) => node.y + node.h));
+      const spanX = Math.max(1, maxX - minX), spanY = Math.max(1, maxY - minY);
+      const pad = 4, mapWidth = Math.max(1, width - pad * 2), mapHeight = Math.max(1, height - pad * 2);
+      context.save();
+      context.scale(pixelRatio, pixelRatio);
+      for (const node of valid) {
+        context.fillStyle = node.type === "note" ? "rgba(182, 154, 117, 0.88)" : "rgba(131, 113, 213, 0.82)";
+        const x = pad + (node.x - minX) / spanX * mapWidth;
+        const y = pad + (node.y - minY) / spanY * mapHeight;
+        context.fillRect(x, y, Math.max(2, node.w / spanX * mapWidth), Math.max(2, node.h / spanY * mapHeight));
+      }
+      context.restore();
+      minimapGeometryCache = { minX, minY, spanX, spanY, pad, mapWidth, mapHeight };
+      minimapGeometryDirty = false;
     }
-    context.restore();
+
+    const geometry = minimapGeometryCache;
+    if (!geometry) {
+      viewport.hidden = true;
+      return;
+    }
     const rect = canvas.getBoundingClientRect();
     const worldLeft = -view.x / view.scale, worldTop = -view.y / view.scale;
     viewport.hidden = false;
-    viewport.style.left = (pad + (worldLeft - minX) / spanX * mapWidth) + "px";
-    viewport.style.top = (pad + (worldTop - minY) / spanY * mapHeight) + "px";
-    viewport.style.width = clamp((rect.width / view.scale) / spanX * mapWidth, 8, mapWidth) + "px";
-    viewport.style.height = clamp((rect.height / view.scale) / spanY * mapHeight, 8, mapHeight) + "px";
+    viewport.style.left = (geometry.pad + (worldLeft - geometry.minX) / geometry.spanX * geometry.mapWidth) + "px";
+    viewport.style.top = (geometry.pad + (worldTop - geometry.minY) / geometry.spanY * geometry.mapHeight) + "px";
+    viewport.style.width = clamp((rect.width / view.scale) / geometry.spanX * geometry.mapWidth, 8, geometry.mapWidth) + "px";
+    viewport.style.height = clamp((rect.height / view.scale) / geometry.spanY * geometry.mapHeight, 8, geometry.mapHeight) + "px";
   }
 
   function toast(message, kind) {
