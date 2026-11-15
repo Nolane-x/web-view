@@ -884,6 +884,14 @@ if (!nativeWorkingSetFunction.includes('message.profileUsage = cachedNativeProfi
 else pass("Native profile snapshots are parsed atomically, retain legacy object compatibility, and reject over-count/overflow input.");
 
 const snapshotSyncFunction = js.slice(js.indexOf("function sendNativeWorkspaceSnapshot"), js.indexOf("function scheduleNativeSurfaceSync"));
+if (!snapshotSyncFunction.includes("nativeWorkspaceSnapshotRevision = revision;") ||
+    !snapshotSyncFunction.includes("before sending") ||
+    !nativeBridgeTests.includes('test("workspace snapshot builder handles the full 24,000-entry protocol ceiling"')) {
+  fail("Workspace snapshot retries must advance revisions and cover the complete 24,000-entry protocol envelope.");
+} else {
+  pass("Interrupted snapshot retries advance the revision; client tests exercise the full 24,000-entry protocol ceiling.");
+}
+
 if (!nativeBridgeSource.includes("function createWorkspaceSnapshotMessages") ||
     !nativeBridgeTests.includes('test("workspace snapshots are chunked into revisioned bounded messages"') ||
     !snapshotSyncFunction.includes("createWorkspaceSnapshotMessages") ||

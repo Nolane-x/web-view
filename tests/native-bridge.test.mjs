@@ -186,3 +186,19 @@ test("workspace snapshots reject malformed IDs, duplicate IDs and out-of-quota p
   assert.equal(bridge.createWorkspaceSnapshotMessages(1, [], [{ name: "Work", count: 24000 }, { name: "Personal", count: 1 }]), null);
   assert.equal(bridge.createWorkspaceSnapshotMessages(1, ["x".repeat(81)], []), null);
 });
+
+
+test("workspace snapshot builder handles the full 24,000-entry protocol ceiling", () => {
+  const ids = Array.from({ length: 24000 }, (_, index) => "card-" + index);
+  const profiles = Array.from({ length: 24000 }, (_, index) => ({ name: "Profile-" + index, count: 1 }));
+  const messages = JSON.parse(JSON.stringify(bridge.createWorkspaceSnapshotMessages(10, ids, profiles)));
+  assert.equal(messages.length, 96);
+  assert.equal(messages[0].workspaceIdCount, 24000);
+  assert.equal(messages[0].profileCount, 24000);
+  assert.equal(messages[0].chunkCount, 94);
+  const chunks = messages.slice(1, -1);
+  assert.equal(chunks.length, 94);
+  assert.equal(chunks.reduce((sum, chunk) => sum + chunk.workspaceIds.length, 0), 24000);
+  assert.equal(chunks.reduce((sum, chunk) => sum + chunk.profileUsage.length, 0), 24000);
+  assert.ok(chunks.every(chunk => chunk.workspaceIds.length <= 256 && chunk.profileUsage.length <= 256));
+});

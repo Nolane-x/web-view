@@ -643,10 +643,12 @@
       revision, nativeWorkspaceIdsCache, profiles
     );
     if (!messages) return false;
+    // Consume the revision before sending. If a socket failure interrupts this
+    // transfer, the retry begins a newer snapshot and supersedes the partial one.
+    nativeWorkspaceSnapshotRevision = revision;
     for (const message of messages) {
       if (!sendNativeBridgeMessage(message)) return false;
     }
-    nativeWorkspaceSnapshotRevision = revision;
     nativeWorkspaceIdsDirty = false;
     nativeProfileUsageDirty = false;
     return true;

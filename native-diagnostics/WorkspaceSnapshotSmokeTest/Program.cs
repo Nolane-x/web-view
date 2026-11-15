@@ -63,30 +63,41 @@ Check(AddChunk(receiver, "{\"revision\":3,\"index\":0,\"workspaceIds\":[\"legacy
 Check(Commit(receiver, 3, out var legacy) && legacy!.WorkspaceIds.Contains("legacy-card") &&
       legacy.ProfileUsage["Default"] == 1,
     "The legacy-compatible snapshot did not commit correctly.");
+Check(!Begin(receiver, "{\"revision\":3,\"workspaceIdCount\":0,\"profileCount\":0,\"chunkCount\":0}"),
+    "The receiver accepted a stale revision after commit.");
 
-// Invalid and duplicate chunks fail closed.
-Check(Begin(receiver, "{\"revision\":4,\"workspaceIdCount\":2,\"profileCount\":0,\"chunkCount\":1}"),
+// Repeated chunk indices are rejected and cannot commit a partial snapshot.
+Check(Begin(receiver, "{\"revision\":4,\"workspaceIdCount\":1,\"profileCount\":0,\"chunkCount\":1}"),
+    "The receiver rejected a duplicate-chunk test envelope.");
+const string repeatedChunk = "{\"revision\":4,\"index\":0,\"workspaceIds\":[\"one-card\"],\"profileUsage\":[]}";
+Check(AddChunk(receiver, repeatedChunk), "The receiver rejected the first valid chunk.");
+Check(!AddChunk(receiver, repeatedChunk), "The receiver accepted a repeated chunk index.");
+Check(!Commit(receiver, 4, out var repeated) && repeated is null,
+    "The receiver committed a snapshot containing a repeated chunk.");
+
+// Invalid and duplicate IDs fail closed.
+Check(Begin(receiver, "{\"revision\":5,\"workspaceIdCount\":2,\"profileCount\":0,\"chunkCount\":1}"),
     "The receiver rejected a valid test envelope.");
 Check(!AddChunk(receiver, "{\"revision\":4,\"index\":0,\"workspaceIds\":[\"same\",\"same\"],\"profileUsage\":[]}"),
     "The receiver accepted duplicate workspace IDs.");
 Check(!Commit(receiver, 4, out var duplicate) && duplicate is null,
     "The receiver committed a snapshot with duplicate IDs.");
 
-Check(Begin(receiver, "{\"revision\":5,\"workspaceIdCount\":1,\"profileCount\":0,\"chunkCount\":1}"),
+Check(Begin(receiver, "{\"revision\":6,\"workspaceIdCount\":1,\"profileCount\":0,\"chunkCount\":1}"),
     "The receiver rejected a second test envelope.");
-Check(!AddChunk(receiver, "{\"revision\":5,\"index\":0,\"workspaceIds\":[\"bad/id\"],\"profileUsage\":[]}"),
+Check(!AddChunk(receiver, "{\"revision\":6,\"index\":0,\"workspaceIds\":[\"bad/id\"],\"profileUsage\":[]}"),
     "The receiver accepted an unsafe ID.");
-Check(!Commit(receiver, 5, out var unsafeSnapshot) && unsafeSnapshot is null,
+Check(!Commit(receiver, 6, out var unsafeSnapshot) && unsafeSnapshot is null,
     "The receiver committed a snapshot with an unsafe ID.");
 
-Check(!Begin(receiver, "{\"revision\":6,\"workspaceIdCount\":24001,\"profileCount\":0,\"chunkCount\":94}"),
+Check(!Begin(receiver, "{\"revision\":7,\"workspaceIdCount\":24001,\"profileCount\":0,\"chunkCount\":94}"),
     "The receiver accepted an over-quota membership declaration.");
-Check(!Begin(receiver, "{\"revision\":6,\"workspaceIdCount\":1,\"profileCount\":1,\"chunkCount\":0}"),
+Check(!Begin(receiver, "{\"revision\":7,\"workspaceIdCount\":1,\"profileCount\":1,\"chunkCount\":0}"),
     "The receiver accepted a chunk count inconsistent with declared entries.");
 
-Check(Begin(receiver, "{\"revision\":7,\"workspaceIdCount\":0,\"profileCount\":0,\"chunkCount\":0}"),
+Check(Begin(receiver, "{\"revision\":8,\"workspaceIdCount\":0,\"profileCount\":0,\"chunkCount\":0}"),
     "The receiver rejected a valid empty snapshot.");
-Check(Commit(receiver, 7, out var empty) && empty!.WorkspaceIds.Count == 0 && empty.ProfileUsage.Count == 0,
+Check(Commit(receiver, 8, out var empty) && empty!.WorkspaceIds.Count == 0 && empty.ProfileUsage.Count == 0,
     "The empty snapshot did not commit.");
 
 Console.WriteLine("PASS: revision ordering, 256-entry chunking, out-of-order assembly, atomic commit, legacy profile rows, duplicate/unsafe ID rejection, quota checks and empty snapshots.");
