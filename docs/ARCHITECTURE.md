@@ -169,3 +169,5 @@ The 2,000-node ceiling is an explicit resource guard, not an infinite-storage pr
 Browser profile choices and per-profile card usage are memoized from workspace data. Workspace persistence invalidates those derived caches, so camera frames and repeated card construction do not rescan every node for the same metadata.
 
 Native camera-frame synchronization reads the active node model directly and does not call `syncActiveSpace()` per frame. The sanitized active-space snapshot is refreshed when workspace persistence is scheduled, avoiding repeated full-node cloning during pan and zoom while preserving the save/export sanitization boundary.
+
+Canvas pan/zoom does not rebuild minimap markers. The minimap retains the workspace bounds and marker geometry until a node is created, removed, moved, resized or the backing Canvas dimensions change; ordinary camera updates only reposition/resize the viewport indicator. Selected and active live cards are fetched by ID from the spatial index instead of scanning the full workspace.
