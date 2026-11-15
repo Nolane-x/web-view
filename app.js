@@ -58,6 +58,7 @@
   let canvasResizeObserver = null;
   let availableBrowserProfilesCache = null;
   let nativeProfileUsageCache = null;
+  let nodeSearchTextCache = new WeakMap();
 
   const uid = () => "node-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -474,14 +475,23 @@
       w: rect.width / view.scale + overscan * 2, h: rect.height / view.scale + overscan * 2 };
   }
 
+  function cachedNodeSearchText(node) {
+    let searchText = nodeSearchTextCache.get(node);
+    if (searchText === undefined) {
+      searchText = [node.title, node.url || "", node.content || "", node.description || ""]
+        .join(" ").toLowerCase();
+      nodeSearchTextCache.set(node, searchText);
+    }
+    return searchText;
+  }
+
   function matchesNodeFilters(node, query) {
     if (!node) return false;
     const typeMatch = activeView === "canvas" ||
       (activeView === "websites" && node.type === "website") ||
       (activeView === "notes" && node.type === "note");
     if (!typeMatch) return false;
-    return !query || [node.title, node.url || "", node.content || "", node.description || ""]
-      .join(" ").toLowerCase().includes(query);
+    return !query || cachedNodeSearchText(node).includes(query);
   }
 
   function scheduleCanvasVirtualization() {
@@ -801,6 +811,7 @@
   function invalidateWorkspaceDerivedCaches() {
     availableBrowserProfilesCache = null;
     nativeProfileUsageCache = null;
+    nodeSearchTextCache = new WeakMap();
   }
 
   function availableBrowserProfiles() {
