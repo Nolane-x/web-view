@@ -967,3 +967,24 @@ if (retainedDownloadBranch < 0 ||
 } else {
   pass("Native renderer capacity is charged only to visible retained or successfully created surfaces; download-protected cards remain inside the overlay region.");
 }
+
+
+// The website may open before the Windows startup host, or the host may restart for a runtime update.
+const reconnectFunction = js.slice(
+  js.indexOf("function queueWindowsBridgeReconnect"),
+  js.indexOf("async function initializeWindowsBridge")
+);
+const foregroundReconnectEvents = js.slice(
+  js.indexOf('document.addEventListener("visibilitychange"'),
+  js.indexOf("function worldPoint")
+);
+if (!reconnectFunction.includes("nativeHostAvailable") ||
+    !reconnectFunction.includes("Math.min(nativeBridgeReconnectAttempts, 8)") ||
+    !reconnectFunction.includes("Math.min(30000, 800 * Math.pow(1.7, exponent))") ||
+    reconnectFunction.includes("nativeBridgeReconnectAttempts >= 8") ||
+    !foregroundReconnectEvents.includes("document.visibilityState === \"visible\" && !nativeHostAvailable) queueWindowsBridgeReconnect()") ||
+    !foregroundReconnectEvents.includes("if (!nativeHostAvailable) queueWindowsBridgeReconnect()")) {
+  fail("Windows background bridge reconnection must continue with bounded backoff and resume when the page returns to the foreground.");
+} else {
+  pass("Windows bridge reconnection survives startup races and runtime restarts with capped backoff and foreground recovery.");
+}
