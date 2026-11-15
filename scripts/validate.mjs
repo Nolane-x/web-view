@@ -708,8 +708,10 @@ const cachedUsageFunction = js.slice(js.indexOf("function cachedNativeProfileUsa
 if (!saveFunction.includes("invalidateWorkspaceDerivedCaches()") ||
     !profileOptionsFunction.includes("availableBrowserProfilesCache") ||
     !cachedUsageFunction.includes("nativeProfileUsageCache") ||
-    !js.includes("const profileUsage = cachedNativeProfileUsage()")) fail("Workspace-derived browser profile lists and native profile usage must be cached and invalidated when workspace data changes.");
-else pass("Browser profile choices and native profile-usage summaries are cached across camera frames and invalidated on workspace saves.");
+    !js.includes("function invalidateNativeProfileUsageCache()") ||
+    !js.includes("if (nativeProfileUsageDirty)") ||
+    !js.includes("message.profileUsage = cachedNativeProfileUsage().map((item) => [item.name, item.count])")) fail("Workspace-derived browser profile lists and native profile usage must be cached and invalidated only when profile/workspace data changes.");
+else pass("Browser profile choices and compact native profile summaries are cached and transmitted only when dirty.");
 if ((js.match(/summarizeProfileUsage\(spaces\)/g) || []).length !== 1) fail("Native profile usage must not be recomputed directly in every camera synchronization frame.");
 else pass("Native surface sync no longer recomputes profile usage on each camera frame.");
 
@@ -758,7 +760,8 @@ if (!nativeWorkingSetFunction.includes("spatialIndex.query(currentCanvasWorldBou
     !nativeWorkingSetFunction.includes("message.workspaceIds = nativeWorkspaceIdsCache") ||
     !js.includes("function refreshNativeWorkspaceIdsSnapshot()") ||
     !js.includes("next.some((id, index) => id !== nativeWorkspaceIdsCache[index])") ||
-    !nativeWorkingSetFunction.includes("if (sendNativeBridgeMessage(message) && nativeWorkspaceIdsDirty)") ||
+    !nativeWorkingSetFunction.includes("if (sendNativeBridgeMessage(message))") ||
+    !nativeWorkingSetFunction.includes("if (nativeWorkspaceIdsDirty) nativeWorkspaceIdsDirty = false") ||
     nativeWorkingSetFunction.includes("for (const node of nodes)")) fail("Native per-frame synchronization must be bounded to visible viewport candidates and send complete workspace membership only after mutations or a new handshake.");
 else pass("Native sync sends only the top visible viewport working set; complete website-card membership is sent separately and only when dirty.");
 
@@ -790,7 +793,8 @@ const searchFilterFunction = js.slice(js.indexOf("function updateViewFilter"), j
 if (virtualizedSearchFunction.includes("if (query) for (const node of nodes)") ||
     !searchFilterFunction.includes("searchResultIds.push(node.id)") ||
     !searchFilterFunction.includes("function focusSearchResult(reverse)") ||
-    !searchFilterFunction.includes("searchResultIds.length - 1") ||
+    !searchFilterFunction.includes("NolaneSpatialIndex.cycleIndex") ||
+    !spatialIndexSource.includes("function cycleIndex(currentIndex, itemCount, reverse)") ||
     !js.includes('$("#searchInput").addEventListener("keydown"') ||
     !js.includes("focusSearchResult(event.shiftKey)")) fail("Workspace-wide search must keep off-screen matches out of the DOM and navigate them with Enter/Shift+Enter.");
 else pass("Search indexes all workspace matches without mounting them; Enter and Shift+Enter navigate the result set.");
