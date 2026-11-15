@@ -339,7 +339,7 @@ public sealed partial class MainWindow : Window
             {
                 if (_runtimeUpdateAvailable) return;
                 _runtimeUpdateAvailable = true;
-                const string updateMessage = "A newer WebView2 Runtime is ready. Restart the Nolane Infinite background bridge to apply it.";
+                const string updateMessage = "A newer WebView2 Runtime is ready. Choose Restart bridge from the Nolane tray menu to apply it. Open browser cards will close.";
                 StatusText.Text = "WebView2 update ready · restart the background bridge to apply it.";
                 _trayNotification?.Invoke("WebView2 update ready", updateMessage);
             });
