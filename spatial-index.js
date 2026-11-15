@@ -73,6 +73,52 @@
     };
   }
 
+  function computeRenderOrigin(view, viewport, quantum = 4096) {
+    const source = view && typeof view === "object" ? view : {};
+    const area = viewport && typeof viewport === "object" ? viewport : {};
+    const x = Number(source.x), y = Number(source.y), scale = Number(source.scale);
+    const width = Number(area.width), height = Number(area.height);
+    const requestedQuantum = Number(quantum);
+    const cellSize = Number.isFinite(requestedQuantum) && requestedQuantum >= 256 && requestedQuantum <= 65536
+      ? requestedQuantum
+      : 4096;
+    if (![x, y, scale, width, height].every(Number.isFinite) || scale <= 0 || width <= 0 || height <= 0) {
+      return { x: 0, y: 0 };
+    }
+    const centerX = (width / 2 - x) / scale;
+    const centerY = (height / 2 - y) / scale;
+    if (!Number.isFinite(centerX) || !Number.isFinite(centerY)) return { x: 0, y: 0 };
+    return {
+      x: Math.floor(centerX / cellSize) * cellSize,
+      y: Math.floor(centerY / cellSize) * cellSize
+    };
+  }
+
+  function rebasePoint(point, origin) {
+    const source = point && typeof point === "object" ? point : {};
+    const base = origin && typeof origin === "object" ? origin : {};
+    const x = Number(source.x), y = Number(source.y);
+    const originX = Number(base.x), originY = Number(base.y);
+    if (![x, y, originX, originY].every(Number.isFinite)) return { x: 0, y: 0 };
+    return { x: x - originX, y: y - originY };
+  }
+
+  function createRebasedTransform(view, origin) {
+    const source = view && typeof view === "object" ? view : {};
+    const base = origin && typeof origin === "object" ? origin : {};
+    const x = Number(source.x), y = Number(source.y), scale = Number(source.scale);
+    const originX = Number(base.x), originY = Number(base.y);
+    if (![x, y, scale, originX, originY].every(Number.isFinite) || scale <= 0) {
+      return { x: 0, y: 0, scale: 1 };
+    }
+    const translatedX = x + originX * scale;
+    const translatedY = y + originY * scale;
+    if (!Number.isFinite(translatedX) || !Number.isFinite(translatedY)) {
+      return { x: 0, y: 0, scale: 1 };
+    }
+    return { x: translatedX, y: translatedY, scale };
+  }
+
   function intersects(a, b) {
     return a.x < b.right && a.right > b.x && a.y < b.bottom && a.bottom > b.y;
   }
@@ -222,7 +268,11 @@
     return id;
   }
 
-  const api = Object.freeze({ SpatialIndex, sortByZIndex, cycleIndex, claimUniqueId, normalizeWorldCoordinate, normalizeViewState });
+  const api = Object.freeze({
+    SpatialIndex, sortByZIndex, cycleIndex, claimUniqueId,
+    normalizeWorldCoordinate, normalizeViewState,
+    computeRenderOrigin, rebasePoint, createRebasedTransform
+  });
   if (typeof module === "object" && module.exports) module.exports = api;
   else globalThis.NolaneSpatialIndex = api;
 })();
