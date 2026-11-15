@@ -160,3 +160,4 @@ The 2,000-item ceiling is a resource guard, not a claim of mathematically unboun
 
 
 Browser profile choices and per-profile card usage are memoized from workspace data. Workspace persistence invalidates those derived caches, so camera frames and repeated card construction do not rescan every node for the same metadata.
+Search indexing also memoizes each node's normalized title, URL, content and description in a `WeakMap`; workspace mutations replace the cache, allowing repeated filter and native-visibility checks to reuse the normalized text without keeping deleted nodes alive.
