@@ -43,6 +43,7 @@
   let nativeMaxVisibleSurfaces = 2;
   let nativeWorkspaceIdsDirty = true;
   let nativeWorkspaceIdsCache = [];
+  let nativeProfileUsageDirty = true;
   let nativeSyncFrame = 0;
   let nativeHostReadyNotified = false;
   let nativeBridgeSocket = null;
@@ -189,6 +190,7 @@
     if (!window.confirm('Delete "' + space.name + '" and all of its local items? This cannot be undone.')) return;
     if (activeSpaceId === id) stopAllLiveSurfaces("Live surfaces stopped because their workspace was deleted.");
     syncActiveSpace();
+    invalidateNativeProfileUsageCache();
     spaces = spaces.filter((item) => item.id !== id);
     if (activeSpaceId === id) {
       activeSpaceId = spaces[0].id;
@@ -562,7 +564,6 @@
     nativeSyncFrame = requestAnimationFrame(() => {
       nativeSyncFrame = 0;
       const area = canvas.getBoundingClientRect();
-      const profileUsage = cachedNativeProfileUsage();
       const uiBlocked = !!document.querySelector("dialog[open], #sidebar.open");
       const scale = view.scale;
       const query = $("#searchInput").value.trim().toLowerCase();
@@ -614,15 +615,19 @@
       const message = {
         type: "nolane.surfaces.sync", protocol: 2, viewport,
         workspaceVisible: document.visibilityState === "visible",
-        items, profileUsage
+        items
       };
+      if (nativeProfileUsageDirty) {
+        message.profileUsage = cachedNativeProfileUsage();
+      }
       // Workspace membership changes infrequently; transmit the complete native
       // website ID set only after a data mutation or a new host handshake.
       if (nativeWorkspaceIdsDirty) {
         message.workspaceIds = nativeWorkspaceIdsCache;
       }
-      if (sendNativeBridgeMessage(message) && nativeWorkspaceIdsDirty) {
-        nativeWorkspaceIdsDirty = false;
+      if (sendNativeBridgeMessage(message)) {
+        if (nativeWorkspaceIdsDirty) nativeWorkspaceIdsDirty = false;
+        if (nativeProfileUsageDirty) nativeProfileUsageDirty = false;
       }
     });
   }
@@ -638,6 +643,7 @@
       nativeMaxVisibleSurfaces = Number.isInteger(reportedBudget) ? clamp(reportedBudget, 1, 8) : 2;
       refreshNativeWorkspaceIdsSnapshot();
       nativeWorkspaceIdsDirty = true;
+      nativeProfileUsageDirty = true;
       setBridgeConnected(false, "");
       if (!nativeHostReadyNotified) {
         nativeHostReadyNotified = true;
@@ -662,6 +668,7 @@
         if (savedProfile !== actualProfile) {
           if (actualProfile) node.browserProfile = actualProfile;
           else delete node.browserProfile;
+          invalidateNativeProfileUsageCache();
           scheduleSave();
           scheduleNativeSurfaceSync();
         }
@@ -829,6 +836,7 @@
 
   function renderNodes() {
     invalidateWorkspaceDerivedCaches();
+    invalidateNativeProfileUsageCache();
     clearUnavailableChromeTabBindings();
     refreshNativeWorkspaceIdsSnapshot();
     spatialIndex.rebuild(nodes);
@@ -842,8 +850,12 @@
 
   function invalidateWorkspaceDerivedCaches() {
     availableBrowserProfilesCache = null;
-    nativeProfileUsageCache = null;
     nodeSearchTextCache = new WeakMap();
+  }
+
+  function invalidateNativeProfileUsageCache() {
+    nativeProfileUsageCache = null;
+    nativeProfileUsageDirty = true;
   }
 
   function availableBrowserProfiles() {
