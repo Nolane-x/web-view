@@ -274,7 +274,7 @@ test("maximum camera zoom stays inside the practical Chromium CSS length range",
 
 test("viewport origin rebasing preserves exact screen positions for large world coordinates", () => {
   const { computeRenderOrigin, rebasePoint, createRebasedTransform } = require("../spatial-index.js");
-  const view = { x: -5_000_320, y: -2_400_160, scale: 1.25 };
+  const view = { x: -6_250_320, y: -3_000_160, scale: 1.25 };
   const viewport = { width: 1440, height: 900 };
   const origin = computeRenderOrigin(view, viewport, 4096);
   const point = { x: 5_000_000, y: 2_400_000 };
