@@ -586,10 +586,10 @@ if (!/new window\.NolaneSpatialIndex\.SpatialIndex\(640\)/.test(js) ||
 else pass("Canvas virtualization queries spatial cells and updates geometry on drag/resize.");
 if (!/const MAX_NODES = 2000/.test(js) || /items\.length >= 80/.test(js)) fail("Node cap or old native insertion-order truncation remains.");
 else pass("Each local space supports up to 2,000 items without truncating native descriptors at 80.");
-if (!/function syncCanvasNodeElements\\(forceRefresh\\)/.test(js) ||
-    !/spatialIndex\\.get\\(selectedId\\)/.test(js) ||
+if (!/function syncCanvasNodeElements\(forceRefresh\)/.test(js) ||
+    !/spatialIndex\.get\(selectedId\)/.test(js) ||
     /liveSurfaces|LIVE_SURFACE|live-surface-video/.test(js) ||
-    /world\\.replaceChildren\\(\\)/.test(js.slice(js.indexOf("function renderNodes()"), js.indexOf("function invalidateWorkspaceDerivedCaches()")))) {
+    /world\.replaceChildren\(\)/.test(js.slice(js.indexOf("function renderNodes()"), js.indexOf("function invalidateWorkspaceDerivedCaches()")))) {
   fail("Virtualization must preserve the selected card without retaining the removed Chrome live-stream DOM path or rebuilding the full world.");
 } else {
   pass("Off-screen cards are virtualized, selected cards stay mounted, and Windows WebView2 rendering is independent of page DOM.");

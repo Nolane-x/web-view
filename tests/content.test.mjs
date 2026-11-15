@@ -25,6 +25,20 @@ test("the web workspace connects only to the local Windows WebView2 host protoco
   assert.match(bridge, /function createWorkspaceSnapshotMessages/);
 });
 
+test("workspace search and card selection handlers remain present after the native-runtime migration", () => {
+  const filterStart = app.indexOf("function updateViewFilter()");
+  const selectionStart = app.indexOf("function selectNode(id)");
+  const actionStart = app.indexOf("function handleNodeAction(event)");
+  assert.ok(filterStart >= 0);
+  assert.ok(selectionStart > filterStart);
+  assert.ok(actionStart > selectionStart);
+  const filterAndSearch = app.slice(filterStart, selectionStart);
+  const selection = app.slice(selectionStart, actionStart);
+  assert.match(filterAndSearch, /scheduleCanvasVirtualization\(\)/);
+  assert.match(filterAndSearch, /scheduleNativeSurfaceSync\(\)/);
+  assert.match(selection, /scheduleNativeSurfaceSync\(\)/);
+});
+
 test("retired Chrome capture and extension messaging are not shipped in the web app", () => {
   assert.doesNotMatch(app, /chrome\.tabCapture|chrome\.debugger|LIVE_SURFACE|NOLANE_START_LIVE_SURFACE|handleCompanionMessage|browserTabId|browserWindowId|browserSessionId/);
   assert.doesNotMatch(html, /extension\/(?:manifest|popup|background)/);
