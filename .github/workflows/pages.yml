@@ -35,6 +35,12 @@ jobs:
           node --check extension/popup.js
           node --test tests/*.test.mjs
           node scripts/validate.mjs
+
+      - name: Benchmark spatial index at 2k, 10k and 50k cards
+        run: node scripts/benchmark-spatial.mjs
+
+      - name: Verify publishable shell
+        run: |
           test -s index.html
           test -s styles.css
           test -s manifest.webmanifest
