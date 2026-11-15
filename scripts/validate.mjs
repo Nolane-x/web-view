@@ -775,3 +775,11 @@ else pass("Native profile usage validation covers the 24,000-card upper bound ac
 
 if (!js.slice(js.indexOf("function normalizeUrl"), js.indexOf("function openDatabase")).includes("value.length > 4096")) fail("Website URLs must be bounded before they enter native surface payloads.");
 else pass("Website URLs are capped at 4,096 characters before entering native browser descriptors.");
+
+
+const renderNodesFunction = js.slice(js.indexOf("function renderNodes"), js.indexOf("function invalidateWorkspaceDerivedCaches"));
+const liveStopFunction = js.slice(js.indexOf("function stopLiveSurfaceById"), js.indexOf("function stopAllLiveSurfaces"));
+if (!renderNodesFunction.includes("refreshNativeWorkspaceIdsSnapshot()") ||
+    !liveStopFunction.includes("if (render) renderNodes()") ||
+    !js.includes("function refreshNativeWorkspaceIdsSnapshot()")) fail("Native workspace membership must refresh when a live surface stops and the card returns to native WebView2 eligibility.");
+else pass("Live Surface teardown refreshes native membership even when no workspace persistence event occurs.");
