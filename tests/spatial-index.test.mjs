@@ -370,3 +370,42 @@ test("origin rebasing keeps pinned edge cards inside bounded CSS coordinates at 
     assert.ok(Math.abs(transform.y) < 20_000);
   }
 });
+
+
+test("broad viewport queries use the coarse grid instead of scanning every entry", () => {
+  const index = new SpatialIndex(128);
+  const nodes = Array.from({ length: 12000 }, (_, i) => ({
+    id: "coarse-" + i,
+    x: (i % 300) * 400 - 60000,
+    y: Math.floor(i / 300) * 400 - 8000,
+    w: 220,
+    h: 180
+  }));
+  const outside = { id: "coarse-outside", x: 900000, y: 900000, w: 220, h: 180 };
+  index.rebuild([...nodes, outside]);
+
+  const query = { x: -100000, y: -100000, w: 500000, h: 500000 };
+  const expected = [...nodes, outside].filter(item =>
+    item.x < query.x + query.w && item.x + item.w > query.x &&
+    item.y < query.y + query.h && item.y + item.h > query.y
+  ).map(item => item.id).sort();
+
+  // The fine grid covers more than MAX_CELLS_PER_QUERY, while the 64× coarse
+  // grid covers fewer cells. A full-entry fallback would throw here.
+  index.entries.keys = () => { throw new Error("Broad query unexpectedly scanned every entry."); };
+  const actual = index.query(query).map(item => item.id).sort();
+  assert.deepEqual(actual, expected);
+});
+
+test("coarse overflow entries remain discoverable and removable at every query scale", () => {
+  const index = new SpatialIndex(128);
+  const huge = { id: "coarse-overflow", x: -2_000_000, y: -2_000_000, w: 4_000_000, h: 4_000_000 };
+  const small = { id: "coarse-small", x: 3_000_000, y: 3_000_000, w: 120, h: 120 };
+  index.rebuild([huge, small]);
+  assert.deepEqual(index.query({ x: -100, y: -100, w: 200, h: 200 }).map(item => item.id), ["coarse-overflow"]);
+  assert.deepEqual(index.query({ x: -2_100_000, y: -2_100_000, w: 4_200_000, h: 4_200_000 })
+    .map(item => item.id).sort(), ["coarse-overflow"]);
+  assert.equal(index.remove(huge.id), true);
+  assert.deepEqual(index.query({ x: -100, y: -100, w: 200, h: 200 }), []);
+  assert.deepEqual(index.query({ x: 2_999_900, y: 2_999_900, w: 400, h: 400 }).map(item => item.id), ["coarse-small"]);
+});
