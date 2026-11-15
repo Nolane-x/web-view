@@ -125,3 +125,23 @@ test("get returns the current item after upsert and is empty after removal", () 
   index.remove("lookup");
   assert.equal(index.get("lookup"), undefined);
 });
+
+
+test("native working-set ranking selects topmost cards from a 2,000-card overlap without mutating source order", () => {
+  const { sortByZIndex } = require("../spatial-index.js");
+  const items = Array.from({ length: 2000 }, (_, index) => ({
+    id: "overlap-" + index,
+    x: 0, y: 0, w: 390, h: 300,
+    z: index + 1
+  }));
+  const originalFirst = items[0];
+  const ranked = sortByZIndex(items);
+  assert.equal(ranked.length, 2000);
+  assert.deepEqual(ranked.slice(0, 4).map(item => item.id), [
+    "overlap-1999", "overlap-1998", "overlap-1997", "overlap-1996"
+  ]);
+  assert.deepEqual(ranked.slice(0, 4).map(item => item.id), ranked.slice(0, 4).map(item => item.id));
+  assert.equal(items[0], originalFirst);
+  assert.equal(items[0].id, "overlap-0");
+  assert.deepEqual(sortByZIndex(null), []);
+});
