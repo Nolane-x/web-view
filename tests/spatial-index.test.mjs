@@ -270,3 +270,79 @@ test("maximum camera zoom stays inside the practical Chromium CSS length range",
   assert.ok(Math.abs(view.x) < 33_554_429);
   assert.ok(Math.abs(view.y) < 33_554_429);
 });
+
+
+test("viewport origin rebasing preserves exact screen positions for large world coordinates", () => {
+  const { computeRenderOrigin, rebasePoint, createRebasedTransform } = require("../spatial-index.js");
+  const view = { x: -5_000_320, y: -2_400_160, scale: 1.25 };
+  const viewport = { width: 1440, height: 900 };
+  const origin = computeRenderOrigin(view, viewport, 4096);
+  const point = { x: 5_000_000, y: 2_400_000 };
+  const local = rebasePoint(point, origin);
+  const transform = createRebasedTransform(view, origin);
+  const logicalScreen = {
+    x: point.x * view.scale + view.x,
+    y: point.y * view.scale + view.y
+  };
+  const rebasedScreen = {
+    x: local.x * transform.scale + transform.x,
+    y: local.y * transform.scale + transform.y
+  };
+  assert.ok(Math.abs(rebasedScreen.x - logicalScreen.x) < 1e-7);
+  assert.ok(Math.abs(rebasedScreen.y - logicalScreen.y) < 1e-7);
+  assert.ok(Math.abs(local.x) < 8192);
+  assert.ok(Math.abs(local.y) < 8192);
+});
+
+test("viewport origin rebasing remains stable across negative coordinates and invalid inputs", () => {
+  const { computeRenderOrigin, rebasePoint, createRebasedTransform } = require("../spatial-index.js");
+  const view = { x: 1_250_000, y: 2_500_000, scale: 0.5 };
+  const origin = computeRenderOrigin(view, { width: 1280, height: 720 }, 2048);
+  assert.ok(origin.x < 0);
+  assert.ok(origin.y < 0);
+  assert.deepEqual(rebasePoint({ x: -2_500_000, y: -5_000_000 }, origin), {
+    x: -2_500_000 - origin.x,
+    y: -5_000_000 - origin.y
+  });
+  assert.deepEqual(computeRenderOrigin({ x: NaN, y: 0, scale: 1 }, { width: 800, height: 600 }), {
+    x: 0, y: 0
+  });
+  assert.deepEqual(rebasePoint({ x: Infinity, y: 1 }, origin), { x: 0, y: 0 });
+  assert.deepEqual(createRebasedTransform({ x: 0, y: 0, scale: 0 }, origin), {
+    x: 0, y: 0, scale: 1
+  });
+});
+
+test("spatial index keeps exact viewport query results across a 15,000-card workspace", () => {
+  const index = new SpatialIndex(640);
+  const nodes = Array.from({ length: 15000 }, (_, i) => ({
+    id: "stress-" + i,
+    x: (i % 250) * 720 - 90000,
+    y: Math.floor(i / 250) * 480 - 30000,
+    w: 220,
+    h: 180,
+    z: i
+  }));
+  index.rebuild(nodes);
+  assert.equal(index.size, 15000);
+
+  for (let queryIndex = 0; queryIndex < 60; queryIndex += 1) {
+    const target = nodes[(queryIndex * 251) % nodes.length];
+    const query = { x: target.x - 40, y: target.y - 30, w: 320, h: 260 };
+    const expected = nodes.filter(item =>
+      item.x < query.x + query.w && item.x + item.w > query.x &&
+      item.y < query.y + query.h && item.y + item.h > query.y
+    ).map(item => item.id).sort();
+    const actual = index.query(query).map(item => item.id).sort();
+    assert.deepEqual(actual, expected);
+  }
+
+  const moved = nodes.slice(0, 100);
+  for (const item of moved) {
+    item.x += 250000;
+    item.y -= 180000;
+    assert.equal(index.upsert(item), true);
+  }
+  assert.equal(index.query({ x: -100000, y: -30000, w: 1000, h: 1000 })
+    .some(item => moved.includes(item)), false);
+});
