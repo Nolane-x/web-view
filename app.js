@@ -46,6 +46,8 @@
   let nativeProfileUsageDirty = true;
   let nativeWorkspaceSnapshotProtocol = false;
   let nativeWorkspaceSnapshotRevision = 0;
+  let nativeWorkspaceSnapshotPendingRevision = 0;
+  let nativeWorkspaceSnapshotRetryTimer = 0;
   let nativeSyncFrame = 0;
   let nativeHostReadyNotified = false;
   let nativeBridgeSocket = null;
@@ -634,6 +636,26 @@
     }
   }
 
+  function clearNativeWorkspaceSnapshotRetry() {
+    if (!nativeWorkspaceSnapshotRetryTimer) return;
+    window.clearTimeout(nativeWorkspaceSnapshotRetryTimer);
+    nativeWorkspaceSnapshotRetryTimer = 0;
+  }
+
+  function scheduleNativeWorkspaceSnapshotRetry(revision) {
+    clearNativeWorkspaceSnapshotRetry();
+    nativeWorkspaceSnapshotRetryTimer = window.setTimeout(() => {
+      nativeWorkspaceSnapshotRetryTimer = 0;
+      if (nativeWorkspaceSnapshotPendingRevision !== revision) return;
+      // WebSocket.send() only confirms local queueing, not that the Windows
+      // receiver assembled and committed every chunk. Retry with a new revision
+      // so an incomplete receiver transaction is always superseded.
+      nativeWorkspaceIdsDirty = true;
+      nativeProfileUsageDirty = true;
+      if (nativeBridgeSocket?.readyState === WebSocket.OPEN) scheduleNativeSurfaceSync();
+    }, 5000);
+  }
+
   function sendNativeWorkspaceSnapshot() {
     if (!nativeWorkspaceSnapshotProtocol ||
         (!nativeWorkspaceIdsDirty && !nativeProfileUsageDirty)) return true;
@@ -643,14 +665,21 @@
       revision, nativeWorkspaceIdsCache, profiles
     );
     if (!messages) return false;
+
     // Consume the revision before sending. If a socket failure interrupts this
-    // transfer, the retry begins a newer snapshot and supersedes the partial one.
+    // transfer, the next attempt uses a newer revision and supersedes the partial one.
+    clearNativeWorkspaceSnapshotRetry();
     nativeWorkspaceSnapshotRevision = revision;
+    nativeWorkspaceSnapshotPendingRevision = revision;
     for (const message of messages) {
-      if (!sendNativeBridgeMessage(message)) return false;
+      if (!sendNativeBridgeMessage(message)) {
+        nativeWorkspaceSnapshotPendingRevision = 0;
+        return false;
+      }
     }
     nativeWorkspaceIdsDirty = false;
     nativeProfileUsageDirty = false;
+    scheduleNativeWorkspaceSnapshotRetry(revision);
     return true;
   }
 
@@ -738,6 +767,8 @@
     const message = event?.data ?? event;
     if (!message || typeof message !== "object") return;
     if (message.type === "nolane.native.ready") {
+      clearNativeWorkspaceSnapshotRetry();
+      nativeWorkspaceSnapshotPendingRevision = 0;
       nativeHostAvailable = true;
       nativeWorkspaceSnapshotProtocol = message.workspaceSnapshotProtocol === 1;
       nativeBridgePermission = "granted";
@@ -753,6 +784,13 @@
         toast("Nolane Windows Bridge connected. Website cards now use native browser surfaces.");
       }
       renderNodes();
+      return;
+    }
+    if (message.type === "nolane.workspace.snapshot.ack") {
+      if (window.NolaneNativeBridge?.isWorkspaceSnapshotAck(message, nativeWorkspaceSnapshotPendingRevision)) {
+        nativeWorkspaceSnapshotPendingRevision = 0;
+        clearNativeWorkspaceSnapshotRetry();
+      }
       return;
     }
     if (message.type === "nolane.native.surface") {
@@ -2308,6 +2346,8 @@
       nativeHostAvailable = false;
       nativeHostReadyNotified = false;
       nativeWorkspaceSnapshotProtocol = false;
+      clearNativeWorkspaceSnapshotRetry();
+      nativeWorkspaceSnapshotPendingRevision = 0;
       nativeWorkspaceIdsDirty = true;
       nativeProfileUsageDirty = true;
       refreshNativeWorkspaceIdsSnapshot();

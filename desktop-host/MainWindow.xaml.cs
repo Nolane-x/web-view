@@ -434,6 +434,7 @@ public sealed partial class MainWindow : Window
 
     private void OnBridgeClientDisconnected()
     {
+        _workspaceSnapshotReceiver.Reset();
         _bridgeHandshakeComplete = false;
         _workspaceReady = false;
         _workspaceVisible = false;
@@ -752,7 +753,15 @@ public sealed partial class MainWindow : Window
         if (type == "nolane.workspace.snapshot.commit")
         {
             if (_workspaceSnapshotReceiver.TryCommit(root, out var snapshot) && snapshot is not null)
+            {
                 ApplyWorkspaceSnapshot(snapshot);
+                PostWorkspaceMessage(new
+                {
+                    type = "nolane.workspace.snapshot.ack",
+                    protocol = 2,
+                    revision = snapshot.Revision
+                });
+            }
             return;
         }
         if (type != "nolane.surfaces.sync") return;

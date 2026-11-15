@@ -155,6 +155,14 @@
     });
   }
 
+  function isWorkspaceSnapshotAck(message, expectedRevision) {
+    return !!message && typeof message === "object" &&
+      message.type === "nolane.workspace.snapshot.ack" &&
+      message.protocol === 2 &&
+      Number.isSafeInteger(expectedRevision) && expectedRevision > 0 &&
+      Number.isSafeInteger(message.revision) && message.revision === expectedRevision;
+  }
+
   function normalizeViewport(value) {
     if (!value || typeof value !== "object") return null;
     const result = {
@@ -173,7 +181,7 @@
 
   const api = Object.freeze({
     createCommand, createNavigationCommand, normalizeProfileName, summarizeProfileUsage,
-    createWorkspaceSnapshotMessages, normalizeSurfaceState, normalizeViewport
+    createWorkspaceSnapshotMessages, isWorkspaceSnapshotAck, normalizeSurfaceState, normalizeViewport
   });
   const root = typeof window !== "undefined" ? window : globalThis;
   root.NolaneNativeBridge = api;

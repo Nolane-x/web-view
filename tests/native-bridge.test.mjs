@@ -134,6 +134,17 @@ test("native surface state reports private mode only when the host sends a boole
   assert.equal(invalidProfile.profileName, null);
 });
 
+test("workspace snapshot acknowledgements are bound to the exact pending revision", () => {
+  const acknowledged = { type: "nolane.workspace.snapshot.ack", protocol: 2, revision: 41 };
+  assert.equal(bridge.isWorkspaceSnapshotAck(acknowledged, 41), true);
+  assert.equal(bridge.isWorkspaceSnapshotAck(acknowledged, 40), false);
+  assert.equal(bridge.isWorkspaceSnapshotAck({ ...acknowledged, revision: "41" }, 41), false);
+  assert.equal(bridge.isWorkspaceSnapshotAck({ ...acknowledged, protocol: 1 }, 41), false);
+  assert.equal(bridge.isWorkspaceSnapshotAck({ ...acknowledged, type: "nolane.workspace.snapshot.commit" }, 41), false);
+  assert.equal(bridge.isWorkspaceSnapshotAck(acknowledged, 0), false);
+  assert.equal(bridge.isWorkspaceSnapshotAck(acknowledged, Number.MAX_SAFE_INTEGER + 1), false);
+});
+
 test("viewport metadata is bounded and normalized for the Windows overlay", () => {
   const viewport = bridge.normalizeViewport({ screenLeft: 10, screenTop: 50, width: 1440, height: 900, deviceScale: 1.5 });
   assert.deepEqual(JSON.parse(JSON.stringify(viewport)), { screenLeft: 10, screenTop: 50, width: 1440, height: 900, deviceScale: 1.5 });

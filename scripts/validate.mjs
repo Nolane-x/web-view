@@ -932,6 +932,18 @@ if (!nativeHost.includes("if (_workspaceSurfaceIdsReceived)") ||
   pass("Native cache eviction waits for complete workspace membership; new hosts advertise chunked snapshot support.");
 }
 
+if (!nativeBridgeSource.includes("function isWorkspaceSnapshotAck") ||
+    !nativeBridgeTests.includes('test("workspace snapshot acknowledgements are bound to the exact pending revision"') ||
+    !js.includes("nativeWorkspaceSnapshotPendingRevision") ||
+    !js.includes("scheduleNativeWorkspaceSnapshotRetry(revision)") ||
+    !js.includes("nativeWorkspaceSnapshotPendingRevision !== revision") ||
+    !nativeHost.includes('type = "nolane.workspace.snapshot.ack"') ||
+    !nativeHost.includes("_workspaceSnapshotReceiver.Reset();")) {
+  fail("Chunked workspace snapshots must be acknowledged only after atomic commit and retried with a newer revision if no acknowledgement arrives.");
+} else {
+  pass("Workspace snapshot commits are acknowledged by exact revision; unacknowledged transfers retry and disconnected receivers discard pending state.");
+}
+
 const nodeValidationFunction = js.slice(js.indexOf("function validateNode"), js.indexOf("function workspaceSnapshot"));
 const urlNormalizationFunction = js.slice(js.indexOf("function normalizeUrl"), js.indexOf("function openDatabase"));
 if (!nodeValidationFunction.includes("claimUniqueId(node.id, usedIds || new Set(), uid)") ||
