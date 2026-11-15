@@ -809,3 +809,9 @@ else pass("Search navigation tracks global matches, moves forward/backward on En
 
 if (!js.includes('visibleCount + " matching items · Press Enter to jump, Shift+Enter to go back."')) fail("Search UI must explain keyboard navigation through workspace-wide results.");
 else pass("Search result count explains Enter/Shift+Enter navigation when matches exist.");
+
+
+if (!spatialIndexSource.includes("function cycleIndex(currentIndex, itemCount, reverse)") ||
+    !searchNavigatorFunction.includes("NolaneSpatialIndex.cycleIndex") ||
+    !searchNavigatorFunction.includes("if (searchResultIndex < 0) return;")) fail("Search result navigation must use a tested cyclic index policy for forward, reverse, wrap and empty cases.");
+else pass("Search result cycling uses the tested shared forward/reverse index policy.");
