@@ -1908,9 +1908,12 @@
     if (!node) return;
 
     const rect = canvas.getBoundingClientRect();
-    view.scale = clamp(Math.max(view.scale, 0.6), MIN_SCALE, MAX_SCALE);
-    view.x = rect.width / 2 - (node.x + node.w / 2) * view.scale;
-    view.y = rect.height / 2 - (node.y + node.h / 2) * view.scale;
+    const scale = clamp(Math.max(view.scale, 0.6), MIN_SCALE, MAX_SCALE);
+    view = normalizeCanvasView({
+      scale,
+      x: rect.width / 2 - (node.x + node.w / 2) * scale,
+      y: rect.height / 2 - (node.y + node.h / 2) * scale
+    });
     selectNode(node.id);
     applyView();
     toast("Match " + (searchResultIndex + 1) + " of " + searchResultIds.length + ": " + node.title);
