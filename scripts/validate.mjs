@@ -750,3 +750,23 @@ if (!minimapFunction.includes("minimapGeometryDirty") ||
     !minimapFunction.includes("if (minimapGeometryDirty || !minimapGeometryCache)") ||
     !js.includes("updateMinimap(true)")) fail("The minimap must cache static item geometry and redraw markers only after geometry changes.");
 else pass("Minimap item markers are cached; camera frames update only the viewport rectangle.");
+
+
+const nativeWorkingSetFunction = js.slice(js.indexOf("function scheduleNativeSurfaceSync"), js.indexOf("function handleNativeHostMessage"));
+if (!nativeWorkingSetFunction.includes("spatialIndex.query(currentCanvasWorldBounds(0))") ||
+    !nativeWorkingSetFunction.includes("nativeMaxVisibleSurfaces") ||
+    !nativeWorkingSetFunction.includes("message.workspaceIds = nodes.filter(canUseNativeSurface).map((node) => node.id)") ||
+    !nativeWorkingSetFunction.includes("if (sendNativeBridgeMessage(message) && nativeWorkspaceIdsDirty)") ||
+    nativeWorkingSetFunction.includes("for (const node of nodes)")) fail("Native per-frame synchronization must be bounded to visible viewport candidates and send complete workspace membership only after mutations or a new handshake.");
+else pass("Native sync sends only the top visible viewport working set; complete website-card membership is sent separately and only when dirty.");
+
+if (!nativeHost.includes("UpdateWorkspaceSurfaceIds(root)") ||
+    !nativeHost.includes("_knownWorkspaceSurfaceIds") ||
+    !nativeHost.includes("ids.GetArrayLength() > 2000") ||
+    !nativeHost.includes("Take(MaxVisibleSurfaces)") ||
+    !nativeHost.includes("!present.Contains(surface.Id)") ||
+    !nativeHost.includes("!known.Contains(surface.Id)")) fail("Windows host must distinguish deleted workspace cards from off-screen cached cards and enforce its visible working-set budget.");
+else pass("Windows host reconciles deleted IDs separately, hides off-screen surfaces, and caps parsed descriptors at its adaptive renderer budget.");
+
+if (!nativeHost.includes("count > 24000")) fail("Native browser profile usage must allow up to 12 spaces × 2,000 cards.");
+else pass("Native profile usage validation covers the 24,000-card upper bound across all local spaces.");
