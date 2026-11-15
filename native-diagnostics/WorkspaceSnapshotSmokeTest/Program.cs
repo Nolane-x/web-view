@@ -78,9 +78,9 @@ Check(!Commit(receiver, 4, out var repeated) && repeated is null,
 // Invalid and duplicate IDs fail closed.
 Check(Begin(receiver, "{\"revision\":5,\"workspaceIdCount\":2,\"profileCount\":0,\"chunkCount\":1}"),
     "The receiver rejected a valid test envelope.");
-Check(!AddChunk(receiver, "{\"revision\":4,\"index\":0,\"workspaceIds\":[\"same\",\"same\"],\"profileUsage\":[]}"),
+Check(!AddChunk(receiver, "{\"revision\":5,\"index\":0,\"workspaceIds\":[\"same\",\"same\"],\"profileUsage\":[]}"),
     "The receiver accepted duplicate workspace IDs.");
-Check(!Commit(receiver, 4, out var duplicate) && duplicate is null,
+Check(!Commit(receiver, 5, out var duplicate) && duplicate is null,
     "The receiver committed a snapshot with duplicate IDs.");
 
 Check(Begin(receiver, "{\"revision\":6,\"workspaceIdCount\":1,\"profileCount\":0,\"chunkCount\":1}"),
