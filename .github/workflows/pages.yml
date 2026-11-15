@@ -29,10 +29,6 @@ jobs:
           node --check native-bridge.js
           node --check workspace-storage.js
           node --check spatial-index.js
-          node --check extension/background.js
-          node --check extension/compatibility.js
-          node --check extension/content.js
-          node --check extension/popup.js
           node --test tests/*.test.mjs
           node scripts/validate.mjs
 
@@ -46,13 +42,11 @@ jobs:
           test -s manifest.webmanifest
           test -s sw.js
           node -e "JSON.parse(require('fs').readFileSync('manifest.webmanifest', 'utf8'))"
-          node -e "JSON.parse(require('fs').readFileSync('extension/manifest.json', 'utf8'))"
 
       - name: Assemble site artifact
         run: |
-          mkdir -p _site/downloads
+          mkdir -p _site
           cp index.html styles.css native-bridge.js workspace-storage.js spatial-index.js app.js manifest.webmanifest sw.js icon.svg _site/
-          zip -rq _site/downloads/nolane-browser-companion-0.2.13.zip extension/
           touch _site/.nojekyll
 
       - name: Upload Pages artifact

@@ -3,7 +3,13 @@
 
   function sanitizeNode(node) {
     if (!node || typeof node !== "object" || Array.isArray(node)) return node;
-    const { transientUrl, ...persistedNode } = node;
+    const {
+      transientUrl,
+      browserTabId,
+      browserWindowId,
+      browserSessionId,
+      ...persistedNode
+    } = node;
     return persistedNode;
   }
 

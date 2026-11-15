@@ -12,6 +12,18 @@ const css = read("styles.css");
 const manifest = JSON.parse(read("manifest.webmanifest"));
 const sw = read("sw.js");
 const workspaceStorage = read("workspace-storage.js");
+
+const releaseWorkflow = read(".github/workflows/pages.yml");
+const nativeOnlySource = js + "\\n" + read("README.md") + "\\n" + read("docs/ARCHITECTURE.md") + "\\n" + releaseWorkflow;
+const retiredMarkers = ["nolane-companion", "Browser Companion", "Chrome Companion", "Live Chrome Surface", "chrome.tabCapture", "chrome.debugger", "browserTabId", "browserWindowId", "browserSessionId", "extension/"];
+const retiredReferences = retiredMarkers.filter((marker) => nativeOnlySource.toLowerCase().includes(marker.toLowerCase()));
+if (retiredReferences.length || fs.existsSync(path.join(root, "extension")) || fs.existsSync(path.join(root, "tests/background.test.mjs"))) {
+  fail("Retired Chrome Companion/tab-capture code must be absent from app, documentation, CI and releases: " + retiredReferences.join(", "));
+} else {
+  pass("The source, CI and release surface is Windows-native only; old extension assets are absent.");
+}
+
+
 const nativeProfileUsageParser = read("desktop-host/ProfileUsageSnapshot.cs");
 const nativeProfileUsageSmoke = read("native-diagnostics/ProfileUsageSnapshotSmokeTest/Program.cs");
 const workspaceSnapshotReceiver = read("desktop-host/WorkspaceSnapshotReceiver.cs");
@@ -62,6 +74,7 @@ if (!/clean\.embedMode = node\.embedMode === "compat" \? "compat" : "safe"/.test
 else pass("Website preview mode persists safely through workspace normalization.");
 
 if (!workspaceStorage.includes("sanitizeNodes") || !workspaceStorage.includes("sanitizeSpaces") ||
+    !workspaceStorage.includes("browserTabId") || !workspaceStorage.includes("browserWindowId") || !workspaceStorage.includes("browserSessionId") ||
     !js.includes("window.NolaneWorkspaceStorage.sanitizeNodes(nodes)") ||
     !js.includes("window.NolaneWorkspaceStorage.sanitizeNodes(space.nodes)") ||
     !html.includes('<script src="./workspace-storage.js" defer></script>') ||
@@ -89,144 +102,6 @@ if (!html.includes('<script src="./native-bridge.js" defer></script>') ||
 else pass("Native bridge contract loads before the workspace and its control icons exist.");
 if (!html.includes("Windows background bridge") || !html.includes("No Chrome extension or browser debugger permission is required")) fail("Website onboarding must describe the Windows background bridge as the primary integration.");
 else pass("Website onboarding presents the Windows background bridge rather than extension installation.");
-
-const extensionManifest = JSON.parse(read("extension/manifest.json"));
-const extensionBridge = read("extension/content.js");
-const extensionPopupHTML = read("extension/popup.html");
-if (!extensionManifest.version || !extensionBridge.includes('const PROFILE_VERSION = "' + extensionManifest.version + '";') ||
-    !extensionPopupHTML.includes('<span class="version">' + extensionManifest.version + '</span>')) fail("Manifest, content bridge and popup versions must match exactly.");
-else pass("Manifest, content bridge and popup versions are synchronized.");
-if (!extensionManifest.host_permissions?.includes("https://nolane-x.github.io/*")) fail("Workspace URL discovery needs a narrowly scoped Nolane host permission.");
-else pass("Workspace URL discovery has only the Nolane host permission; broad tab import remains optional.");
-if (extensionManifest.version !== "0.2.13") fail("Browser Companion release metadata must be synchronized at version 0.2.13.");
-else pass("Browser Companion release metadata is synchronized at 0.2.13.");
-for (const file of ["extension/background.js", "extension/compatibility.js", "extension/content.js", "extension/popup.html", "extension/popup.css", "extension/popup.js", "extension/README.md"]) {
-  if (!fs.existsSync(path.join(root, file))) fail("Browser Companion asset missing: " + file);
-}
-if (extensionManifest.manifest_version !== 3 || !extensionManifest.permissions?.includes("activeTab")) fail("Browser Companion must be MV3 and request activeTab for user-invoked capture.");
-else pass("Browser Companion uses Manifest V3 and user-invoked activeTab access.");
-
-const requiredPermissions = ["storage", "activeTab", "tabCapture", "debugger"];
-if (requiredPermissions.some((permission) => !extensionManifest.permissions?.includes(permission))) fail("Live Chrome Surface permissions are incomplete.");
-else pass("Live capture and CDP input permissions are declared.");
-if (!extensionManifest.optional_permissions?.includes("tabs")) fail("Tab-list scanning must remain optional.");
-else pass("Tab-list scanning remains an optional permission.");
-
-const allPermissions = [...(extensionManifest.permissions || []), ...(extensionManifest.optional_permissions || [])];
-if (allPermissions.some((permission) => ["cookies", "history", "webRequest", "scripting"].includes(permission))) fail("Companion requests a permission outside its documented capture/debug path.");
-else pass("Companion does not request cookies, history, webRequest or generic scripting access.");
-
-if (!extensionManifest.content_scripts?.some((entry) => entry.matches?.includes("https://nolane-x.github.io/web-view/*"))) fail("Content script must be restricted to the published workspace origin.");
-else pass("Content script is restricted to the workspace origin.");
-
-if (!fs.existsSync(path.join(root, "tests/background.test.mjs"))) fail("Live Chrome Surface controller tests are missing.");
-else pass("Live Chrome Surface controller tests are present.");
-
-const background = read("extension/background.js");
-const compatibilityEngine = read("extension/compatibility.js");
-const bridge = read("extension/content.js");
-const popup = read("extension/popup.js");
-const popupHTML = read("extension/popup.html");
-if (!/chrome\.tabCapture\.getMediaStreamId/.test(background) || !/consumerTabId:\s*workspaceTabId/.test(background)) fail("Capture stream must be bound to the Nolane consumer tab.");
-else pass("Tab capture stream is bound to the designated workspace tab.");
-if (!/chrome\.debugger\.attach/.test(background) || !/Input\.dispatchMouseEvent/.test(background) || !/Input\.dispatchKeyEvent/.test(background)) fail("CDP input forwarding is incomplete.");
-else pass("CDP input uses fixed mouse and keyboard methods.");
-if (!/Page\.frameNavigated/.test(background) || !/expectedOrigin/.test(background)) fail("Live sessions must stop when the source origin changes.");
-else pass("Live sessions are bound to the source origin.");
-if (!/Page\.frameResized/.test(background) || !/NOLANE_LIVE_VIEWPORT_UPDATE/.test(bridge) || !/LIVE_VIEWPORT_UPDATE/.test(js)) fail("Live viewport resize synchronization is incomplete.");
-else pass("Chrome viewport resizing updates the live canvas coordinate system.");
-if (!/manualCardMatch/.test(js) || !/existing\.browserTabId = tab\.id/.test(js)) fail("Manual website cards cannot be rebound to their matching Chrome tab.");
-else pass("Existing manual website cards can attach to the live Chrome tab without duplicates.");
-if (!/NOLANE_REGISTER_WORKSPACE/.test(bridge) || !/NOLANE_LIVE_INPUT/.test(bridge) || !/LIVE_INPUT_RESULT/.test(bridge)) fail("Workspace content-script registration/input bridge or input acknowledgement is incomplete.");
-else pass("Content script registers the workspace and forwards input.");
-if (!/NOLANE_WORKSPACE_PING/.test(bridge) || !/getWorkspaceConnectionStatus/.test(background) || !/chrome\.tabs\.query\(\{ url: WORKSPACE_MATCH \}\)/.test(background)) fail("Workspace reconnection must discover open tabs and verify the content-script bridge.");
-else pass("Workspace discovery verifies an open Nolane tab and reconnects after extension reload.");
-if (!/chrome\.storage\.local\.set\(\{ \[WORKSPACE_KEY\]/.test(background) || !/NOLANE_GET_WORKSPACE_STATUS/.test(background)) fail("Workspace tab identity must survive extension storage.session resets and be checked on demand.");
-else pass("Workspace registration is persisted locally and exposed as a verified connection state.");
-if (!/refresh-workspace/.test(background) || !/open-workspace/.test(background) || !/workspace\.state !== "connected"/.test(background)) fail("Compatibility analysis must not recommend capture before the workspace bridge is ready.");
-else pass("Compatibility recovery opens or reconnects Nolane before starting capture.");
-if (!/LIVE_SURFACE_ACK/.test(js) || !/pendingLiveStarts/.test(background)) fail("Live capture start must wait for workspace stream acknowledgement.");
-else pass("Live capture start waits for the workspace stream acknowledgement.");
-if (!/waitForLiveVideoFrame/.test(js) || !/requestVideoFrameCallback/.test(js)) fail("Live capture must verify a decoded video frame before acknowledging success.");
-else pass("Live capture verifies a decoded frame before acknowledging success.");
-if (!/interactionReason/.test(background) || !/debuggerAttached/.test(background) || !/interactive/.test(background) || !/tabCapture\.getMediaStreamId/.test(background)) fail("Debugger failure must not prevent local tab video capture.");
-else pass("CDP is optional; tab video capture can continue in explicit view-only mode.");
-if (!/LIVE VIDEO · VIEW ONLY/.test(js) || !/live-surface-readonly/.test(js)) fail("Workspace must clearly render video-only surfaces as read-only.");
-else pass("View-only surfaces are visibly distinguished from interactive surfaces.");
-if (!/stoppedLiveSurfaceIds/.test(js) || !/stoppedLiveSurfaceIds/.test(background) || !/pendingStart\.reject/.test(background)) fail("Cross-origin stops must cancel pending startup and prevent a late stream from mounting.");
-else pass("Cross-origin navigation also cancels in-flight surface startup.");
-const captureIndex = background.indexOf("chrome.tabCapture.getMediaStreamId");
-const ackIndex = background.indexOf("acknowledgement = new Promise");
-if (captureIndex < 0 || ackIndex < 0 || captureIndex > ackIndex) fail("The acknowledgement timer must start only after tabCapture returns a stream token.");
-else pass("The acknowledgement timer starts only after stream-token creation.");
-if (!/MAX_LIVE_INPUT_QUEUE/.test(background) || !/enqueueLiveInput/.test(background) || !/mouseMoved/.test(background)) fail("Live input must use a bounded, ordered queue with pointer-move coalescing.");
-else pass("Live input uses a bounded queue and preserves discrete input order.");
-if (!/tail\.waiters\.forEach\(\(pending\) => pending\.resolve\(\{ ok: true, dropped: true \}\)\)/.test(background) || !/tail\.waiters = \[waiter\]/.test(background)) fail("Superseded pointer moves must release their waiters instead of accumulating during debugger backpressure.");
-else pass("Superseded pointer moves release stale waiters immediately.");
-if (!/chrome\.tabs\.onUpdated/.test(background) || !/removeSessionsForWorkspaceTab/.test(background) || !/movedToAnotherOrigin/.test(background)) fail("Workspace lifecycle and source-origin changes must release live sessions without depending on CDP.");
-else pass("Workspace lifecycle and source-origin changes release live sessions without depending on CDP.");
-if (!/async function refreshSessionViewport/.test(background) || !/chrome\.windows\.onBoundsChanged/.test(background) || !/viewportSource/.test(background)) fail("Viewport fallback must keep coordinates synchronized when optional CDP Page events are unavailable.");
-else pass("Viewport coordinates have a tab-size fallback and a Chrome window-resize refresh path.");
-if (!/Page\.enable/.test(background) || !/Input\.dispatchMouseEvent/.test(background) || !/interactive = true/.test(background)) fail("Input attachment must remain independent from optional Page-domain inspection.");
-else pass("CDP Input remains active when optional Page-domain inspection fails.");
-const focusIndex = background.indexOf("chrome.windows.update(workspaceTab.windowId, { focused: true })");
-const streamIndex = background.indexOf("chrome.tabCapture.getMediaStreamId");
-if (focusIndex < 0 || streamIndex < 0 || focusIndex > streamIndex) fail("The short-lived stream token must be minted only after the consumer tab is focused.");
-else pass("The stream token is minted immediately after consumer focus to reduce expiry risk.");
-if (!/audio:\s*\{\s*mandatory:\s*\{\s*chromeMediaSource:\s*"tab"/.test(js) || !/video:\s*\{\s*mandatory:\s*\{\s*chromeMediaSource:\s*"tab"/.test(js) || !/createMediaStreamSource/.test(js) || !/toggleLiveAudio/.test(js)) fail("Live surface audio/video tab-capture constraints or local mute controls are incomplete.");
-else pass("Live surface audio is routed locally with explicit mute control.");
-if (!/NOLANE_START_LIVE_SURFACE/.test(popup) || !/Stream this tab to Nolane/.test(popupHTML)) fail("Popup must expose explicit active-tab capture.");
-else pass("Popup exposes explicit current-tab capture.");
-if (!/workspaceStatusPanel/.test(popupHTML) || !/workspaceStatusTitle/.test(popup) || !/NOLANE_GET_WORKSPACE_STATUS/.test(popup)) fail("Popup must show verified workspace readiness before enabling live capture.");
-else pass("Popup displays an explicit verified workspace connection state.");
-if (!/getWorkspaceConnectionStatus/.test(background) || /Open Nolane Infinite in another Chrome tab first, then refresh it/.test(background)) fail("Legacy transient-only workspace registration must not remain in the live capture path.");
-else pass("Live capture no longer depends on a storage.session-only workspace tab ID.");
-if (!/keepSourceVisible/.test(popup) || !/chrome\.windows\.create/.test(background) || !/focused:\s*true/.test(background)) fail("Keep-source-visible compatibility mode must move Nolane into a separate Chrome window.");
-else pass("Keep-source-visible mode preserves the source tab in its original window.");
-if (!/chrome\.tabCapture\.getCapturedTabs/.test(background) || !/already reports an active capture/.test(background)) fail("Existing tab capture must be detected before attempting a duplicate stream.");
-else pass("Existing tab captures are detected before stream setup.");
-if (!/NOLANE_GET_DIAGNOSTICS/.test(background) || !/diagnosticsButton/.test(popup)) fail("The companion compatibility diagnostics action is incomplete.");
-else pass("The companion exposes a local compatibility diagnostics report.");
-if (!/importScripts\("compatibility\.js"\)/.test(background) || !/root\.NolaneCompatibility/.test(compatibilityEngine)) fail("The service worker does not load the local Website Compatibility Engine.");
-else pass("The service worker loads the local Website Compatibility Engine.");
-if (!/NOLANE_DIAGNOSE_TAB/.test(background) || !/diagnoseButton/.test(popup) || !/renderCompatibilityResult/.test(popup)) fail("Current-tab compatibility analysis is incomplete.");
-else pass("The Companion can analyze the active website locally.");
-if (!/COMPATIBILITY_PROFILES_KEY/.test(background) || !/recordCompatibilityObservation/.test(background) || !/slice\(0, 40\)/.test(background)) fail("Origin-only compatibility history is not bounded and persisted locally.");
-else pass("Compatibility history is stored locally by origin and bounded to 40 sites.");
-if (!/CDP_FOREIGN_EXTENSION_FRAME/.test(compatibilityEngine) || !/CAPTURE_ENDED/.test(compatibilityEngine) || !/VIDEO_NO_NEW_FRAMES/.test(compatibilityEngine)) fail("Compatibility engine is missing major Chrome capture failure diagnoses.");
-else pass("Compatibility engine recognizes Chrome debugger, capture-track and no-frame failure families.");
-if (!/assessSession/.test(compatibilityEngine) || !/restart-capture/.test(compatibilityEngine) || !/refresh-video/.test(compatibilityEngine)) fail("Compatibility recovery recommendations do not distinguish ended tracks from live tracks.");
-else pass("Compatibility engine recommends refresh only for a live track and a new capture for ended tracks.");
-if (!/NOLANE_APPLY_COMPATIBILITY_ACTION/.test(background) || !/message\.action !== expectedAction/.test(background) || !/sender\.url\.startsWith\(popupUrl\)/.test(background)) fail("Compatibility remediation must be popup-only and revalidated against current session state.");
-else pass("Compatibility remediation is restricted to the Companion popup and rejects stale actions.");
-if (!/NOLANE_LIVE_SURFACE_REFRESH/.test(bridge) || !/LIVE_SURFACE_REFRESH/.test(js) || !/refreshLiveVideo\(entry\[0\]/.test(js)) fail("Refresh remediation is not relayed to the matching live surface.");
-else pass("Video refresh commands are relayed to the matching live surface only.");
-if (!/LIVE_SURFACE_HEALTH/.test(background) || !/NOLANE_LIVE_SURFACE_HEALTH/.test(bridge) || !/normalizeHealthState/.test(background)) fail("Continuous live-surface health telemetry is incomplete.");
-else pass("Live video health transitions are authenticated and persisted locally.");
-if (!/requestVideoFrameCallback\(onFrame\)/.test(js) || !/Date\.now\(\) - monitor\.lastFrameAt > 12000/.test(js) || !/stopLiveFrameMonitor/.test(js)) fail("Long-running live video watchdog or teardown is incomplete.");
-else pass("Long-running decoded-frame watchdog detects stalls and cleans up safely.");
-if (!/data-action="refresh-live"/.test(js) || !/async function refreshLiveVideo/.test(js) || !/autoRecoveryAttempted/.test(js) || !/recoveryAttempts\.length >= 3/.test(js)) fail("Bounded live-video soft recovery and manual refresh are incomplete.");
-else pass("Live video has one automatic soft recovery and a bounded manual refresh action.");
-if (!/monitor\.video = null/.test(js) || !/bindLiveFrameMonitor\(nodeId, surface, video\)/.test(js)) fail("The frame watchdog must be re-armed after video recovery.");
-else pass("Frame monitoring is re-armed after a successful soft recovery.");
-if (!/recovering/.test(background) || !/recovering/.test(js)) fail("The recovering live-surface state is not supported across the bridge.");
-else pass("The recovering state is supported by the UI and service worker.");
-if (!/chrome\.tabCapture\.onStatusChanged/.test(background) || !/info\.status === "pending"/.test(background) || !/info\.status === "active"/.test(background)) fail("Chrome tab-capture lifecycle states are not tracked.");
-else pass("Tab capture pending/active/stopped/error lifecycle is tracked.");
-if (!/normalizeVideoInfo/.test(background) || !/presentedFrames/.test(background) || !/requestVideoFrameCallback/.test(js) || !/presentedFrames/.test(js)) fail("Decoded-frame metrics must be attached to the compatibility diagnostics.");
-else pass("The compatibility report includes decoded-frame and track metrics.");
-if (!/sourceWindow\.width >= 1120/.test(background) || !/createData\.width = workspaceWidth/.test(background)) fail("Wide windows must place the source and workspace surfaces side by side.");
-else pass("Wide windows receive an automatic side-by-side workspace placement.");
-
-if (!/sanitizeTabUrl/.test(popup) || !/url\.hash = ""/.test(popup)) fail("Tab URL sanitizer is missing.");
-else pass("Tab URL sanitizer removes fragments and credential-like query parameters.");
-
-if (!extensionManifest.permissions?.includes("storage") || !/crypto\.randomUUID/.test(background)) fail("Browser Companion profile identity is not stored locally.");
-else pass("Browser Companion maintains a local per-profile identity.");
-
-if (!/message\.profileId !== profileId/.test(background) || !/browserSessionId/.test(read("app.js"))) fail("Browser Companion profile identity is not verified for original-tab focus.");
-else pass("Original-tab focus remains tied to its browser profile.");
-
 
 const nativeHost = read("desktop-host/MainWindow.xaml.cs");
 if (!nativeHost.includes("using Microsoft.Web.WebView2.Core;") || nativeHost.includes("using Microsoft.WebView2.Core;")) fail("Native host must import the actual WebView2 Core namespace.");
@@ -445,15 +320,15 @@ else pass("Successful main-branch builds publish a stable, rolling Windows host 
 const filterFunction = js.slice(js.indexOf("function updateViewFilter"), js.indexOf("function selectNode"));
 const selectionFunction = js.slice(js.indexOf("function selectNode"), js.indexOf("function handleNodeAction"));
 const nativeSyncFunction = js.slice(js.indexOf("function scheduleNativeSurfaceSync"), js.indexOf("function handleNativeHostMessage"));
-const nativeEligibility = js.slice(js.indexOf("function isChromeOwnedNode"), js.indexOf("function postNativeSurfaceCommand"));
+const nativeEligibility = js.slice(js.indexOf("function canUseNativeSurface"), js.indexOf("function sendNativePanelCommand"));
 if (!nativeSyncFunction.includes("canUseNativeSurface(node)") ||
-    !nativeEligibility.includes("bridgeConnected && node && node.browserTabId !== undefined") ||
-    !nativeEligibility.includes("node.browserSessionId === bridgeSessionId") ||
-    !nativeEligibility.includes("!liveSurfaces.has(node.id)") ||
-    !nativeSyncFunction.includes("clipX:") || !nativeSyncFunction.includes("clipWidth:") ||
-    !js.includes("function clearUnavailableChromeTabBindings") ||
-    !js.includes("clearUnavailableChromeTabBindings();")) fail("Native WebView2 must preserve current Chrome sessions and convert stale imported tab IDs.");
-else pass("Native WebView2 surfaces preserve Chrome-owned tabs and active Chrome live streams.");
+    !nativeEligibility.includes('nativeHostAvailable && node && node.type === "website"') ||
+    nativeEligibility.includes("browserTabId") || nativeEligibility.includes("liveSurfaces") ||
+    !nativeSyncFunction.includes("clipX:") || !nativeSyncFunction.includes("clipWidth:")) {
+  fail("Every website card must become Windows-native when the background host is connected; Chrome tab ownership must not gate native surfaces.");
+} else {
+  pass("Windows WebView2 owns every eligible website card; Chrome tab-capture ownership is absent.");
+}
 if (!js.includes("scheduleNativeSurfaceSync") || !js.includes("sendNativeBridgeMessage") ||
     !js.includes("postNativeSurfaceCommand") || !js.includes("native-back") ||
     !js.includes("native-forward") || !js.includes("native-mute") ||
@@ -537,11 +412,11 @@ if (!js.includes("screenLeft") || !js.includes("screenTop") || !js.includes("dev
     !nativeBridgeTests.includes("viewport metadata is bounded")) fail("Viewport screen geometry must be validated before native overlay positioning.");
 else pass("Workspace sends bounded screen viewport geometry for native overlay positioning.");
 
-if (html.includes("Download Browser Companion 0.2.13") ||
+if (html.includes("Download Browser Companion") ||
     html.includes("Stream this tab to Nolane") ||
     html.includes("Chrome Companion →") ||
-    html.includes("Companion not detected")) fail("The primary website experience must not require or promote the Chrome extension.");
-else pass("Primary website onboarding no longer promotes or requires the Chrome Companion extension.");
+    html.includes("Companion not detected")) fail("The primary website experience must not ship or promote a Chrome Companion flow.");
+else pass("The website onboarding presents the Windows background bridge as the only in-canvas browser runtime.");
 
 if (!nativeHost.includes("ExecutePanelCommand") ||
     !nativeHost.includes("OpenProfilesManagerAsync") ||
@@ -708,10 +583,14 @@ if (!/new window\.NolaneSpatialIndex\.SpatialIndex\(640\)/.test(js) ||
 else pass("Canvas virtualization queries spatial cells and updates geometry on drag/resize.");
 if (!/const MAX_NODES = 2000/.test(js) || /items\.length >= 80/.test(js)) fail("Node cap or old native insertion-order truncation remains.");
 else pass("Each local space supports up to 2,000 items without truncating native descriptors at 80.");
-if (!/function syncCanvasNodeElements\(forceRefresh\)/.test(js) ||
-    !/liveSurfaces\.has\(node\.id\)/.test(js) || !/node\.id === selectedId/.test(js) ||
-    /world\.replaceChildren\(\)/.test(js.slice(js.indexOf("function renderNodes()"), js.indexOf("function availableBrowserProfiles()")))) fail("Virtualization must preserve selected/live cards and avoid full world rebuilds.");
-else pass("Off-screen cards are virtualized while selected and live-stream cards stay mounted.");
+if (!/function syncCanvasNodeElements\\(forceRefresh\\)/.test(js) ||
+    !/spatialIndex\\.get\\(selectedId\\)/.test(js) ||
+    /liveSurfaces|LIVE_SURFACE|live-surface-video/.test(js) ||
+    /world\\.replaceChildren\\(\\)/.test(js.slice(js.indexOf("function renderNodes()"), js.indexOf("function invalidateWorkspaceDerivedCaches()")))) {
+  fail("Virtualization must preserve the selected card without retaining the removed Chrome live-stream DOM path or rebuilding the full world.");
+} else {
+  pass("Off-screen cards are virtualized, selected cards stay mounted, and Windows WebView2 rendering is independent of page DOM.");
+}
 if (!html.includes('id="minimapCanvas"') || !/function drawMinimap\(\)/.test(js) ||
     /createElement\("span"\)/.test(js.slice(js.indexOf("function updateMinimap()"), js.indexOf("function toast(message")))) fail("Minimap must draw to Canvas instead of creating a DOM marker for every node.");
 else pass("Minimap markers are drawn on one high-DPI Canvas.");
@@ -757,15 +636,13 @@ else pass("Native surface sync no longer recomputes profile usage on each camera
 
 
 const virtualizerFunction = js.slice(js.indexOf("function syncCanvasNodeElements"), js.indexOf("function scheduleNativeSurfaceSync"));
-const liveStartFunction = js.slice(js.indexOf("function startLiveSurface"), js.indexOf("function stopLiveSurfaceById"));
-if (!virtualizerFunction.includes('element?.querySelector(".live-surface-video")') ||
-    !virtualizerFunction.includes("liveVideoElement.srcObject === liveSurface.stream") ||
-    !virtualizerFunction.includes("preserveLiveVideoDom") ||
-    !liveStartFunction.includes("liveSurfaces.set(node.id") ||
-    !liveStartFunction.includes("renderNodes()") ||
-    !liveStartFunction.includes('$(".live-surface-video", nodeElement)')) fail("The first live-stream render must create its video element, while later virtualization refreshes preserve the mounted video.");
-else pass("Live Chrome streams create their first video element and keep that element attached across later virtualizer refreshes.");
-
+if (!virtualizerFunction.includes("spatialIndex.get(selectedId)") ||
+    /liveSurfaces|LIVE_SURFACE|live-surface-video/.test(virtualizerFunction) ||
+    /postLiveInput|startLiveSurface|refreshLiveVideo|chromeMediaSource/.test(js)) {
+  fail("The workspace must not retain Chrome tab capture, live-video pinning or CDP input code after Windows became the sole browser runtime.");
+} else {
+  pass("The canvas renderer uses the Windows-native runtime; retired Chrome capture/input code is absent.");
+}
 
 if (nativeSyncSource.includes("syncActiveSpace()") ||
     !saveFunction.includes("syncActiveSpace()")) fail("Sanitized active-space snapshots must be refreshed on workspace mutations, not allocated on every native camera frame.");
@@ -783,8 +660,8 @@ else pass("Search text is normalized once per node and reused by viewport and na
 
 if (!spatialIndexSource.includes("get(id)") ||
     !virtualizerFunction.includes("spatialIndex.get(selectedId)") ||
-    !virtualizerFunction.includes("spatialIndex.get(id)")) fail("Pinned selected/live cards must be retrieved by spatial-index key rather than scanning the full node array.");
-else pass("Selected and active live cards are pinned through constant-time spatial-index lookups.");
+    virtualizerFunction.includes("liveSurfaces")) fail("Selected card must be pinned by spatial-index key without retaining live-stream state.");
+else pass("The selected card is pinned through a constant-time spatial-index lookup.");
 
 const minimapFunction = js.slice(js.indexOf("function updateMinimap"), js.indexOf("function toast(message"));
 if (!minimapFunction.includes("minimapGeometryDirty") ||
@@ -823,12 +700,14 @@ else pass("Website URLs are capped at 4,096 characters before entering native br
 
 
 const renderNodesFunction = js.slice(js.indexOf("function renderNodes"), js.indexOf("function invalidateWorkspaceDerivedCaches"));
-const liveStopFunction = js.slice(js.indexOf("function stopLiveSurfaceById"), js.indexOf("function stopAllLiveSurfaces"));
+const deleteNodeFunction = js.slice(js.indexOf("function deleteNode"), js.indexOf("function startNodeDrag"));
 if (!renderNodesFunction.includes("refreshNativeWorkspaceIdsSnapshot()") ||
-    !liveStopFunction.includes("if (render) renderNodes()") ||
-    !js.includes("function refreshNativeWorkspaceIdsSnapshot()")) fail("Native workspace membership must refresh when a live surface stops and the card returns to native WebView2 eligibility.");
-else pass("Live Surface teardown refreshes native membership even when no workspace persistence event occurs.");
-
+    !deleteNodeFunction.includes("renderNodes()") ||
+    !js.includes("function refreshNativeWorkspaceIdsSnapshot()")) {
+  fail("Deleting a workspace card must refresh the native host membership snapshot so its WebView2 surface is released.");
+} else {
+  pass("Card deletion refreshes the Windows host's authoritative workspace membership.");
+}
 
 const virtualizedSearchFunction = js.slice(js.indexOf("function syncCanvasNodeElements"), js.indexOf("function scheduleNativeSurfaceSync"));
 const searchFilterFunction = js.slice(js.indexOf("function updateViewFilter"), js.indexOf("function selectNode"));
@@ -1053,10 +932,6 @@ const worldCoordinateFunction = spatialIndexSource.slice(
 const normalizedNodeFunction = js.slice(js.indexOf("function validateNode"), js.indexOf("function workspaceSnapshot"));
 const normalizedPointerMoveFunction = js.slice(js.indexOf("function pointerMove"), js.indexOf("function pointerUp"));
 const focusSearchFunction = js.slice(js.indexOf("function focusSearchResult"), js.indexOf("function selectNode"));
-const companionImportFunction = js.slice(
-  js.indexOf("function addBrowserTabsToWorkspace"),
-  js.indexOf("function handleCompanionMessage")
-);
 if (!worldCoordinateFunction.includes("function normalizeWorldCoordinate") ||
     !worldCoordinateFunction.includes("Number.MAX_SAFE_INTEGER") ||
     !worldCoordinateFunction.includes("function normalizeViewState") ||
@@ -1068,8 +943,9 @@ if (!worldCoordinateFunction.includes("function normalizeWorldCoordinate") ||
     !normalizedPointerMoveFunction.includes("view = normalizeCanvasView(") ||
     !focusSearchFunction.includes("view = normalizeCanvasView(") ||
     !focusSearchFunction.includes("scale,") ||
-    !companionImportFunction.includes("normalizeCanvasCoordinate(Math.round(center.x") ||
-    !companionImportFunction.includes("normalizeCanvasCoordinate(Math.round(center.y") ||
+    normalizedNodeFunction.includes("browserTabId") ||
+    normalizedNodeFunction.includes("browserWindowId") ||
+    normalizedNodeFunction.includes("browserSessionId") ||
     !spatialIndexTests.includes('test("world coordinates preserve large valid positions beyond the former 100,000-unit clamp"') ||
     !spatialIndexTests.includes('test("camera translations use the normalized scale-aware world-coordinate budget"')) {
   fail("World coordinates and camera translations must share tested finite bounds across import, restore and pointer interactions.");

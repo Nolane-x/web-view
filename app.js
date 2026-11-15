@@ -54,11 +54,7 @@
   let nativeBridgePermission = "unknown";
   let nativeBridgeReconnectTimer = 0;
   let nativeBridgeReconnectAttempts = 0;
-  let bridgeConnected = false;
-  let bridgeSessionId = "";
-  const liveSurfaces = new Map();
   const nativeSurfaceStates = new Map();
-  const stoppedLiveSurfaceIds = new Set();
   const spatialIndex = new window.NolaneSpatialIndex.SpatialIndex(640);
   const renderedNodeElements = new Map();
   let canvasRenderOrigin = { x: 0, y: 0 };
@@ -167,7 +163,6 @@
 
   function switchSpace(id) {
     if (id === activeSpaceId) return;
-    stopAllLiveSurfaces("Live surfaces stopped because you switched workspaces.");
     syncActiveSpace();
     const next = spaces.find((space) => space.id === id);
     if (!next) return;
@@ -219,7 +214,6 @@
     const space = spaces.find((item) => item.id === id);
     if (!space) return;
     if (!window.confirm('Delete "' + space.name + '" and all of its local items? This cannot be undone.')) return;
-    if (activeSpaceId === id) stopAllLiveSurfaces("Live surfaces stopped because their workspace was deleted.");
     syncActiveSpace();
     invalidateNativeProfileUsageCache();
     spaces = spaces.filter((item) => item.id !== id);
@@ -419,9 +413,6 @@
       clean.privateMode = node.privateMode === true;
       const browserProfile = window.NolaneNativeBridge?.normalizeProfileName(node.browserProfile);
       if (browserProfile) clean.browserProfile = browserProfile;
-      if (Number.isInteger(node.browserTabId) && node.browserTabId >= 0) clean.browserTabId = node.browserTabId;
-      if (Number.isInteger(node.browserWindowId) && node.browserWindowId >= 0) clean.browserWindowId = node.browserWindowId;
-      if (typeof node.browserSessionId === "string" && node.browserSessionId.length >= 20 && node.browserSessionId.length <= 80) clean.browserSessionId = node.browserSessionId;
     } else {
       clean.content = String(node.content || "").slice(0, 12000);
       clean.color = ["lavender", "mint", "peach", "blue"].includes(node.color) ? node.color : "lavender";
@@ -486,14 +477,8 @@
     scheduleNativeSurfaceSync();
   }
 
-  function isChromeOwnedNode(node) {
-    return !!(bridgeConnected && node && node.browserTabId !== undefined &&
-      node.browserSessionId === bridgeSessionId);
-  }
-
   function canUseNativeSurface(node) {
-    return !!(nativeHostAvailable && node && node.type === "website" &&
-      !isChromeOwnedNode(node) && !liveSurfaces.has(node.id));
+    return !!(nativeHostAvailable && node && node.type === "website");
   }
 
   function sendNativePanelCommand(panel) {
@@ -596,14 +581,9 @@
     for (const node of spatialIndex.query(currentCanvasWorldBounds(CANVAS_OVERSCAN_PX))) {
       if (matchesNodeFilters(node, query)) wanted.set(node.id, node);
     }
-    // Pin selected cards and active streams; do not detach a live video element on pan.
     if (selectedId) {
       const selectedNode = spatialIndex.get(selectedId);
       if (selectedNode) wanted.set(selectedNode.id, selectedNode);
-    }
-    for (const id of liveSurfaces.keys()) {
-      const liveNode = spatialIndex.get(id);
-      if (liveNode) wanted.set(liveNode.id, liveNode);
     }
     for (const [id, element] of renderedNodeElements) {
       if (wanted.has(id)) continue;
@@ -612,14 +592,7 @@
     }
     for (const node of wanted.values()) {
       let element = renderedNodeElements.get(node.id);
-      const liveSurface = liveSurfaces.get(node.id);
-      const liveVideoElement = element?.querySelector(".live-surface-video");
-      const preserveLiveVideoDom = !!liveSurface && !!liveVideoElement &&
-        liveVideoElement.srcObject === liveSurface.stream;
-      // The first render after a stream starts must create its video element.
-      // Subsequent renders keep that actual element attached to preserve playback.
-      const recreate = !element || (forceRefresh && !preserveLiveVideoDom);
-      if (recreate) {
+      if (!element || forceRefresh) {
         const replacement = createNodeElement(node);
         if (element) element.replaceWith(replacement);
         else world.appendChild(replacement);
@@ -778,7 +751,7 @@
       refreshNativeWorkspaceIdsSnapshot();
       nativeWorkspaceIdsDirty = true;
       nativeProfileUsageDirty = true;
-      setBridgeConnected(false, "");
+      updateBridgeStatus();
       if (!nativeHostReadyNotified) {
         nativeHostReadyNotified = true;
         toast("Nolane Windows Bridge connected. Website cards now use native browser surfaces.");
@@ -962,29 +935,9 @@
     $("#noteCount").textContent = nodes.filter((node) => node.type === "note").length;
   }
 
-  function clearUnavailableChromeTabBindings() {
-    if (!nativeHostAvailable) return 0;
-    let cleared = 0;
-    nodes.forEach((node) => {
-      if (node.browserTabId !== undefined &&
-          (!bridgeConnected || !node.browserSessionId || node.browserSessionId !== bridgeSessionId)) {
-        delete node.browserTabId;
-        delete node.browserWindowId;
-        delete node.browserSessionId;
-        cleared++;
-      }
-    });
-    if (cleared) {
-      scheduleSave();
-      toast("Converted " + cleared + " imported Chrome tab link(s) to native website cards. Sign in again in this WebView2 profile.", "info");
-    }
-    return cleared;
-  }
-
   function renderNodes() {
     invalidateWorkspaceDerivedCaches();
     invalidateNativeProfileUsageCache();
-    clearUnavailableChromeTabBindings();
     refreshNativeWorkspaceIdsSnapshot();
     spatialIndex.rebuild(nodes);
     updateCanvasRenderOrigin();
@@ -1066,10 +1019,10 @@
               availableBrowserProfiles().map((name) => '<option value="' + escapeHTML(name) + '"' + ((node.browserProfile || "").toLowerCase() === name.toLowerCase() ? " selected" : "") + '>' + escapeHTML(name) + '</option>').join("") +
               '<option value="__new__">+ New profile…</option>' +
             '</select>'
-          : '<span class="node-subtitle">' + escapeHTML(node.type === "website" ? ((node.browserTabId !== undefined ? "Chrome tab · " : "") + hostOf(node.url)) : "Personal note") + '</span>') +
+          : '<span class="node-subtitle">' + escapeHTML(node.type === "website" ? hostOf(node.url) : "Personal note") + '</span>') +
       '</span>' +
       '<span class="node-actions">' + nativeTools +
-        (node.type === "website" ? '<button class="node-action" data-action="open" title="' + (node.browserTabId !== undefined ? "Switch to existing Chrome tab" : "Open in browser") + '"><svg class="icon"><use href="#i-external"/></svg></button>' : '<button class="node-action" data-action="edit" title="Edit note"><svg class="icon"><use href="#i-sticky"/></svg></button>') +
+        (node.type === "website" ? '<button class="node-action" data-action="open" title="' + "Open in browser" + '"><svg class="icon"><use href="#i-external"/></svg></button>' : '<button class="node-action" data-action="edit" title="Edit note"><svg class="icon"><use href="#i-sticky"/></svg></button>') +
         '<button class="node-action" data-action="delete" title="Remove"><svg class="icon"><use href="#i-x"/></svg></button>' +
       '</span>';
     article.appendChild(header);
@@ -1136,20 +1089,15 @@
 
     const body = document.createElement("div");
     body.className = "node-body";
-    if (node.type === "website" && liveSurfaces.has(node.id)) {
-      body.appendChild(createLiveSurfaceElement(node, liveSurfaces.get(node.id)));
-    } else if (node.type === "website") {
-      const previewActions = node.browserTabId !== undefined
-        ? '<div class="preview-actions"><button class="mini-button" data-action="open"><svg class="icon"><use href="#i-external"/></svg> Focus source tab</button><button class="mini-button secondary" data-action="open-url">Open URL</button><button class="mini-button secondary" data-action="live-help">Stream help</button></div>'
-        : '<div class="preview-actions"><button class="mini-button" data-action="open"><svg class="icon"><use href="#i-external"/></svg> Open tab</button><button class="mini-button secondary" data-action="live-help">Create live surface</button></div>';
+    if (node.type === "website") {
       body.innerHTML =
         '<div class="web-preview">' +
           '<div class="preview-mark">' + escapeHTML(initials(hostOf(node.url))) + '</div>' +
           '<div class="preview-title">' + escapeHTML(node.title) + '</div>' +
           '<div class="preview-domain">' + escapeHTML(hostOf(node.url)) + '</div>' +
-          '<p class="preview-description">' + escapeHTML(node.description || "Open this website in Chrome, then stream its real tab into this card.") + '</p>' +
-          previewActions +
-          '<div class="embed-note">Live view uses the real Chrome tab; it does not rely on iframe embedding.</div>' +
+          '<p class="preview-description">' + escapeHTML(node.description || "Connect the Windows background bridge to open this website as a native browser surface.") + '</p>' +
+          '<div class="preview-actions"><button class="mini-button" data-action="open"><svg class="icon"><use href="#i-external"/></svg> Open in browser</button></div>' +
+          '<div class="embed-note">Native website rendering is provided by the Windows background bridge.</div>' +
         '</div>';
     } else {
       body.innerHTML =
@@ -1172,864 +1120,6 @@
     return article;
   }
 
-
-  function postLiveInput(surface, payload) {
-    window.postMessage({
-      source: "nolane-workspace",
-      type: "LIVE_INPUT",
-      surfaceId: surface.surfaceId,
-      browserSessionId: surface.browserSessionId,
-      ...payload
-    }, location.origin);
-  }
-
-  function createLiveSurfaceElement(node, surface) {
-    const root = document.createElement("div");
-    root.className = "live-surface";
-    const toolbar = document.createElement("div");
-    toolbar.className = "live-surface-toolbar";
-    toolbar.innerHTML =
-      '<span class="live-indicator"><i></i> ' + (surface.interactive ? "LIVE CHROME TAB" : "LIVE VIDEO · VIEW ONLY") + '</span>' +
-      '<span class="live-health-status" data-health="' + (surface.healthState || "checking") + '">' +
-      (surface.healthState === "healthy" ? "VIDEO FLOWING" : surface.healthState === "recovering" ? "RECOVERING VIDEO" : surface.healthState === "stalled" ? "NO NEW FRAMES" : surface.healthState === "muted" ? "VIDEO TRACK MUTED" : "CHECKING VIDEO") +
-      '</span>' +
-      '<span class="live-input-status" data-input-state="' + (surface.interactive ? "untested" : "readonly") + '" title="' + (surface.interactive ? "Input controller attached; click inside the page to verify interaction." : "Chrome did not allow interactive control for this tab.") + '">' +
-      (surface.interactive ? "INPUT NOT TESTED" : "READ ONLY") + '</span>' +
-      '<span class="live-surface-actions">' +
-      '<button class="live-tool" data-action="refresh-live" title="Reconnect the local video presentation without restarting Chrome capture">Refresh video</button>' +
-      '<button class="live-tool" data-action="toggle-live-audio" title="Enable sound from this Chrome tab">Enable sound</button>' +
-      '<button class="live-tool" data-action="focus-live" title="Focus the original Chrome tab">Focus source</button>' +
-      '<button class="live-tool danger" data-action="stop-live" title="Stop live capture">Stop</button>' +
-      '</span>';
-    const stage = document.createElement("div");
-    stage.className = "live-surface-stage";
-    stage.tabIndex = 0;
-    stage.setAttribute("role", "application");
-    stage.setAttribute("aria-label", "Live Chrome page. Click to send mouse and keyboard input to the original tab.");
-    const inputProxy = document.createElement("textarea");
-    inputProxy.className = "live-input-proxy";
-    inputProxy.rows = 1;
-    inputProxy.autocomplete = "off";
-    inputProxy.autocapitalize = "off";
-    inputProxy.spellcheck = false;
-    inputProxy.setAttribute("aria-label", "Text input for the live Chrome page");
-    inputProxy.setAttribute("autocorrect", "off");
-    const video = document.createElement("video");
-    video.className = "live-surface-video";
-    video.autoplay = true;
-    video.muted = true;
-    video.playsInline = true;
-    video.srcObject = surface.stream;
-    const hint = document.createElement("div");
-    hint.className = "live-surface-hint";
-    hint.textContent = surface.interactive
-      ? "Click inside to interact · Input is sent to the original Chrome tab"
-      : (surface.interactionReason || "Video-only mode · Use Focus source to interact with the original Chrome tab");
-    if (surface.keepSourceVisible) {
-      hint.textContent += " · Source page stays selected in a separate Chrome window; keep both windows unminimized.";
-    }
-    stage.append(video, hint, inputProxy);
-
-    if (!surface.interactive) {
-      stage.classList.add("live-surface-readonly");
-      stage.tabIndex = -1;
-      stage.setAttribute("aria-label", "Read-only live video from the original Chrome tab. Use Focus source to interact.");
-      root.append(toolbar, stage);
-      video.play().catch(() => {});
-      if (surface.connected) bindLiveFrameMonitor(node.id, surface, video);
-      return root;
-    }
-
-    function coordinates(event, clampEdges = false) {
-      const rect = stage.getBoundingClientRect();
-      const videoWidth = video.videoWidth || surface.viewport.width;
-      const videoHeight = video.videoHeight || surface.viewport.height;
-      const aspect = videoWidth / Math.max(1, videoHeight);
-      const boxAspect = rect.width / Math.max(1, rect.height);
-      let contentWidth = rect.width;
-      let contentHeight = rect.height;
-      if (aspect > boxAspect) contentHeight = rect.width / aspect;
-      else contentWidth = rect.height * aspect;
-      const offsetX = (rect.width - contentWidth) / 2;
-      const offsetY = (rect.height - contentHeight) / 2;
-      const localX = event.clientX - rect.left - offsetX;
-      const localY = event.clientY - rect.top - offsetY;
-      const outside = localX < 0 || localY < 0 || localX > contentWidth || localY > contentHeight;
-      if (outside && !clampEdges) return null;
-      const mappedX = Math.max(0, Math.min(contentWidth, localX));
-      const mappedY = Math.max(0, Math.min(contentHeight, localY));
-      return {
-        x: Math.max(0, Math.min(surface.viewport.width, mappedX / contentWidth * surface.viewport.width)),
-        y: Math.max(0, Math.min(surface.viewport.height, mappedY / contentHeight * surface.viewport.height))
-      };
-    }
-
-    function modifiers(event) {
-      return {
-        altKey: !!event.altKey,
-        ctrlKey: !!event.ctrlKey,
-        metaKey: !!event.metaKey,
-        shiftKey: !!event.shiftKey
-      };
-    }
-
-    let lastMoveAt = 0;
-    stage.addEventListener("pointerdown", (event) => {
-      if (surface.audioEnabled && surface.audioContext?.state === "suspended") surface.audioContext.resume().catch(() => {});
-      const point = coordinates(event);
-      if (!point) return;
-      inputProxy.focus({ preventScroll: true });
-      try { stage.setPointerCapture(event.pointerId); } catch (_) {}
-      postLiveInput(surface, {
-        kind: "mousePressed", ...point,
-        button: event.button === 2 ? "right" : event.button === 1 ? "middle" : "left",
-        buttons: event.buttons || 1,
-        clickCount: event.detail || 1,
-        ...modifiers(event)
-      });
-      event.preventDefault();
-      event.stopPropagation();
-    });
-    stage.addEventListener("pointermove", (event) => {
-      const now = performance.now();
-      if (now - lastMoveAt < 28) return;
-      lastMoveAt = now;
-      const point = coordinates(event);
-      if (!point) return;
-      postLiveInput(surface, { kind: "mouseMoved", ...point, buttons: event.buttons || 0, ...modifiers(event) });
-      event.preventDefault();
-      event.stopPropagation();
-    });
-    const endPointer = (event) => {
-      const point = coordinates(event, true);
-      if (point) {
-        postLiveInput(surface, {
-          kind: "mouseReleased", ...point,
-          button: event.button === 2 ? "right" : event.button === 1 ? "middle" : "left",
-          buttons: 0,
-          clickCount: event.detail || 1,
-          ...modifiers(event)
-        });
-      }
-      try { stage.releasePointerCapture(event.pointerId); } catch (_) {}
-      event.preventDefault();
-      event.stopPropagation();
-    };
-    stage.addEventListener("pointerup", endPointer);
-    stage.addEventListener("pointercancel", endPointer);
-    stage.addEventListener("wheel", (event) => {
-      const point = coordinates(event);
-      if (!point) return;
-      postLiveInput(surface, { kind: "mouseWheel", ...point, deltaX: event.deltaX, deltaY: event.deltaY, ...modifiers(event) });
-      event.preventDefault();
-      event.stopPropagation();
-    }, { passive: false });
-    stage.addEventListener("contextmenu", (event) => { event.preventDefault(); event.stopPropagation(); });
-    stage.addEventListener("keydown", (event) => {
-      if (event.isComposing || surface.composing) return;
-      const shortcutKey = event.key.toLowerCase();
-      const browserShortcut =
-        ((event.ctrlKey || event.metaKey) && ["w", "t", "n", "l"].includes(shortcutKey)) ||
-        ((event.ctrlKey || event.metaKey) && event.shiftKey && shortcutKey === "w") ||
-        ((event.ctrlKey || event.metaKey) && ["tab"].includes(shortcutKey)) ||
-        (event.altKey && shortcutKey === "f4") || event.key === "F11";
-      if (browserShortcut) { event.preventDefault(); event.stopPropagation(); return; }
-      const printable = event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey;
-      const pasteShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v";
-      // Let the focused proxy textarea handle printable text, paste and IME composition.
-      if (printable || pasteShortcut) return;
-      postLiveInput(surface, {
-        kind: "keyDown",
-        key: event.key,
-        code: event.code,
-        keyCode: event.keyCode,
-        location: event.location,
-        repeat: event.repeat,
-        ...modifiers(event)
-      });
-      event.preventDefault();
-      event.stopPropagation();
-    });
-    stage.addEventListener("keyup", (event) => {
-      if (event.isComposing || surface.composing) return;
-      const printable = event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey;
-      const pasteShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v";
-      if (printable || pasteShortcut) return;
-      postLiveInput(surface, {
-        kind: "keyUp",
-        key: event.key,
-        code: event.code,
-        keyCode: event.keyCode,
-        location: event.location,
-        ...modifiers(event)
-      });
-      event.preventDefault();
-      event.stopPropagation();
-    });
-    inputProxy.addEventListener("compositionstart", () => { surface.composing = true; });
-    inputProxy.addEventListener("compositionend", (event) => {
-      surface.composing = false;
-      const text = String(event.data || inputProxy.value || "").slice(0, 2000);
-      inputProxy.value = "";
-      if (text) postLiveInput(surface, { kind: "insertText", text });
-    });
-    inputProxy.addEventListener("input", (event) => {
-      if (event.isComposing || surface.composing) return;
-      const text = inputProxy.value.slice(0, 2000);
-      inputProxy.value = "";
-      if (text) postLiveInput(surface, { kind: "insertText", text });
-    });
-    root.append(toolbar, stage);
-    video.play().catch(() => {});
-    if (surface.connected) bindLiveFrameMonitor(node.id, surface, video);
-    return root;
-  }
-
-  function toggleLiveAudio(nodeId, button) {
-    const surface = liveSurfaces.get(nodeId);
-    if (!surface || !surface.audioGainNode || !surface.audioContext) {
-      if (button) { button.textContent = "No audio"; button.disabled = true; }
-      return;
-    }
-    surface.audioEnabled = !surface.audioEnabled;
-    const now = surface.audioContext.currentTime;
-    surface.audioGainNode.gain.cancelScheduledValues(now);
-    surface.audioGainNode.gain.setTargetAtTime(surface.audioEnabled ? 1 : 0, now, 0.025);
-    if (surface.audioEnabled) surface.audioContext.resume().catch((error) => toast("Audio could not start: " + error.message, "error"));
-    if (button) {
-      button.textContent = surface.audioEnabled ? "Mute sound" : "Enable sound";
-      button.title = surface.audioEnabled ? "Mute the source tab audio" : "Enable sound from this Chrome tab";
-      button.setAttribute("aria-pressed", String(surface.audioEnabled));
-    }
-    toast(surface.audioEnabled ? "Source tab audio enabled." : "Source tab audio muted.");
-  }
-
-
-  function liveVideoMetrics(video, track, metadata, previousFrame) {
-    const targetVideo = video || null;
-    let settings = {};
-    let quality = {};
-    try { settings = track?.getSettings ? track.getSettings() : {}; } catch (_) {}
-    try { quality = targetVideo?.getVideoPlaybackQuality ? targetVideo.getVideoPlaybackQuality() : {}; } catch (_) {}
-    let frameRate = Number.isFinite(settings.frameRate) && settings.frameRate > 0 ? settings.frameRate : null;
-    if ((!frameRate || frameRate < 0.1) && metadata && previousFrame &&
-        Number.isFinite(metadata.presentedFrames) && Number.isFinite(previousFrame.presentedFrames) &&
-        Number.isFinite(metadata.mediaTime) && Number.isFinite(previousFrame.mediaTime)) {
-      const frames = metadata.presentedFrames - previousFrame.presentedFrames;
-      const seconds = metadata.mediaTime - previousFrame.mediaTime;
-      if (frames > 0 && seconds > 0) frameRate = Math.min(240, frames / seconds);
-    }
-    return {
-      width: targetVideo?.videoWidth || 0,
-      height: targetVideo?.videoHeight || 0,
-      frameRate,
-      presentedFrames: Number.isFinite(metadata?.presentedFrames) ? metadata.presentedFrames :
-        (Number.isFinite(quality.totalVideoFrames) ? quality.totalVideoFrames : null),
-      mediaTime: Number.isFinite(metadata?.mediaTime) ? metadata.mediaTime :
-        (Number.isFinite(targetVideo?.currentTime) ? targetVideo.currentTime : null),
-      droppedFrames: Number.isFinite(quality.droppedVideoFrames) ? quality.droppedVideoFrames : null,
-      totalVideoFrames: Number.isFinite(quality.totalVideoFrames) ? quality.totalVideoFrames : null,
-      trackReadyState: track?.readyState || "unknown",
-      trackMuted: !!track?.muted
-    };
-  }
-
-  function setLiveSurfaceHealth(surfaceId, state, videoInfo, notifyExtension = true, forceNotify = false) {
-    let nodeId = "";
-    let surface = null;
-    for (const [id, item] of liveSurfaces) {
-      if (item.surfaceId === surfaceId) { nodeId = id; surface = item; break; }
-    }
-    if (!surface) return;
-    const nextState = ["checking", "healthy", "recovering", "stalled", "muted", "paused", "ended"].includes(state) ? state : "checking";
-    const changed = surface.healthState !== nextState;
-    surface.healthState = nextState;
-    if (videoInfo) surface.videoInfo = videoInfo;
-    const nodeElement = $('.node[data-id="' + CSS.escape(nodeId) + '"]', world);
-    const badge = nodeElement && $(".live-health-status", nodeElement);
-    if (badge) {
-      badge.dataset.health = nextState;
-      badge.textContent = nextState === "healthy" ? "VIDEO FLOWING" :
-        nextState === "recovering" ? "RECOVERING VIDEO" :
-        nextState === "stalled" ? "NO NEW FRAMES" :
-        nextState === "muted" ? "VIDEO TRACK MUTED" :
-        nextState === "paused" ? "VIEW PAUSED" : "CHECKING VIDEO";
-      badge.title = nextState === "stalled"
-        ? "No new decoded frame has reached the compositor for 12 seconds. The source may be paused, throttled or withholding frames; inspect the source tab and compatibility report."
-        : nextState === "recovering"
-          ? "Reattaching the existing captured stream to the local video element. This does not restart Chrome tab capture."
-          : nextState === "muted"
-          ? "Chrome temporarily marked the captured video track as muted."
-          : nextState === "paused" ? "Health monitoring pauses while this workspace or card is hidden." : "Live video frame monitoring.";
-    }
-    if ((changed || forceNotify) && notifyExtension) {
-      window.postMessage({
-        source: "nolane-workspace",
-        type: "LIVE_SURFACE_HEALTH",
-        surfaceId,
-        browserSessionId: surface.browserSessionId,
-        healthState: nextState,
-        videoInfo: surface.videoInfo || null
-      }, location.origin);
-    }
-  }
-
-
-  async function refreshLiveVideo(nodeId, button, automatic = false) {
-    const surface = liveSurfaces.get(nodeId);
-    if (!surface || !surface.connected) {
-      if (!automatic) toast("This website does not have an active live video stream.", "error");
-      return false;
-    }
-    if (surface.recoveryPromise) return surface.recoveryPromise;
-
-    const track = surface.stream.getVideoTracks()[0];
-    if (!track || track.readyState === "ended") {
-      stopLiveSurfaceById(surface.surfaceId, "Chrome ended the source video track. Start a new stream from the Companion.", false);
-      return false;
-    }
-    if (track.muted) {
-      setLiveSurfaceHealth(surface.surfaceId, "muted", liveVideoMetrics(surface.frameMonitor?.video, track));
-      if (!automatic) toast("Chrome has muted the captured video track. Wait for it to unmute or reconnect the source tab.", "error");
-      return false;
-    }
-
-    const now = Date.now();
-    surface.recoveryAttempts = (surface.recoveryAttempts || []).filter((time) => now - time < 300000);
-    if (surface.recoveryAttempts.length >= 3) {
-      if (!automatic) toast("Video refresh is rate-limited. Try again in a few minutes or restart capture from Chrome.", "error");
-      return false;
-    }
-    if (automatic && surface.autoRecoveryAttempted) return false;
-    surface.recoveryAttempts.push(now);
-    if (automatic) surface.autoRecoveryAttempted = true;
-
-    const video = $('.node[data-id="' + CSS.escape(nodeId) + '"] .live-surface-video', world);
-    if (!video) {
-      if (!automatic) toast("The live video element is not currently visible on the canvas.", "error");
-      return false;
-    }
-
-    if (button) {
-      button.disabled = true;
-      button.textContent = "Refreshing…";
-    }
-    setLiveSurfaceHealth(surface.surfaceId, "recovering", liveVideoMetrics(video, track));
-    const recoveryPromise = (async () => {
-      try {
-        // Rebind only the existing stream. Do not mint another Chrome capture
-        // token, so the source page's login/session and capture permission stay intact.
-        video.pause();
-        video.srcObject = null;
-        await new Promise((resolve) => requestAnimationFrame(() => resolve()));
-        if (liveSurfaces.get(nodeId) !== surface || track.readyState !== "live") {
-          throw new Error("The original Chrome capture is no longer live.");
-        }
-        video.srcObject = surface.stream;
-        await video.play();
-        const videoInfo = await waitForLiveVideoFrame(video, surface.stream, 7000);
-        if (liveSurfaces.get(nodeId) !== surface) throw new Error("The live surface was closed during refresh.");
-
-        const monitor = surface.frameMonitor;
-        if (monitor) {
-          monitor.video = video;
-          monitor.lastFrameAt = Date.now();
-          monitor.lastFrameCounter = videoInfo.presentedFrames ?? null;
-          monitor.previousFrame = null;
-          monitor.lastHealthReportAt = 0;
-          if (monitor.callbackId && typeof video.cancelVideoFrameCallback === "function") {
-            try { video.cancelVideoFrameCallback(monitor.callbackId); } catch (_) {}
-            monitor.callbackId = null;
-          }
-          monitor.video = null;
-          bindLiveFrameMonitor(nodeId, surface, video);
-        }
-        setLiveSurfaceHealth(surface.surfaceId, "healthy", liveVideoMetrics(video, track));
-        if (!automatic) toast("Video presentation refreshed without restarting the Chrome capture.");
-        return true;
-      } catch (error) {
-        if (liveSurfaces.get(nodeId) === surface) {
-          // Keep the existing track attached even when the soft refresh fails.
-          try {
-            if (video.srcObject !== surface.stream) video.srcObject = surface.stream;
-            await video.play().catch(() => {});
-          } catch (_) {}
-          setLiveSurfaceHealth(surface.surfaceId, "stalled", liveVideoMetrics(video, track));
-        }
-        if (!automatic) {
-          toast("Video refresh failed: " + String(error?.message || error) + ". Use Focus source, then restart capture from the Companion if needed.", "error");
-        }
-        return false;
-      } finally {
-        if (button?.isConnected) {
-          button.disabled = false;
-          button.textContent = "Refresh video";
-        }
-        if (surface.recoveryPromise === recoveryPromise) surface.recoveryPromise = null;
-      }
-    })();
-    surface.recoveryPromise = recoveryPromise;
-    return recoveryPromise;
-  }
-
-  function bindLiveFrameMonitor(nodeId, surface, video) {
-    if (!surface || !surface.connected || !video) return;
-    if (!surface.frameMonitor) {
-      const track = surface.stream.getVideoTracks()[0];
-      const monitor = {
-        video: null,
-        callbackId: null,
-        intervalId: null,
-        lastFrameAt: Date.now(),
-        lastMetrics: surface.videoInfo || null,
-        lastHealthReportAt: 0,
-        lastFrameCounter: surface.videoInfo?.presentedFrames ?? null,
-        previousFrame: null,
-        track,
-        onTrackMute: null,
-        onTrackUnmute: null,
-        onVisibility: null,
-        autoRecoveryAttempted: !!surface.autoRecoveryAttempted
-      };
-      monitor.onTrackMute = () => setLiveSurfaceHealth(surface.surfaceId, "muted", liveVideoMetrics(monitor.video || video, track));
-      monitor.onTrackUnmute = () => {
-        monitor.lastFrameAt = Date.now();
-        monitor.lastFrameCounter = null;
-        setLiveSurfaceHealth(surface.surfaceId, "checking", liveVideoMetrics(monitor.video || video, track));
-      };
-      monitor.onVisibility = () => {
-        monitor.lastFrameAt = Date.now();
-        if (document.visibilityState !== "visible") {
-          setLiveSurfaceHealth(surface.surfaceId, "paused", liveVideoMetrics(monitor.video || video, track));
-        } else {
-          setLiveSurfaceHealth(surface.surfaceId, "checking", liveVideoMetrics(monitor.video || video, track));
-        }
-      };
-      track?.addEventListener("mute", monitor.onTrackMute);
-      track?.addEventListener("unmute", monitor.onTrackUnmute);
-      document.addEventListener("visibilitychange", monitor.onVisibility);
-      monitor.intervalId = setInterval(() => {
-        if (liveSurfaces.get(nodeId) !== surface) return;
-        if (document.visibilityState !== "visible") {
-          if (surface.healthState !== "paused") setLiveSurfaceHealth(surface.surfaceId, "paused", liveVideoMetrics(monitor.video || video, track));
-          monitor.lastFrameAt = Date.now();
-          return;
-        }
-        const currentVideo = $('.node[data-id="' + CSS.escape(nodeId) + '"] .live-surface-video', world);
-        if (!currentVideo || !currentVideo.isConnected || currentVideo.getClientRects().length === 0) {
-          monitor.lastFrameAt = Date.now();
-          if (surface.healthState !== "paused") setLiveSurfaceHealth(surface.surfaceId, "paused", liveVideoMetrics(monitor.video || video, track));
-          return;
-        }
-        if (monitor.video !== currentVideo) bindLiveFrameMonitor(nodeId, surface, currentVideo);
-        if (track?.readyState === "ended") {
-          stopLiveSurfaceById(surface.surfaceId, "Chrome ended the captured tab video track.", false);
-          return;
-        }
-        if (track?.muted) {
-          if (surface.healthState !== "muted") setLiveSurfaceHealth(surface.surfaceId, "muted", liveVideoMetrics(currentVideo, track));
-          return;
-        }
-        if (typeof currentVideo.requestVideoFrameCallback !== "function") {
-          let quality = {};
-          try { quality = currentVideo.getVideoPlaybackQuality ? currentVideo.getVideoPlaybackQuality() : {}; } catch (_) {}
-          const frameCounter = Number.isFinite(quality.totalVideoFrames) ? quality.totalVideoFrames :
-            (Number.isFinite(currentVideo.currentTime) ? currentVideo.currentTime : null);
-          if (frameCounter !== null && frameCounter !== monitor.lastFrameCounter) {
-            monitor.lastFrameCounter = frameCounter;
-            monitor.lastFrameAt = Date.now();
-            const info = liveVideoMetrics(currentVideo, track);
-            const shouldReport = surface.healthState !== "healthy" || Date.now() - monitor.lastHealthReportAt > 15000;
-            if (shouldReport) {
-              setLiveSurfaceHealth(surface.surfaceId, "healthy", info, true, true);
-              monitor.lastHealthReportAt = Date.now();
-            } else surface.videoInfo = info;
-          }
-        }
-        if (Date.now() - monitor.lastFrameAt > 12000 && surface.healthState !== "recovering") {
-          if (!monitor.autoRecoveryAttempted) {
-            monitor.autoRecoveryAttempted = true;
-            surface.autoRecoveryAttempted = true;
-            void refreshLiveVideo(nodeId, null, true);
-          } else if (surface.healthState !== "stalled") {
-            setLiveSurfaceHealth(surface.surfaceId, "stalled", liveVideoMetrics(currentVideo, track));
-          }
-        }
-      }, 4000);
-      surface.frameMonitor = monitor;
-    }
-
-    const monitor = surface.frameMonitor;
-    if (monitor.video === video) return;
-    if (monitor.video && monitor.callbackId && typeof monitor.video.cancelVideoFrameCallback === "function") {
-      try { monitor.video.cancelVideoFrameCallback(monitor.callbackId); } catch (_) {}
-    }
-    monitor.video = video;
-    monitor.callbackId = null;
-    monitor.lastFrameAt = Date.now();
-    monitor.lastFrameCounter = null;
-
-    if (typeof video.requestVideoFrameCallback === "function") {
-      const onFrame = (_now, metadata) => {
-        if (liveSurfaces.get(nodeId) !== surface || monitor.video !== video) return;
-        monitor.lastFrameAt = Date.now();
-        const info = liveVideoMetrics(video, monitor.track, metadata, monitor.previousFrame);
-        monitor.previousFrame = metadata;
-        monitor.lastMetrics = info;
-        if (info.presentedFrames !== null) monitor.lastFrameCounter = info.presentedFrames;
-        const shouldReport = surface.healthState !== "healthy" || Date.now() - monitor.lastHealthReportAt > 15000;
-        if (shouldReport) {
-          setLiveSurfaceHealth(surface.surfaceId, "healthy", info, true, true);
-          monitor.lastHealthReportAt = Date.now();
-        } else surface.videoInfo = info;
-        monitor.callbackId = video.requestVideoFrameCallback(onFrame);
-      };
-      monitor.callbackId = video.requestVideoFrameCallback(onFrame);
-    } else if (!monitor.intervalId) {
-      monitor.intervalId = setInterval(() => {
-        if (document.visibilityState !== "visible" || !video.isConnected) return;
-        let quality = {};
-        try { quality = video.getVideoPlaybackQuality ? video.getVideoPlaybackQuality() : {}; } catch (_) {}
-        const count = Number.isFinite(quality.totalVideoFrames) ? quality.totalVideoFrames : null;
-        if (count !== null && count !== monitor.lastFrameCounter) {
-          monitor.lastFrameCounter = count;
-          monitor.lastFrameAt = Date.now();
-          const info = liveVideoMetrics(video, monitor.track);
-          surface.videoInfo = info;
-          if (surface.healthState !== "healthy") setLiveSurfaceHealth(surface.surfaceId, "healthy", info);
-        }
-      }, 1000);
-    }
-  }
-
-  function stopLiveFrameMonitor(surface) {
-    const monitor = surface?.frameMonitor;
-    if (!monitor) return;
-    if (monitor.video && monitor.callbackId && typeof monitor.video.cancelVideoFrameCallback === "function") {
-      try { monitor.video.cancelVideoFrameCallback(monitor.callbackId); } catch (_) {}
-    }
-    if (monitor.intervalId) clearInterval(monitor.intervalId);
-    monitor.track?.removeEventListener("mute", monitor.onTrackMute);
-    monitor.track?.removeEventListener("unmute", monitor.onTrackUnmute);
-    document.removeEventListener("visibilitychange", monitor.onVisibility);
-    surface.frameMonitor = null;
-  }
-
-  function waitForLiveVideoFrame(video, stream, timeoutMs = 10000) {
-    return new Promise((resolve, reject) => {
-      const track = stream.getVideoTracks()[0];
-      if (!track) {
-        reject(new Error("Chrome did not provide a video track for this tab."));
-        return;
-      }
-      let settled = false;
-      let frameCallbackPending = false;
-      const timer = setTimeout(() => finish(new Error(
-        "The tab stream opened, but Chrome did not deliver a decoded video frame within 10 seconds. Keep Nolane visible and reconnect."
-      )), timeoutMs);
-
-      function cleanup() {
-        clearTimeout(timer);
-        video.removeEventListener("loadeddata", checkFrame);
-        video.removeEventListener("playing", checkFrame);
-        video.removeEventListener("error", onVideoError);
-        track.removeEventListener("ended", onTrackEnded);
-      }
-      function finish(error, frameMetadata = null) {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        if (error) {
-          reject(error);
-          return;
-        }
-        let settings = {};
-        try { settings = track.getSettings ? track.getSettings() : {}; } catch (_) {}
-        resolve({
-          width: video.videoWidth,
-          height: video.videoHeight,
-          frameRate: Number.isFinite(settings.frameRate) ? settings.frameRate : null,
-          presentedFrames: Number.isFinite(frameMetadata?.presentedFrames) ? frameMetadata.presentedFrames : null,
-          mediaTime: Number.isFinite(frameMetadata?.mediaTime) ? frameMetadata.mediaTime : null,
-          trackReadyState: track.readyState || "unknown",
-          trackMuted: !!track.muted
-        });
-      }
-      function onVideoError() {
-        finish(new Error("Chrome sent a tab stream, but the canvas could not decode its video."));
-      }
-      function onTrackEnded() {
-        finish(new Error("Chrome ended the source tab's video stream before the first frame arrived."));
-      }
-      function checkFrame() {
-        if (settled || video.readyState < 2 || video.videoWidth < 1 || video.videoHeight < 1) return;
-        if (typeof video.requestVideoFrameCallback === "function") {
-          if (frameCallbackPending) return;
-          frameCallbackPending = true;
-          video.requestVideoFrameCallback((_now, metadata) => finish(null, metadata));
-        } else {
-          finish();
-        }
-      }
-
-      video.addEventListener("loadeddata", checkFrame);
-      video.addEventListener("playing", checkFrame);
-      video.addEventListener("error", onVideoError);
-      track.addEventListener("ended", onTrackEnded, { once: true });
-      video.play().then(checkFrame).catch((error) => {
-        finish(new Error("Chrome refused to play the live video: " + String(error?.message || error)));
-      });
-      checkFrame();
-    });
-  }
-
-  async function startLiveSurface(message) {
-    let stream = null;
-    let audioContext = null;
-    let nodeId = "";
-    try {
-      if (message && typeof message.surfaceId === "string" && stoppedLiveSurfaceIds.has(message.surfaceId)) {
-        stoppedLiveSurfaceIds.delete(message.surfaceId);
-        throw new Error("The source tab changed website before the live surface could connect. Start it again from the current tab.");
-      }
-      if (!message || typeof message.surfaceId !== "string" || !Number.isInteger(message.sourceTabId) ||
-          typeof message.streamId !== "string" || message.browserSessionId !== bridgeSessionId) {
-        throw new Error("The live-stream request did not match this Chrome profile.");
-      }
-      if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
-        throw new Error("This browser page cannot consume a tab stream. Open Nolane over its HTTPS GitHub Pages address.");
-      }
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          mandatory: {
-            chromeMediaSource: "tab",
-            chromeMediaSourceId: message.streamId
-          }
-        },
-        video: {
-          mandatory: {
-            chromeMediaSource: "tab",
-            chromeMediaSourceId: message.streamId
-          }
-        }
-      });
-      if (stoppedLiveSurfaceIds.has(message.surfaceId)) {
-        stoppedLiveSurfaceIds.delete(message.surfaceId);
-        throw new Error("The source tab changed website while its video stream was starting.");
-      }
-
-      const safeUrl = normalizeUrl(message.url);
-      addBrowserTabsToWorkspace([{
-        id: message.sourceTabId,
-        url: safeUrl,
-        title: String(message.title || hostOf(safeUrl)).slice(0, 120)
-      }], message.browserSessionId);
-      const node = nodes.find((item) => item.type === "website" &&
-        item.browserTabId === message.sourceTabId && item.browserSessionId === message.browserSessionId);
-      if (!node) throw new Error("The source tab could not be added to the active workspace.");
-
-      const previous = liveSurfaces.get(node.id);
-      if (previous) {
-        previous.stream.getTracks().forEach((track) => track.stop());
-        previous.audioContext?.close().catch(() => {});
-      }
-      let audioGainNode = null;
-      try {
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        if (AudioContextClass && stream.getAudioTracks().length) {
-          audioContext = new AudioContextClass();
-          const audioSource = audioContext.createMediaStreamSource(stream);
-          audioGainNode = audioContext.createGain();
-          audioGainNode.gain.value = 0;
-          audioSource.connect(audioGainNode).connect(audioContext.destination);
-        }
-      } catch (audioError) {
-        console.warn("Live tab audio could not be routed:", audioError);
-        audioContext?.close().catch(() => {});
-        audioContext = null;
-        audioGainNode = null;
-      }
-      const viewport = message.viewport && Number.isFinite(message.viewport.width) && Number.isFinite(message.viewport.height)
-        ? { width: Math.max(1, message.viewport.width), height: Math.max(1, message.viewport.height) }
-        : { width: 1280, height: 720 };
-      nodeId = node.id;
-      liveSurfaces.set(node.id, {
-        surfaceId: message.surfaceId,
-        sourceTabId: message.sourceTabId,
-        browserSessionId: message.browserSessionId,
-        viewport,
-        stream,
-        audioContext,
-        audioGainNode,
-        audioEnabled: false,
-        interactive: !!message.interactive,
-        interactionReason: String(message.interactionReason || "").slice(0, 360),
-        keepSourceVisible: !!message.keepSourceVisible,
-        healthState: "checking",
-        connected: false,
-        frameMonitor: null,
-        autoRecoveryAttempted: false,
-        recoveryAttempts: [],
-        recoveryPromise: null
-      });
-      activeView = "canvas";
-      $("#searchInput").value = "";
-      renderNodes();
-      scheduleSave();
-      const nodeElement = $('.node[data-id="' + CSS.escape(node.id) + '"]', world);
-      const liveVideo = nodeElement && $(".live-surface-video", nodeElement);
-      if (!liveVideo) throw new Error("The live video element was not mounted in the canvas.");
-      const videoInfo = await waitForLiveVideoFrame(liveVideo, stream);
-      const mountedSurface = liveSurfaces.get(node.id);
-      if (mountedSurface?.surfaceId === message.surfaceId) mountedSurface.videoInfo = videoInfo;
-      const liveHint = $(".live-surface-hint", nodeElement);
-      if (liveHint) {
-        const fps = Number.isFinite(videoInfo.frameRate) ? " · " + videoInfo.frameRate.toFixed(1) + " fps" : "";
-        liveHint.textContent += " · " + videoInfo.width + " × " + videoInfo.height + fps;
-      }
-      if (stoppedLiveSurfaceIds.has(message.surfaceId)) {
-        stoppedLiveSurfaceIds.delete(message.surfaceId);
-        throw new Error("The source tab changed website before its first frame was confirmed.");
-      }
-      const liveSurface = liveSurfaces.get(node.id);
-      if (liveSurface?.surfaceId === message.surfaceId) {
-        liveSurface.connected = true;
-        bindLiveFrameMonitor(node.id, liveSurface, liveVideo);
-      }
-      window.postMessage({
-        source: "nolane-workspace",
-        type: "LIVE_SURFACE_ACK",
-        surfaceId: message.surfaceId,
-        browserSessionId: message.browserSessionId,
-        videoInfo
-      }, location.origin);
-      const videoTrack = stream.getVideoTracks()[0];
-      if (videoTrack) videoTrack.addEventListener("ended", () => stopLiveSurfaceById(message.surfaceId, "Chrome ended the captured tab stream.", false), { once: true });
-      toast("Live Chrome surface connected: " + node.title + ".");
-    } catch (error) {
-      const mounted = nodeId ? liveSurfaces.get(nodeId) : null;
-      if (mounted?.surfaceId === message?.surfaceId) {
-        stopLiveFrameMonitor(mounted);
-        liveSurfaces.delete(nodeId);
-      }
-      if (stream) stream.getTracks().forEach((track) => track.stop());
-      if (audioContext && audioContext.state !== "closed") audioContext.close().catch(() => {});
-      if (nodeId) {
-        try { renderNodes(); } catch (_) {}
-      }
-      if (message && typeof message.surfaceId === "string") {
-        window.postMessage({
-          source: "nolane-workspace",
-          type: "LIVE_SURFACE_ERROR",
-          surfaceId: message.surfaceId,
-          browserSessionId: message.browserSessionId || "",
-          error: String(error?.message || error).slice(0, 220)
-        }, location.origin);
-      }
-      throw error;
-    }
-  }
-
-  function stopLiveSurfaceById(surfaceId, reason, notifyExtension = false, render = true) {
-    let nodeId = "";
-    let surface = null;
-    for (const [id, item] of liveSurfaces) {
-      if (item.surfaceId === surfaceId) { nodeId = id; surface = item; break; }
-    }
-    if (!surface) return;
-    liveSurfaces.delete(nodeId);
-    stopLiveFrameMonitor(surface);
-    surface.stream.getTracks().forEach((track) => track.stop());
-    surface.audioContext?.close().catch(() => {});
-    if (notifyExtension) {
-      window.postMessage({
-        source: "nolane-workspace",
-        type: "LIVE_SURFACE_STOP",
-        surfaceId,
-        browserSessionId: surface.browserSessionId
-      }, location.origin);
-    }
-    if (render) renderNodes();
-    if (reason) toast(reason, "error");
-  }
-
-  function stopAllLiveSurfaces(reason) {
-    const surfaceIds = [...liveSurfaces.values()].map((surface) => surface.surfaceId);
-    surfaceIds.forEach((surfaceId) => stopLiveSurfaceById(surfaceId, null, true, false));
-    if (surfaceIds.length && reason) toast(reason);
-  }
-
-  function stopLiveSurface(nodeId) {
-    const surface = liveSurfaces.get(nodeId);
-    if (!surface) return;
-    stopLiveSurfaceById(surface.surfaceId, "Live surface stopped.", true);
-  }
-
-  function updateViewFilter() {
-    const query = $("#searchInput").value.trim().toLowerCase();
-    searchResultIds = [];
-    searchResultIndex = -1;
-    let visibleCount = 0;
-    for (const node of nodes) {
-      if (!matchesNodeFilters(node, query)) continue;
-      visibleCount += 1;
-      if (query) searchResultIds.push(node.id);
-    }
-    const nodesById = new Map(nodes.map((node) => [node.id, node]));
-    for (const [id, element] of renderedNodeElements) {
-      element.classList.toggle("hidden-by-search", !matchesNodeFilters(nodesById.get(id), query));
-    }
-    const titles = { canvas: "My workspace", websites: "Web surfaces", notes: "Notes" };
-    $("#viewTitle").textContent = activeView === "canvas" ? (activeSpace()?.name || titles.canvas) : titles[activeView];
-    $("#canvasHeading").textContent = activeView === "websites" ? "Your web, gathered." : activeView === "notes" ? "Thoughts, in context." : (activeSpace()?.name || "A space for everything.");
-    $("#canvasSubheading").textContent = query
-      ? (visibleCount ? visibleCount + " matching items · Press Enter to jump, Shift+Enter to go back." : "No items match this search.")
-      : activeView === "websites" ? "Open, arrange and revisit the websites you use."
-        : activeView === "notes" ? "Keep ideas close to the things they belong to."
-          : "Bring your web tools together. Arrange them your way.";
-    const empty = $("#emptyState");
-    empty.hidden = visibleCount > 0;
-    $("#emptyTitle").textContent = query ? "No matches yet." : activeView === "websites" ? "No websites here yet." : activeView === "notes" ? "No notes here yet." : "A fresh space.";
-    $("#emptyDescription").textContent = query ? "Try a different search, or clear the search field." : "Start with a website, a note, or both. Your workspace grows with you.";
-    $$(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === activeView));
-    scheduleCanvasVirtualization();
-    scheduleNativeSurfaceSync();
-  }
-
-  function focusSearchResult(reverse) {
-    if (!$("#searchInput").value.trim() || !searchResultIds.length) return;
-    searchResultIndex = window.NolaneSpatialIndex.cycleIndex(
-      searchResultIndex, searchResultIds.length, reverse
-    );
-    if (searchResultIndex < 0) return;
-    const node = nodes.find((item) => item.id === searchResultIds[searchResultIndex]);
-    if (!node) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const scale = clamp(Math.max(view.scale, 0.6), MIN_SCALE, MAX_SCALE);
-    view = normalizeCanvasView({
-      scale,
-      x: rect.width / 2 - (node.x + node.w / 2) * scale,
-      y: rect.height / 2 - (node.y + node.h / 2) * scale
-    });
-    selectNode(node.id);
-    applyView();
-    toast("Match " + (searchResultIndex + 1) + " of " + searchResultIds.length + ": " + node.title);
-  }
-
-  function selectNode(id) {
-    selectedId = id;
-    $$(".node", world).forEach((element) => element.classList.toggle("selected", element.dataset.id === id));
-    const node = nodes.find((item) => item.id === id);
-    if (node) {
-      node.z = ++zCounter;
-      const element = $('.node[data-id="' + CSS.escape(id) + '"]', world);
-      if (element) element.style.zIndex = node.z;
-      scheduleSave();
-      scheduleCanvasVirtualization();
-      scheduleNativeSurfaceSync();
-    }
-  }
 
   function handleNodeAction(event) {
     const button = event.target.closest("[data-action]");
@@ -2060,11 +1150,6 @@
     if (action === "embed" && node.type === "website") activateEmbed(node, article, node.embedMode || "safe");
     if (action === "compatibility" && node.type === "website") setEmbedMode(node, article, "compat");
     if (action === "safe-mode" && node.type === "website") setEmbedMode(node, article, "safe");
-    if (action === "stop-live" && node.type === "website") stopLiveSurface(node.id);
-    if (action === "refresh-live" && node.type === "website") void refreshLiveVideo(node.id, button, false);
-    if (action === "toggle-live-audio" && node.type === "website") toggleLiveAudio(node.id, button);
-    if (action === "focus-live" && node.type === "website") openWebsite(node);
-    if (action === "live-help" && node.type === "website") toast("Open this website in a Chrome tab, click the Nolane Companion icon there, then choose Stream this tab to Nolane.");
     if (action === "reload") {
       const frame = $("iframe", article);
       if (frame) { frame.src = node.url; toast("Refreshing " + node.title + "."); }
@@ -2140,20 +1225,10 @@
   }
 
   function openWebsite(node) {
-    if (node.browserTabId !== undefined && bridgeConnected && node.browserSessionId && node.browserSessionId === bridgeSessionId) {
-      window.postMessage({ source: "nolane-workspace", type: "FOCUS_BROWSER_TAB", tabId: node.browserTabId, browserSessionId: node.browserSessionId, expectedOrigin: new URL(node.url).origin }, location.origin);
-      toast("Switching to the original Chrome tab for " + node.title + ".");
-      return;
-    }
-    if (node.browserTabId !== undefined && (!bridgeConnected || !node.browserSessionId || node.browserSessionId !== bridgeSessionId)) {
-      toast("This tab card belongs to another or disconnected Chrome profile. Opening the website URL instead.");
-    }
     openWebsiteUrl(node);
   }
 
-  function setBridgeConnected(connected, sessionId) {
-    bridgeConnected = false;
-    bridgeSessionId = "";
+  function updateBridgeStatus() {
     const title = $("#bridgeStatusTitle");
     const detail = $("#bridgeStatusText");
     const pill = $("#bridgeStatusPill");
@@ -2162,145 +1237,18 @@
     const connectedNow = nativeHostAvailable;
     if (title) title.textContent = connectedNow ? "Nolane Windows Bridge connected" : "Windows bridge not connected";
     if (detail) detail.textContent = connectedNow
-      ? "Windows is running in the background. Website cards use real WebView2 surfaces; no extension is needed."
-      : "Start the Windows background bridge, then allow this website to connect to the local companion once.";
+      ? "Windows is running in the background. Website cards use real WebView2 surfaces."
+      : "Start the Windows background bridge, then allow this website to connect to the local service once.";
     if (pill) pill.textContent = connectedNow ? "Connected" : "Not connected";
     if (panel) panel.classList.toggle("connected", connectedNow);
     if (sidebar) sidebar.innerHTML = '<i class="status-dot' + (connectedNow ? ' green' : '') + '"></i> ' + (connectedNow ? "Windows bridge" : "Connect Windows");
     const footer = $("#bridgeFooterState");
-    if (footer) footer.textContent = connectedNow ? "Windows background bridge · Connected" : "No extension required · Windows bridge";
+    if (footer) footer.textContent = connectedNow ? "Windows background bridge · Connected" : "Windows background bridge · Not connected";
     const connectButton = $("#connectWindowsBridgeButton");
     if (connectButton) {
       connectButton.disabled = connectedNow || nativeBridgePermission === "denied";
       connectButton.textContent = connectedNow ? "Connected" :
         nativeBridgePermission === "denied" ? "Enable loopback access in site settings" : "Connect Windows bridge";
-    }
-  }
-
-  function addBrowserTabsToWorkspace(tabs, sessionId) {
-    if (!Array.isArray(tabs) || !tabs.length) return;
-    if (typeof sessionId !== "string" || sessionId.length < 20 || sessionId.length > 80) return toast("The companion did not provide a valid browser profile identity.", "error");
-    const valid = tabs.map((tab) => {
-      if (!tab || !Number.isInteger(tab.id)) return null;
-      try {
-        return {
-          id: tab.id,
-          windowId: Number.isInteger(tab.windowId) ? tab.windowId : undefined,
-          url: normalizeUrl(tab.url),
-          title: String(tab.title || hostOf(tab.url)).slice(0, 120)
-        };
-      } catch (_) { return null; }
-    }).filter(Boolean);
-    if (!valid.length) return toast("No supported web tabs were selected.", "error");
-
-    const rect = canvas.getBoundingClientRect();
-    const center = worldPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-    let added = 0;
-    let updated = 0;
-    valid.forEach((tab, index) => {
-      const exactMatch = nodes.find((node) => node.type === "website" && node.browserTabId === tab.id && node.browserSessionId === sessionId);
-      const tabOrigin = new URL(tab.url).origin;
-      const manualCardMatch = nodes.find((node) => node.type === "website" &&
-        node.browserTabId === undefined && node.browserSessionId === undefined &&
-        (() => { try { return new URL(node.url).origin === tabOrigin; } catch (_) { return false; } })());
-      const existing = exactMatch || manualCardMatch;
-      if (existing) {
-        existing.url = tab.url;
-        existing.title = tab.title || hostOf(tab.url);
-        existing.browserTabId = tab.id;
-        existing.browserWindowId = tab.windowId;
-        existing.browserSessionId = sessionId;
-        existing.description = "Linked to its original Chrome tab. Start a Live Chrome Surface from the Companion to display and control it here.";
-        updated += 1;
-        return;
-      }
-      if (nodes.length >= MAX_NODES) return;
-      const column = index % 3;
-      const row = Math.floor(index / 3);
-      nodes.push({
-        id: uid(),
-        type: "website",
-        title: tab.title || hostOf(tab.url),
-        url: tab.url,
-        description: "Linked to its original Chrome tab. Start a Live Chrome Surface from the Companion to display and control it here.",
-        browserTabId: tab.id,
-        browserWindowId: tab.windowId,
-        browserSessionId: sessionId,
-        x: normalizeCanvasCoordinate(Math.round(center.x - 600 + column * 420)),
-        y: normalizeCanvasCoordinate(Math.round(center.y - 170 + row * 330)),
-        w: 390,
-        h: 300,
-        z: ++zCounter,
-        createdAt: new Date().toISOString()
-      });
-      added += 1;
-    });
-    activeView = "canvas";
-    $("#searchInput").value = "";
-    renderNodes();
-    scheduleSave();
-    toast("Added " + added + " Chrome tab(s)" + (updated ? " and updated " + updated + " existing card(s)." : " to this workspace."));
-  }
-
-  function handleCompanionMessage(event) {
-    if (event.source !== window || event.origin !== location.origin) return;
-    const message = event.data;
-    if (!message || message.source !== "nolane-companion") return;
-    if (message.type === "COMPANION_READY") {
-      setBridgeConnected(!!message.browserSessionId, message.browserSessionId || "");
-    } else if (message.type === "LIVE_SURFACE_START") {
-      startLiveSurface(message).catch((error) => toast(error.message || "Could not start the live surface.", "error"));
-    } else if (message.type === "LIVE_SURFACE_REFRESH") {
-      const entry = [...liveSurfaces.entries()].find(([, surface]) => surface.surfaceId === message.surfaceId);
-      if (entry) void refreshLiveVideo(entry[0], null, false);
-      else toast("That live surface is no longer mounted. Analyze the website again.", "error");
-    } else if (message.type === "LIVE_SURFACE_STOPPED") {
-      if (typeof message.surfaceId === "string") {
-        stoppedLiveSurfaceIds.add(message.surfaceId);
-        if (stoppedLiveSurfaceIds.size > 128) stoppedLiveSurfaceIds.delete(stoppedLiveSurfaceIds.values().next().value);
-      }
-      stopLiveSurfaceById(message.surfaceId, message.reason || "Live Chrome surface disconnected.", false);
-    } else if (message.type === "LIVE_VIEWPORT_UPDATE") {
-      const surface = [...liveSurfaces.values()].find((item) => item.surfaceId === message.surfaceId);
-      if (surface && message.viewport && Number.isFinite(message.viewport.width) && Number.isFinite(message.viewport.height)) {
-        surface.viewport = { width: Math.max(1, message.viewport.width), height: Math.max(1, message.viewport.height) };
-      }
-    } else if (message.type === "LIVE_INPUT_RESULT") {
-      const entry = [...liveSurfaces.entries()].find(([, surface]) => surface.surfaceId === message.surfaceId);
-      if (entry) {
-        const [nodeId, surface] = entry;
-        surface.inputStatus = message.ok ? "ready" : "blocked";
-        surface.inputError = message.ok ? "" : String(message.error || "Chrome rejected this input.");
-        const card = $$(".node", world).find((element) => element.dataset.id === nodeId);
-        const status = card?.querySelector(".live-input-status");
-        if (status) {
-          status.dataset.inputState = surface.inputStatus;
-          status.textContent = message.ok ? "INPUT OK" : "INPUT BLOCKED";
-          status.title = message.ok
-            ? "Chrome acknowledged this input command."
-            : surface.inputError + " Use Focus source if the browser blocks remote input.";
-        }
-        if (!message.ok) {
-          toast("Website input was not delivered: " + surface.inputError + " Use Focus source to continue.", "error");
-        }
-      }
-    } else if (message.type === "TABS_IMPORTED") {
-      setBridgeConnected(!!message.browserSessionId, message.browserSessionId || "");
-      addBrowserTabsToWorkspace(message.tabs, message.browserSessionId);
-    } else if (message.type === "TAB_FOCUSED") {
-      if (message.ok) toast("Chrome tab focused.");
-      else {
-        const node = nodes.find((item) => item.type === "website" && item.browserTabId === message.tabId && item.browserSessionId === message.browserSessionId);
-        if (node) {
-          node.browserTabId = undefined;
-          node.browserWindowId = undefined;
-          node.browserSessionId = undefined;
-          scheduleSave();
-          renderNodes();
-          openWebsiteUrl(node);
-        }
-        toast("The original tab is no longer available. Opened its URL instead.", "error");
-      }
     }
   }
 
@@ -2310,11 +1258,11 @@
       nativeBridgePermission = permission.state;
       permission.onchange = () => {
         nativeBridgePermission = permission.state;
-        setBridgeConnected(false, "");
+        updateBridgeStatus();
         if (nativeBridgePermission === "granted" && !nativeHostAvailable) connectWindowsBridge();
       };
     } catch (_) { nativeBridgePermission = "unknown"; }
-    setBridgeConnected(false, "");
+    updateBridgeStatus();
   }
 
   function connectWindowsBridge() {
@@ -2338,7 +1286,7 @@
       }
     });
     socket.addEventListener("error", () => {
-      if (!nativeHostAvailable) setBridgeConnected(false, "");
+      if (!nativeHostAvailable) updateBridgeStatus();
     });
     socket.addEventListener("close", () => {
       if (nativeBridgeSocket === socket) nativeBridgeSocket = null;
@@ -2353,7 +1301,7 @@
       refreshNativeWorkspaceIdsSnapshot();
       nativeSurfaceStates.clear();
       renderNodes();
-      setBridgeConnected(false, "");
+      updateBridgeStatus();
       if (wasConnected) toast("Windows background bridge disconnected.", "error");
       queueWindowsBridgeReconnect();
     }, { once: true });
@@ -2384,8 +1332,6 @@
   function deleteNode(id) {
     const node = nodes.find((item) => item.id === id);
     if (!node) return;
-    const liveSurface = liveSurfaces.get(id);
-    if (liveSurface) stopLiveSurfaceById(liveSurface.surfaceId, null, true, false);
     nodes = nodes.filter((item) => item.id !== id);
     if (selectedId === id) selectedId = null;
     renderNodes();
@@ -2479,7 +1425,7 @@
     const host = hostOf(url);
     const node = {
       id: uid(), type: "website", title: (title || host).trim().slice(0, 120) || host, url,
-      description: "Open this site in Chrome, then use Browser Companion to stream its real tab into this workspace.",
+      description: "Connect the Windows background bridge to use a native browser surface in this workspace.",
       embedMode: "safe",
       x: normalizeCanvasCoordinate(Math.round(point.x - 190)),
       y: normalizeCanvasCoordinate(Math.round(point.y - 145)), w: 390, h: 300,
@@ -2711,7 +1657,6 @@
     $("#profilesButton")?.addEventListener("click", () => sendNativePanelCommand("profiles"));
     $("#bridgeButton").addEventListener("click", () => { $("#bridgeDialog").showModal(); refreshWindowsBridgePermission(); });
     $("#connectWindowsBridgeButton")?.addEventListener("click", connectWindowsBridge);
-    window.addEventListener("message", handleCompanionMessage);
     initializeWindowsBridge();
     $("#helpButton").addEventListener("click", () => $("#helpDialog").showModal());
     $("#importButton").addEventListener("click", () => fileInput.click());
@@ -2800,17 +1745,8 @@
       canvasResizeObserver.observe(canvas);
     }
     window.addEventListener("pagehide", () => {
-      for (const surface of liveSurfaces.values()) {
-        window.postMessage({
-          source: "nolane-workspace",
-          type: "LIVE_SURFACE_STOP",
-          surfaceId: surface.surfaceId,
-          browserSessionId: surface.browserSessionId
-        }, location.origin);
-        surface.stream.getTracks().forEach((track) => track.stop());
-        surface.audioContext?.close().catch(() => {});
-      }
-      liveSurfaces.clear();
+      clearNativeWorkspaceSnapshotRetry();
+      nativeBridgeSocket?.close(1000, "Workspace page closed");
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(workspaceSnapshot())); } catch (_) {}
     });
   }

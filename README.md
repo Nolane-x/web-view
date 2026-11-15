@@ -9,7 +9,7 @@ Nolane Infinite is a local-first canvas for arranging websites, ideas and tools 
 ## What works today
 
 - Infinite canvas with pointer-based pan and cursor-anchored zoom.
-- Website cards with direct open-in-browser and a live Chrome surface mode that streams the actual tab into the canvas and forwards mouse/keyboard input locally.
+- Website cards rendered by native WebView2 surfaces through the Windows background bridge, with direct open-in-browser fallback.
 - Notes with editable text and four color themes.
 - Multiple named workspaces (up to 12), each with its own canvas, layout and saved items.
 - Create, switch, rename and delete local workspaces.
@@ -18,7 +18,6 @@ Nolane Infinite is a local-first canvas for arranging websites, ideas and tools 
 - Local persistence through IndexedDB, with a localStorage fallback.
 - JSON export and import for the complete set of workspaces.
 - PWA manifest and an offline-cached static app shell.
-- Optional Chrome MV3 companion for user-selected tab import and return-to-original-tab.
 - Responsive layout for desktop and smaller screens.
 - GitHub Actions deployment to GitHub Pages.
 
@@ -31,16 +30,13 @@ Nolane Infinite is a local-first canvas for arranging websites, ideas and tools 
 - The static hosting provider may receive ordinary delivery/security logs.
 - Import/export files remain under the user's control.
 
-## Important compatibility boundary
+## Windows-native website runtime
 
-An iframe may still be blocked by CSP/X-Frame-Options, and sandboxed frames may break origin-bound storage. The primary path for full website interaction is the **Windows background bridge**: its native WebView2 child browsers are positioned over website cards in the Chrome/Edge window that contains Nolane. The website remains the workspace UI; the Windows process stays in the notification area and runs quietly in the background. It does not need a Chrome extension or debugger permission. A one-time Loopback Network Access permission is required by Chrome/Edge so the HTTPS website can connect to the local Windows process.
+An iframe may still be blocked by CSP/X-Frame-Options, and sandboxed frames may break origin-bound storage. The supported path for full website interaction is the **Windows background bridge**. It positions real WebView2 child browsers over website cards in the Chrome/Edge window that contains Nolane. The website remains the workspace UI; the Windows process stays in the notification area and runs quietly in the background.
 
-The optional Chrome MV3 Browser Companion is now included in extension/. It asks for the Tabs permission only after the user clicks its grant button, lets the user select open tabs, and adds their titles/URLs as workspace cards. Selecting a card focuses the original Chrome tab, so its existing login session stays in Chrome. The extension does not read cookies, passwords, page contents or tokens. It does not turn tabs into embedded DOM surfaces; universal authenticated surfaces still require a local browser runtime (for example a custom Chromium host or a native WebView host). See extension/README.md and docs/ARCHITECTURE.md.
+Install the Windows host once, open Nolane in Chrome or Edge, and connect it from the website. The browser asks for a one-time Loopback Network Access permission so the HTTPS workspace can reach the local service at `127.0.0.1:43172`. After permission is granted, the site reconnects automatically while the host is running.
 
-
-## Legacy Chrome companion
-
-The `extension/` directory remains in the repository for older workspaces and compatibility experiments. It is **not required for the current Windows background bridge** and is no longer part of the primary setup path. The native bridge uses WebView2 directly and does not ask Chrome for debugger, tab-capture or extension permissions.
+There is no Chrome extension, tab-capture, or debugger integration in the supported product. WebView2 uses its own local profiles and sign-ins; it does not import Chrome cookies, passwords or browser profile data. Add website cards by URL, then use the native surface directly on the canvas.
 
 ## Run locally
 
@@ -67,7 +63,7 @@ One-time repository setup is required: open Settings → Pages → Build and dep
 
 ## Project status
 
-Nolane Infinite is a local-first web workspace with a static website UI and an optional Windows background browser runtime. Native WebView2 surfaces provide direct in-canvas interaction where iframe embedding is blocked, subject to the documented compatibility and resource limits. Chrome sign-in data remains separate from the WebView2 profiles.
+Nolane Infinite is a local-first web workspace with a static website UI and a Windows background browser runtime for native in-canvas website interaction. Native WebView2 surfaces provide direct in-canvas interaction where iframe embedding is blocked, subject to the documented compatibility and resource limits. Chrome sign-in data remains separate from the WebView2 profiles.
 
 
 ## Windows background bridge and native web surfaces
@@ -80,7 +76,7 @@ The bridge listens on IPv4 loopback only at `127.0.0.1:43172`. It accepts a WebS
 
 The native process detects the Chromium page-render window and aligns a transparent native overlay to its real viewport. The overlay contains real WebView2 website surfaces and follows canvas movement, zoom, card resizing and browser-window changes. Its native window region is restricted to visible website-card bodies and open native panels, so the empty canvas remains interactive and click-through. If the active Chromium viewport cannot be located confidently, the overlay stays hidden rather than drawing in the wrong place.
 
-WebView2 has its own persistent browser profiles and sign-ins. It does not import Chrome cookies, passwords or browser profile data. The Chrome Companion source remains only as a legacy optional component; the current product path does not need it.
+WebView2 has its own persistent browser profiles and sign-ins. It does not import Chrome cookies, passwords or browser profile data. The Windows background host is the sole supported in-canvas browser runtime.
 
 The website toolbar opens native Downloads, Library and Profiles panels over the workspace; users do not need to operate the Windows process window. Browser-owned UI such as file pickers, passkeys and some OS prompts still follows Windows/WebView2 behavior.
 
@@ -152,7 +148,7 @@ The native Downloads panel labels each transfer with its originating browser pro
 
 ## Large-workspace canvas
 
-Each local space accepts up to **2,000 website cards and notes**. The complete model remains in local storage, while ordinary card DOM is mounted only near the viewport. A grid-based spatial index narrows viewport queries; selected cards and active Live Chrome Surface media elements remain mounted so camera movement does not tear down drag state or decoded video. Search remains workspace-wide but keeps off-screen results in the search index rather than mounting every match. Press Enter to jump to the next match and Shift+Enter to move backward.
+Each local space accepts up to **2,000 website cards and notes**. The complete model remains in local storage, while ordinary card DOM is mounted only near the viewport. A grid-based spatial index narrows viewport queries; selected cards remain mounted to preserve focus and drag state; native WebView2 surfaces are positioned independently by the Windows overlay. Search remains workspace-wide but keeps off-screen results in the search index rather than mounting every match. Press Enter to jump to the next match and Shift+Enter to move backward.
 
 Native WebView2 synchronization derives body rectangles from the camera transform, so it still sends descriptors for off-screen cards that have no DOM element. The Windows host continues to decide which small number of actual browser renderers can be visible. The minimap draws into one Canvas instead of creating one HTML element per item.
 
