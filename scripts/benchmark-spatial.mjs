@@ -6,7 +6,7 @@ const { SpatialIndex } = require("../spatial-index.js");
 
 const SIZES = [2000, 10000, 50000];
 const QUERY_COUNT = 250;
-const round = value => Math.round(value * 100) / 100;
+const round = value => Math.round(value * 1000) / 1000;
 
 function makeDataset(size) {
   return Array.from({ length: size }, (_, index) => ({
