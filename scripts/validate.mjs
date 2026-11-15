@@ -722,3 +722,8 @@ if (!virtualizerFunction.includes('element?.querySelector(".live-surface-video")
     !liveStartFunction.includes("renderNodes()") ||
     !liveStartFunction.includes('$(".live-surface-video", nodeElement)')) fail("The first live-stream render must create its video element, while later virtualization refreshes preserve the mounted video.");
 else pass("Live Chrome streams create their first video element and keep that element attached across later virtualizer refreshes.");
+
+
+if (nativeSyncSource.includes("syncActiveSpace()") ||
+    !saveFunction.includes("syncActiveSpace()")) fail("Sanitized active-space snapshots must be refreshed on workspace mutations, not allocated on every native camera frame.");
+else pass("Native camera frames avoid re-sanitizing and cloning the full active workspace; snapshots refresh when save is scheduled.");
