@@ -799,10 +799,12 @@
   document.addEventListener("visibilitychange", () => {
     sendNativeBridgeMessage({ type: "nolane.workspace.visibility", protocol: 2, visible: document.visibilityState === "visible" });
     scheduleNativeSurfaceSync();
+    if (document.visibilityState === "visible" && !nativeHostAvailable) queueWindowsBridgeReconnect();
   });
   window.addEventListener("focus", () => {
     sendNativeBridgeMessage({ type: "nolane.workspace.visibility", protocol: 2, visible: true });
     scheduleNativeSurfaceSync();
+    if (!nativeHostAvailable) queueWindowsBridgeReconnect();
   });
   window.addEventListener("blur", () => {
     sendNativeBridgeMessage({ type: "nolane.workspace.visibility", protocol: 2, visible: document.visibilityState === "visible" });
@@ -2250,9 +2252,13 @@
   }
 
   function queueWindowsBridgeReconnect() {
-    if (nativeBridgeReconnectTimer || nativeBridgePermission !== "granted" ||
-        document.visibilityState !== "visible" || nativeBridgeReconnectAttempts >= 8) return;
-    const delay = Math.min(15000, 800 * Math.pow(1.7, nativeBridgeReconnectAttempts++));
+    if (nativeBridgeReconnectTimer || nativeHostAvailable || nativeBridgePermission !== "granted" ||
+        document.visibilityState !== "visible") return;
+    // The background host may start after the website or restart for a WebView2 runtime update.
+    // Keep retrying with a bounded 30-second delay instead of exhausting a small fixed attempt count.
+    const exponent = Math.min(nativeBridgeReconnectAttempts, 8);
+    nativeBridgeReconnectAttempts = Math.min(nativeBridgeReconnectAttempts + 1, 8);
+    const delay = Math.min(30000, 800 * Math.pow(1.7, exponent));
     nativeBridgeReconnectTimer = window.setTimeout(() => {
       nativeBridgeReconnectTimer = 0;
       connectWindowsBridge();
