@@ -440,3 +440,28 @@ test("upsert moves entries across fine and coarse cells without leaving stale ca
   assert.equal(index.remove(moving.id), true);
   assert.equal(index.size, 0);
 });
+
+
+test("clear and rebuild remove all fine/coarse memberships and overflow state", () => {
+  const index = new SpatialIndex(128);
+  const fine = { id: "rebuild-fine", x: 100, y: 100, w: 80, h: 80 };
+  const coarseOverflow = { id: "rebuild-overflow", x: -2_000_000, y: -2_000_000, w: 4_000_000, h: 4_000_000 };
+  index.rebuild([fine, coarseOverflow]);
+  assert.equal(index.size, 2);
+  assert.ok(index.query({ x: 0, y: 0, w: 300, h: 300 }).some(item => item.id === fine.id));
+  assert.ok(index.query({ x: -100, y: -100, w: 200, h: 200 }).some(item => item.id === coarseOverflow.id));
+
+  index.clear();
+  assert.equal(index.size, 0);
+  assert.deepEqual(index.query({ x: -10, y: -10, w: 20, h: 20 }), []);
+  assert.equal(index.cells.size, 0);
+  assert.equal(index.coarseCells.size, 0);
+  assert.equal(index.oversized.size, 0);
+  assert.equal(index.coarseOversized.size, 0);
+
+  const replacement = { id: "after-rebuild", x: 16_500, y: -16_500, w: 90, h: 90 };
+  index.rebuild([replacement]);
+  assert.equal(index.size, 1);
+  assert.deepEqual(index.query({ x: 16_400, y: -16_600, w: 300, h: 300 }).map(item => item.id), [replacement.id]);
+  assert.deepEqual(index.query({ x: 0, y: 0, w: 300, h: 300 }), []);
+});
