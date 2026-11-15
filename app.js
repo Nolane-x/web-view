@@ -530,8 +530,10 @@
     }
     for (const node of wanted.values()) {
       let element = renderedNodeElements.get(node.id);
-      const hasLiveVideoElement = !!element?.querySelector(".live-surface-video");
-      const preserveLiveVideoDom = liveSurfaces.has(node.id) && hasLiveVideoElement;
+      const liveSurface = liveSurfaces.get(node.id);
+      const liveVideoElement = element?.querySelector(".live-surface-video");
+      const preserveLiveVideoDom = !!liveSurface && !!liveVideoElement &&
+        liveVideoElement.srcObject === liveSurface.stream;
       // The first render after a stream starts must create its video element.
       // Subsequent renders keep that actual element attached to preserve playback.
       const recreate = !element || (forceRefresh && !preserveLiveVideoDom);
