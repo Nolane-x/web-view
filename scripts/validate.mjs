@@ -901,3 +901,11 @@ if (!pointerMoveFunction.includes("spatialIndex.get(dragState.id)") ||
     !pointerMoveFunction.includes("spatialIndex.get(resizeState.id)") ||
     pointerMoveFunction.includes("nodes.find(")) fail("Pointer-move drag and resize lookups must use constant-time spatial-index access.");
 else pass("Drag and resize pointer-move handlers use constant-time spatial-index lookups instead of scanning all nodes.");
+
+
+if (!spatialIndexSource.includes("const safeRange = [range.minX, range.minY, range.maxX, range.maxY].every(Number.isSafeInteger)") ||
+    !spatialIndexSource.includes("right <= x || bottom <= y") ||
+    !spatialIndexSource.includes("!safeRange || !Number.isSafeInteger(cellCount)") ||
+    !spatialIndexTests.includes('test("extreme but representable world coordinates use overflow lookup without unsafe cell loops"') ||
+    !spatialIndexTests.includes('test("rectangles whose extent disappears at floating-point precision are rejected"')) fail("Spatial indexing must safely handle extreme numeric coordinates and floating-point collapsed rectangles.");
+else pass("Spatial indexing rejects non-representable extents and routes non-safe grid coordinates through bounded fallback paths.");
