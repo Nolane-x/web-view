@@ -894,3 +894,10 @@ const validateNodeFunction = js.slice(js.indexOf("function validateNode"), js.in
 if (validateNodeFunction.indexOf("claimUniqueId(node.id") < validateNodeFunction.indexOf('if (node.type === "website")') ||
     !validateNodeFunction.includes("Claim the ID only after the record has passed validation")) fail("Imported node IDs must be claimed only after the node record has passed validation.");
 else pass("Invalid import records do not reserve IDs or force later valid cards to be renamed.");
+
+
+const pointerMoveFunction = js.slice(js.indexOf("function pointerMove"), js.indexOf("function pointerUp"));
+if (!pointerMoveFunction.includes("spatialIndex.get(dragState.id)") ||
+    !pointerMoveFunction.includes("spatialIndex.get(resizeState.id)") ||
+    pointerMoveFunction.includes("nodes.find(")) fail("Pointer-move drag and resize lookups must use constant-time spatial-index access.");
+else pass("Drag and resize pointer-move handlers use constant-time spatial-index lookups instead of scanning all nodes.");
