@@ -717,6 +717,7 @@ else pass("Native surface sync no longer recomputes profile usage on each camera
 const virtualizerFunction = js.slice(js.indexOf("function syncCanvasNodeElements"), js.indexOf("function scheduleNativeSurfaceSync"));
 const liveStartFunction = js.slice(js.indexOf("function startLiveSurface"), js.indexOf("function stopLiveSurfaceById"));
 if (!virtualizerFunction.includes('element?.querySelector(".live-surface-video")') ||
+    !virtualizerFunction.includes("liveVideoElement.srcObject === liveSurface.stream") ||
     !virtualizerFunction.includes("preserveLiveVideoDom") ||
     !liveStartFunction.includes("liveSurfaces.set(node.id") ||
     !liveStartFunction.includes("renderNodes()") ||
