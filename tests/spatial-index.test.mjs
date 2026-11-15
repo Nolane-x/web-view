@@ -210,31 +210,31 @@ test("very broad safe viewport queries fall back to exact rectangle filtering", 
 
 test("world coordinates preserve large valid positions beyond the former 100,000-unit clamp", () => {
   const { normalizeWorldCoordinate } = require("../spatial-index.js");
-  assert.equal(normalizeWorldCoordinate(500000, 0, 1_000_000_000), 500000);
-  assert.equal(normalizeWorldCoordinate(-750000, 0, 1_000_000_000), -750000);
+  assert.equal(normalizeWorldCoordinate(500000, 0, 8_000_000), 500000);
+  assert.equal(normalizeWorldCoordinate(-750000, 0, 8_000_000), -750000);
 });
 
 test("world coordinates clamp finite values and replace non-finite values with a safe fallback", () => {
   const { normalizeWorldCoordinate } = require("../spatial-index.js");
-  assert.equal(normalizeWorldCoordinate(2_000_000_000, 17, 1_000_000_000), 1_000_000_000);
-  assert.equal(normalizeWorldCoordinate(-2_000_000_000, -17, 1_000_000_000), -1_000_000_000);
-  assert.equal(normalizeWorldCoordinate(Number.POSITIVE_INFINITY, 42, 1_000_000_000), 42);
-  assert.equal(normalizeWorldCoordinate(Number.NaN, -42, 1_000_000_000), -42);
-  assert.equal(normalizeWorldCoordinate(null, 19, 1_000_000_000), 19);
-  assert.equal(normalizeWorldCoordinate("", -19, 1_000_000_000), -19);
+  assert.equal(normalizeWorldCoordinate(2_000_000_000, 17, 8_000_000), 8_000_000);
+  assert.equal(normalizeWorldCoordinate(-2_000_000_000, -17, 8_000_000), -8_000_000);
+  assert.equal(normalizeWorldCoordinate(Number.POSITIVE_INFINITY, 42, 8_000_000), 42);
+  assert.equal(normalizeWorldCoordinate(Number.NaN, -42, 8_000_000), -42);
+  assert.equal(normalizeWorldCoordinate(null, 19, 8_000_000), 19);
+  assert.equal(normalizeWorldCoordinate("", -19, 8_000_000), -19);
 });
 
 test("camera translations use the normalized scale-aware world-coordinate budget", () => {
   const { normalizeViewState } = require("../spatial-index.js");
   const options = {
     defaultX: 25, defaultY: 0, defaultScale: 1,
-    minScale: 0.25, maxScale: 2.2, maxWorldCoordinate: 1_000_000_000
+    minScale: 0.25, maxScale: 2.2, maxWorldCoordinate: 8_000_000
   };
   assert.deepEqual(normalizeViewState({ x: -500000, y: 700000, scale: 1 }, options), {
     x: -500000, y: 700000, scale: 1
   });
   assert.deepEqual(normalizeViewState({ x: 9_000_000_000, y: -9_000_000_000, scale: 0.5 }, options), {
-    x: 500_000_000, y: -500_000_000, scale: 0.5
+    x: 4_000_000, y: -4_000_000, scale: 0.5
   });
 });
 
@@ -242,7 +242,7 @@ test("camera scale is bounded and invalid camera values receive deterministic de
   const { normalizeViewState } = require("../spatial-index.js");
   const options = {
     defaultX: 25, defaultY: 7, defaultScale: 1,
-    minScale: 0.25, maxScale: 2.2, maxWorldCoordinate: 1_000_000_000
+    minScale: 0.25, maxScale: 2.2, maxWorldCoordinate: 8_000_000
   };
   assert.deepEqual(normalizeViewState({ x: Number.NaN, y: Number.POSITIVE_INFINITY, scale: 99 }, options), {
     x: 25, y: 7, scale: 2.2
@@ -256,4 +256,17 @@ test("camera scale is bounded and invalid camera values receive deterministic de
   assert.deepEqual(normalizeViewState({ x: null, y: "", scale: null }, options), {
     x: 25, y: 7, scale: 1
   });
+});
+
+
+test("maximum camera zoom stays inside the practical Chromium CSS length range", () => {
+  const { normalizeViewState } = require("../spatial-index.js");
+  const options = {
+    defaultX: 25, defaultY: 0, defaultScale: 1,
+    minScale: 0.25, maxScale: 2.2, maxWorldCoordinate: 8_000_000
+  };
+  const view = normalizeViewState({ x: 100_000_000, y: -100_000_000, scale: 2.2 }, options);
+  assert.deepEqual(view, { x: 17_600_000, y: -17_600_000, scale: 2.2 });
+  assert.ok(Math.abs(view.x) < 33_554_429);
+  assert.ok(Math.abs(view.y) < 33_554_429);
 });
