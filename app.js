@@ -52,6 +52,7 @@
   let nativeHostReadyNotified = false;
   let nativeBridgeSocket = null;
   let nativeBridgePermission = "unknown";
+  let nativeBridgeLastError = "";
   let nativeBridgeReconnectTimer = 0;
   let nativeBridgeReconnectAttempts = 0;
   const nativeSurfaceStates = new Map();
@@ -1301,20 +1302,27 @@
     const panel = $(".bridge-status-large");
     const sidebar = $("#bridgeSidebarState");
     const connectedNow = nativeHostAvailable;
-    if (title) title.textContent = connectedNow ? "Nolane Windows Bridge connected" : "Windows bridge not connected";
+    const permissionDenied = nativeBridgePermission === "denied";
+    const failure = permissionDenied
+      ? "Loopback access is blocked. Open the site settings for nolane-x.github.io, set Loopback network access to Allow, then reload this page."
+      : nativeBridgeLastError;
+    if (title) title.textContent = connectedNow ? "Nolane Windows Bridge connected" :
+      failure ? "Windows bridge connection failed" : "Windows bridge not connected";
     if (detail) detail.textContent = connectedNow
       ? "Windows is running in the background. Website cards use real WebView2 surfaces."
-      : "Start the Windows background bridge, then allow this website to connect to the local service once.";
-    if (pill) pill.textContent = connectedNow ? "Connected" : "Not connected";
+      : failure || "Start the Windows background bridge, then connect from this page. The installer checks the local service before reporting success.";
+    if (pill) pill.textContent = connectedNow ? "Connected" : failure ? "Check required" : "Not connected";
     if (panel) panel.classList.toggle("connected", connectedNow);
     if (sidebar) sidebar.innerHTML = '<i class="status-dot' + (connectedNow ? ' green' : '') + '"></i> ' + (connectedNow ? "Windows bridge" : "Connect Windows");
     const footer = $("#bridgeFooterState");
-    if (footer) footer.textContent = connectedNow ? "Windows background bridge · Connected" : "Windows background bridge · Not connected";
+    if (footer) footer.textContent = connectedNow ? "Windows background bridge · Connected" :
+      failure ? "Windows bridge · Troubleshooting required" : "Windows background bridge · Not connected";
     const connectButton = $("#connectWindowsBridgeButton");
     if (connectButton) {
-      connectButton.disabled = connectedNow || nativeBridgePermission === "denied";
+      connectButton.disabled = connectedNow || permissionDenied;
       connectButton.textContent = connectedNow ? "Connected" :
-        nativeBridgePermission === "denied" ? "Enable loopback access in site settings" : "Connect Windows bridge";
+        permissionDenied ? "Enable loopback access in site settings" :
+        failure ? "Try connecting again" : "Connect Windows bridge";
     }
   }
 
@@ -1339,6 +1347,14 @@
     try { socket = new WebSocket("ws://127.0.0.1:43172/bridge", "nolane.infinite.v2"); }
     catch (_) { return toast("Could not open the local connection. Check that the Windows bridge is running.", "error"); }
     nativeBridgeSocket = socket;
+    nativeBridgeLastError = "";
+    updateBridgeStatus();
+    let handshakeTimer = window.setTimeout(() => {
+      if (nativeBridgeSocket !== socket || nativeHostAvailable || socket.readyState !== WebSocket.OPEN) return;
+      nativeBridgeLastError = "The local service accepted the socket but did not finish the Nolane handshake. Check the Windows host log, then restart the bridge.";
+      updateBridgeStatus();
+      socket.close(4000, "Nolane handshake timed out");
+    }, 10000);
     socket.addEventListener("open", () => {
       socket.send(JSON.stringify({ type: "nolane.bridge.hello", protocol: 2, page: location.href }));
     }, { once: true });
@@ -1347,16 +1363,27 @@
       try { message = JSON.parse(event.data); } catch (_) { return; }
       handleNativeHostMessage(message);
       if (message.type === "nolane.native.ready") {
+        window.clearTimeout(handshakeTimer);
+        handshakeTimer = 0;
+        nativeBridgeLastError = "";
+        updateBridgeStatus();
         sendNativeBridgeMessage({ type: "nolane.workspace.visibility", protocol: 2, visible: document.visibilityState === "visible" });
         scheduleNativeSurfaceSync();
       }
     });
     socket.addEventListener("error", () => {
-      if (!nativeHostAvailable) updateBridgeStatus();
+      if (!nativeHostAvailable) {
+        nativeBridgeLastError = "The browser could not reach 127.0.0.1:43172. Check that Nolane.DesktopHost.exe is running and that Loopback network access is allowed for this site.";
+        updateBridgeStatus();
+      }
     });
     socket.addEventListener("close", () => {
+      if (handshakeTimer) window.clearTimeout(handshakeTimer);
       if (nativeBridgeSocket === socket) nativeBridgeSocket = null;
       const wasConnected = nativeHostAvailable;
+      if (!wasConnected && !nativeBridgeLastError && nativeBridgePermission !== "denied") {
+        nativeBridgeLastError = "The local WebSocket was closed before the Windows host announced that it was ready. Run Diagnose-NolaneInfinite.cmd from the Windows ZIP.";
+      }
       nativeHostAvailable = false;
       nativeHostReadyNotified = false;
       nativeWorkspaceSnapshotProtocol = false;
