@@ -1332,6 +1332,7 @@
       nativeBridgePermission = permission.state;
       permission.onchange = () => {
         nativeBridgePermission = permission.state;
+        if (nativeBridgePermission === "granted") nativeBridgeLastError = "";
         updateBridgeStatus();
         if (nativeBridgePermission === "granted" && !nativeHostAvailable) connectWindowsBridge();
       };
@@ -1401,8 +1402,8 @@
   }
 
   function queueWindowsBridgeReconnect() {
-    if (nativeBridgeReconnectTimer || nativeHostAvailable || nativeBridgePermission !== "granted" ||
-        document.visibilityState !== "visible") return;
+    if (nativeBridgeReconnectTimer || nativeHostAvailable || nativeBridgeLastError ||
+        nativeBridgePermission !== "granted" || document.visibilityState !== "visible") return;
     // The background host may start after the website or restart for a WebView2 runtime update.
     // Keep retrying with a bounded 30-second delay instead of exhausting a small fixed attempt count.
     const exponent = Math.min(nativeBridgeReconnectAttempts, 8);
