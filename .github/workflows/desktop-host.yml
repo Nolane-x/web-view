@@ -125,7 +125,8 @@ jobs:
         run: |
           $scripts = @(
             "desktop-host/packaging/Install-NolaneInfinite.ps1",
-            "desktop-host/packaging/Uninstall-NolaneInfinite.ps1"
+            "desktop-host/packaging/Uninstall-NolaneInfinite.ps1",
+            "desktop-host/packaging/Diagnose-NolaneInfinite.ps1"
           )
           foreach ($script in $scripts) {
             if (-not (Test-Path $script)) { throw "Missing Windows installer script: $script" }
@@ -134,7 +135,7 @@ jobs:
             [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script), [ref]$tokens, [ref]$errors) | Out-Null
             if ($errors.Count -gt 0) { throw "PowerShell syntax errors in $script : $($errors -join '; ')" }
           }
-          foreach ($cmd in @("desktop-host/packaging/Install-NolaneInfinite.cmd", "desktop-host/packaging/Uninstall-NolaneInfinite.cmd")) {
+          foreach ($cmd in @("desktop-host/packaging/Install-NolaneInfinite.cmd", "desktop-host/packaging/Uninstall-NolaneInfinite.cmd", "desktop-host/packaging/Diagnose-NolaneInfinite.cmd")) {
             if (-not (Test-Path $cmd)) { throw "Missing double-click installer launcher: $cmd" }
           }
           Write-Host "Windows installer/uninstaller scripts passed PowerShell parser validation."
@@ -149,6 +150,8 @@ jobs:
           Copy-Item (Join-Path $packaging "Install-NolaneInfinite.cmd") $output
           Copy-Item (Join-Path $packaging "Uninstall-NolaneInfinite.ps1") $output
           Copy-Item (Join-Path $packaging "Uninstall-NolaneInfinite.cmd") $output
+          Copy-Item (Join-Path $packaging "Diagnose-NolaneInfinite.ps1") $output
+          Copy-Item (Join-Path $packaging "Diagnose-NolaneInfinite.cmd") $output
           Compress-Archive -Path (Join-Path $output "*") -DestinationPath "${{ runner.temp }}/nolane-native-webview2-host-win-x64.zip" -CompressionLevel Optimal
       - name: Publish stable Windows download
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
