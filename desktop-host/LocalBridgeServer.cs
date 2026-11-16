@@ -48,7 +48,12 @@ internal sealed class LocalBridgeServer : IAsyncDisposable
         {
             TcpClient client;
             try { client = await _listener.AcceptTcpClientAsync(_stop.Token).ConfigureAwait(false); }
-            catch { if (_stop.IsCancellationRequested) break; else continue; }
+            catch (Exception error)
+            {
+                if (_stop.IsCancellationRequested) break;
+                HostDiagnostics.WriteException("loopback-accept", error);
+                continue;
+            }
             client.NoDelay = true;
             if (_activeClients.Count >= 8)
             {
@@ -78,6 +83,7 @@ internal sealed class LocalBridgeServer : IAsyncDisposable
             var headers = await ReadHandshakeAsync(stream, handshakeTimeout.Token).ConfigureAwait(false);
             if (!ValidateHandshake(headers, out var key))
             {
+                HostDiagnostics.Write("Rejected a loopback WebSocket handshake because its request path, Origin, Host or protocol did not match the Nolane bridge contract.");
                 await WriteHttpErrorAsync(stream, 403, "Forbidden", handshakeTimeout.Token).ConfigureAwait(false);
                 return;
             }
@@ -102,7 +108,11 @@ internal sealed class LocalBridgeServer : IAsyncDisposable
             await ReceiveLoopAsync(socket, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { }
-        catch { }
+        catch (Exception error)
+        {
+            if (!cancellationToken.IsCancellationRequested)
+                HostDiagnostics.WriteException("loopback-client-handler", error);
+        }
         finally
         {
             if (socket is not null)
@@ -153,7 +163,8 @@ internal sealed class LocalBridgeServer : IAsyncDisposable
         if (!headers.TryGetValue("Connection", out var connection) ||
             !connection.Split(',').Any(token => token.Trim().Equals("upgrade", StringComparison.OrdinalIgnoreCase))) return false;
         if (!headers.TryGetValue("Sec-WebSocket-Version", out var version) || version != "13") return false;
-        if (!headers.TryGetValue("Sec-WebSocket-Key", out key)) return false;
+        if (!headers.TryGetValue("Sec-WebSocket-Key", out var candidateKey) || string.IsNullOrWhiteSpace(candidateKey)) return false;
+        key = candidateKey;
         if (!headers.TryGetValue("Sec-WebSocket-Protocol", out var protocols) ||
             !protocols.Split(',').Any(token => token.Trim() == RequiredProtocol)) return false;
         try { return Convert.FromBase64String(key).Length == 16; }

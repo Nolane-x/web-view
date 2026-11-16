@@ -7,5 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../desktop-host/LocalBridgeServer.cs" Link="LocalBridgeServer.cs" />
+    <Compile Include="../../desktop-host/HostDiagnostics.cs" Link="HostDiagnostics.cs" />
   </ItemGroup>
 </Project>

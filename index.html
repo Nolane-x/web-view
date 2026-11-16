@@ -93,7 +93,7 @@
           <span class="save-indicator" id="saveIndicator"><i></i> All changes saved</span>
         </div>
         <div class="topbar-actions">
-          <label class="search-box" for="searchInput"><svg class="icon"><use href="#i-search"/></svg><input id="searchInput" type="search" placeholder="Find anything..." autocomplete="off"><kbd>/</kbd></label>
+          <label class="search-box" for="searchInput"><svg class="icon"><use href="#i-search"/></svg><input id="searchInput" type="search" placeholder="Find anything · Enter to jump" autocomplete="off"><kbd>/</kbd></label>
           <button class="icon-button top-action" id="downloadsButton" title="Downloads" aria-label="Downloads"><svg class="icon"><use href="#i-download"/></svg></button>
           <button class="icon-button top-action" id="libraryButton" title="History and bookmarks" aria-label="History and bookmarks"><svg class="icon"><use href="#i-bookmark"/></svg></button>
           <button class="icon-button top-action" id="profilesButton" title="Browser profiles" aria-label="Browser profiles"><svg class="icon"><use href="#i-shield"/></svg></button>
@@ -125,7 +125,7 @@
           <span class="control-divider"></span>
           <button class="icon-button" id="minimapButton" title="Toggle minimap"><svg class="icon"><use href="#i-layout"/></svg></button>
         </div>
-        <div class="minimap" id="minimap"><div class="minimap-title">MAP</div><div class="minimap-content" id="minimapContent"><span class="minimap-viewport" id="minimapViewport"></span></div></div>
+        <div class="minimap" id="minimap"><div class="minimap-title">MAP</div><div class="minimap-content" id="minimapContent"><canvas class="minimap-canvas" id="minimapCanvas" aria-hidden="true"></canvas><span class="minimap-viewport" id="minimapViewport" hidden></span></div></div>
       </section>
       <footer class="statusbar"><span><i class="status-dot green"></i> Local mode</span><span id="storageStatus">Saved on this device</span><span class="statusbar-right">No account · No cloud sync · Your data stays local</span></footer>
     </main>
@@ -168,6 +168,7 @@
         <li><span>3</span><div><strong>Use Nolane as usual</strong><p>The bridge starts with Windows after the first successful connection. Keep working on this website; you do not need to operate a separate Windows app or install an extension.</p></div></li>
       </ol>
       <div class="info-callout"><svg class="icon"><use href="#i-info"/></svg><p><strong>Browser permission:</strong> Chrome/Edge protects websites that connect to local apps. Nolane requests loopback access only to its own local bridge on this computer.</p></div>
+      <p class="bridge-troubleshooting-note">When the installer reports success but the connection still fails, run <code>Diagnose-NolaneInfinite.cmd</code> from the extracted Windows ZIP. It creates a local report with the WebView2 Runtime, host process, port listener and startup log status.</p>
       <div class="bridge-capabilities">
         <div><svg class="icon"><use href="#i-check"/></svg><span>No Chrome extension or browser debugger permission is required</span></div>
         <div><svg class="icon"><use href="#i-check"/></svg><span>Real WebView2 browser surfaces are positioned over website cards</span></div>
@@ -199,6 +200,7 @@
   <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
   <script src="./native-bridge.js" defer></script>
   <script src="./workspace-storage.js" defer></script>
+  <script src="./spatial-index.js" defer></script>
   <script src="./app.js" defer></script>
 </body>
 </html>

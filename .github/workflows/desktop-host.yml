@@ -12,6 +12,7 @@ on:
       - "app.js"
       - "native-bridge.js"
       - "workspace-storage.js"
+      - "spatial-index.js"
       - "tests/**"
       - "scripts/validate.mjs"
       - "styles.css"
@@ -27,6 +28,7 @@ on:
       - "app.js"
       - "native-bridge.js"
       - "workspace-storage.js"
+      - "spatial-index.js"
       - "tests/**"
       - "scripts/validate.mjs"
       - "styles.css"
@@ -37,7 +39,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: "native-webview2-host-${{ github.event_name }}"
+  group: "native-webview2-host-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}"
   cancel-in-progress: true
 
 jobs:
@@ -56,6 +58,7 @@ jobs:
           node --version
           node --check app.js
           node --check native-bridge.js
+          node --check spatial-index.js
           node --test tests/*.test.mjs
           node scripts/validate.mjs
 
@@ -73,6 +76,16 @@ jobs:
         shell: pwsh
         run: |
           dotnet run --project native-diagnostics/DownloadProfileFilterSmokeTest/DownloadProfileFilterSmokeTest.csproj -c Release
+
+      - name: Exercise bounded native profile summary parsing
+        shell: pwsh
+        run: |
+          dotnet run --project native-diagnostics/ProfileUsageSnapshotSmokeTest/ProfileUsageSnapshotSmokeTest.csproj -c Release
+
+      - name: Exercise atomic chunked workspace snapshot receiver
+        shell: pwsh
+        run: |
+          dotnet run --project native-diagnostics/WorkspaceSnapshotSmokeTest/WorkspaceSnapshotSmokeTest.csproj -c Release
 
       - name: Compile isolated WebView2 projection smoke test
         shell: pwsh
@@ -112,7 +125,8 @@ jobs:
         run: |
           $scripts = @(
             "desktop-host/packaging/Install-NolaneInfinite.ps1",
-            "desktop-host/packaging/Uninstall-NolaneInfinite.ps1"
+            "desktop-host/packaging/Uninstall-NolaneInfinite.ps1",
+            "desktop-host/packaging/Diagnose-NolaneInfinite.ps1"
           )
           foreach ($script in $scripts) {
             if (-not (Test-Path $script)) { throw "Missing Windows installer script: $script" }
@@ -121,7 +135,7 @@ jobs:
             [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script), [ref]$tokens, [ref]$errors) | Out-Null
             if ($errors.Count -gt 0) { throw "PowerShell syntax errors in $script : $($errors -join '; ')" }
           }
-          foreach ($cmd in @("desktop-host/packaging/Install-NolaneInfinite.cmd", "desktop-host/packaging/Uninstall-NolaneInfinite.cmd")) {
+          foreach ($cmd in @("desktop-host/packaging/Install-NolaneInfinite.cmd", "desktop-host/packaging/Uninstall-NolaneInfinite.cmd", "desktop-host/packaging/Diagnose-NolaneInfinite.cmd")) {
             if (-not (Test-Path $cmd)) { throw "Missing double-click installer launcher: $cmd" }
           }
           Write-Host "Windows installer/uninstaller scripts passed PowerShell parser validation."
@@ -136,6 +150,8 @@ jobs:
           Copy-Item (Join-Path $packaging "Install-NolaneInfinite.cmd") $output
           Copy-Item (Join-Path $packaging "Uninstall-NolaneInfinite.ps1") $output
           Copy-Item (Join-Path $packaging "Uninstall-NolaneInfinite.cmd") $output
+          Copy-Item (Join-Path $packaging "Diagnose-NolaneInfinite.ps1") $output
+          Copy-Item (Join-Path $packaging "Diagnose-NolaneInfinite.cmd") $output
           Compress-Archive -Path (Join-Path $output "*") -DestinationPath "${{ runner.temp }}/nolane-native-webview2-host-win-x64.zip" -CompressionLevel Optimal
       - name: Publish stable Windows download
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -154,7 +170,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Could not publish the native host release asset." }
 
       - name: Upload native host bundle
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: nolane-native-webview2-host-win-x64
           path: ${{ runner.temp }}/nolane-native-webview2-host-win-x64.zip
@@ -163,7 +179,7 @@ jobs:
 
       - name: Upload native dependency diagnostics
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: nolane-native-webview2-diagnostics
           path: |

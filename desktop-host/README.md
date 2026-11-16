@@ -32,3 +32,15 @@ Overlay geometry is implemented in `OverlayGeometry.cs` so card and panel region
 
 
 Downloads records carry the originating browser profile and the panel filters by profile. Older local history entries without the profile field remain assigned to Default; private-session download metadata is not written to disk. Download files continue to use the destination selected in WebView2's native Save dialog.
+
+
+## Diagnosing Windows startup and connection failures
+
+The installer checks for the Microsoft Edge WebView2 Evergreen Runtime before copying files, then starts the host and verifies that the launched process itself owns the loopback listener on `127.0.0.1:43172`. A successful file copy is no longer treated as a successful installation.
+
+- Double-click `Diagnose-NolaneInfinite.cmd` in the extracted ZIP to create `Nolane-Infinite-Diagnostics.txt` on the Desktop (or in the temporary folder if the Desktop path is unavailable).
+- The native process writes its startup stages and full exceptions to `%LOCALAPPDATA%\Nolane\NativeWebView2\Logs\host.log`.
+- The installer writes its own result to `%LOCALAPPDATA%\Nolane\NativeWebView2\Logs\installer-*.log`.
+- If the host is listening but the website remains disconnected, check the browser's site setting for **Loopback network access** on `https://nolane-x.github.io`, reload the page and connect from the button. Chrome's current Local Network Access policy also gates loopback WebSocket connections; the permission must be granted by the user.
+
+The listener is created only after WebView2 Runtime and its environment initialize. A missing Runtime or a startup exception is now written to the host log and surfaced through a Windows notification-area alert instead of silently hiding the only status control.

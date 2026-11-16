@@ -134,9 +134,82 @@ test("native surface state reports private mode only when the host sends a boole
   assert.equal(invalidProfile.profileName, null);
 });
 
+test("workspace snapshot acknowledgements are bound to the exact pending revision", () => {
+  const acknowledged = { type: "nolane.workspace.snapshot.ack", protocol: 2, revision: 41 };
+  assert.equal(bridge.isWorkspaceSnapshotAck(acknowledged, 41), true);
+  assert.equal(bridge.isWorkspaceSnapshotAck(acknowledged, 40), false);
+  assert.equal(bridge.isWorkspaceSnapshotAck({ ...acknowledged, revision: "41" }, 41), false);
+  assert.equal(bridge.isWorkspaceSnapshotAck({ ...acknowledged, protocol: 1 }, 41), false);
+  assert.equal(bridge.isWorkspaceSnapshotAck({ ...acknowledged, type: "nolane.workspace.snapshot.commit" }, 41), false);
+  assert.equal(bridge.isWorkspaceSnapshotAck(acknowledged, 0), false);
+  assert.equal(bridge.isWorkspaceSnapshotAck(acknowledged, Number.MAX_SAFE_INTEGER + 1), false);
+});
+
 test("viewport metadata is bounded and normalized for the Windows overlay", () => {
   const viewport = bridge.normalizeViewport({ screenLeft: 10, screenTop: 50, width: 1440, height: 900, deviceScale: 1.5 });
   assert.deepEqual(JSON.parse(JSON.stringify(viewport)), { screenLeft: 10, screenTop: 50, width: 1440, height: 900, deviceScale: 1.5 });
   assert.equal(bridge.normalizeViewport({ screenLeft: 0, screenTop: 0, width: 20, height: 900, deviceScale: 1 }), null);
   assert.equal(bridge.normalizeViewport({ screenLeft: "NaN", screenTop: 0, width: 1440, height: 900, deviceScale: 1 }), null);
+});
+
+
+test("workspace snapshots are chunked into revisioned bounded messages", () => {
+  const ids = Array.from({ length: 300 }, (_, index) => "card-" + index);
+  const profiles = Array.from({ length: 513 }, (_, index) => ({ name: "Profile-" + index, count: 1 }));
+  const messages = JSON.parse(JSON.stringify(bridge.createWorkspaceSnapshotMessages(7, ids, profiles)));
+  assert.equal(messages.length, 5);
+  assert.deepEqual(messages[0], {
+    type: "nolane.workspace.snapshot.begin", protocol: 2, revision: 7,
+    workspaceIdCount: 300, profileCount: 513, chunkCount: 3
+  });
+  assert.equal(messages[1].workspaceIds.length, 256);
+  assert.equal(messages[1].profileUsage.length, 256);
+  assert.equal(messages[2].workspaceIds.length, 44);
+  assert.equal(messages[2].profileUsage.length, 256);
+  assert.equal(messages[3].workspaceIds.length, 0);
+  assert.equal(messages[3].profileUsage.length, 1);
+  assert.deepEqual(messages[4], { type: "nolane.workspace.snapshot.commit", protocol: 2, revision: 7 });
+  assert.deepEqual(messages[1].workspaceIds, ids.slice(0, 256));
+});
+
+test("workspace snapshots collapse case-insensitive profiles and support empty snapshots", () => {
+  const messages = JSON.parse(JSON.stringify(bridge.createWorkspaceSnapshotMessages(8, [], [
+    { name: "Work", count: 2 }, { name: "work", count: 3 }, { name: "", count: 1 }
+  ])));
+  assert.equal(messages.length, 3);
+  assert.deepEqual(messages[0], {
+    type: "nolane.workspace.snapshot.begin", protocol: 2, revision: 8,
+    workspaceIdCount: 0, profileCount: 2, chunkCount: 1
+  });
+  assert.deepEqual(messages[1].profileUsage, [["", 1], ["Work", 5]]);
+  assert.deepEqual(JSON.parse(JSON.stringify(bridge.createWorkspaceSnapshotMessages(9, [], []))), [
+    { type: "nolane.workspace.snapshot.begin", protocol: 2, revision: 9, workspaceIdCount: 0, profileCount: 0, chunkCount: 0 },
+    { type: "nolane.workspace.snapshot.commit", protocol: 2, revision: 9 }
+  ]);
+});
+
+test("workspace snapshots reject malformed IDs, duplicate IDs and out-of-quota profiles", () => {
+  assert.equal(bridge.createWorkspaceSnapshotMessages(0, [], []), null);
+  assert.equal(bridge.createWorkspaceSnapshotMessages(1, ["bad/id"], []), null);
+  assert.equal(bridge.createWorkspaceSnapshotMessages(1, ["duplicate", "duplicate"], []), null);
+  assert.equal(bridge.createWorkspaceSnapshotMessages(1, [], [{ name: "bad/name", count: 1 }]), null);
+  assert.equal(bridge.createWorkspaceSnapshotMessages(1, [], [{ name: "Work", count: 0 }]), null);
+  assert.equal(bridge.createWorkspaceSnapshotMessages(1, [], [{ name: "Work", count: 24000 }, { name: "Personal", count: 1 }]), null);
+  assert.equal(bridge.createWorkspaceSnapshotMessages(1, ["x".repeat(81)], []), null);
+});
+
+
+test("workspace snapshot builder handles the full 24,000-entry protocol ceiling", () => {
+  const ids = Array.from({ length: 24000 }, (_, index) => "card-" + index);
+  const profiles = Array.from({ length: 24000 }, (_, index) => ({ name: "Profile-" + index, count: 1 }));
+  const messages = JSON.parse(JSON.stringify(bridge.createWorkspaceSnapshotMessages(10, ids, profiles)));
+  assert.equal(messages.length, 96);
+  assert.equal(messages[0].workspaceIdCount, 24000);
+  assert.equal(messages[0].profileCount, 24000);
+  assert.equal(messages[0].chunkCount, 94);
+  const chunks = messages.slice(1, -1);
+  assert.equal(chunks.length, 94);
+  assert.equal(chunks.reduce((sum, chunk) => sum + chunk.workspaceIds.length, 0), 24000);
+  assert.equal(chunks.reduce((sum, chunk) => sum + chunk.profileUsage.length, 0), 24000);
+  assert.ok(chunks.every(chunk => chunk.workspaceIds.length <= 256 && chunk.profileUsage.length <= 256));
 });

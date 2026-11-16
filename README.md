@@ -9,7 +9,7 @@ Nolane Infinite is a local-first canvas for arranging websites, ideas and tools 
 ## What works today
 
 - Infinite canvas with pointer-based pan and cursor-anchored zoom.
-- Website cards with direct open-in-browser and a live Chrome surface mode that streams the actual tab into the canvas and forwards mouse/keyboard input locally.
+- Website cards rendered by native WebView2 surfaces through the Windows background bridge, with direct open-in-browser fallback.
 - Notes with editable text and four color themes.
 - Multiple named workspaces (up to 12), each with its own canvas, layout and saved items.
 - Create, switch, rename and delete local workspaces.
@@ -18,7 +18,6 @@ Nolane Infinite is a local-first canvas for arranging websites, ideas and tools 
 - Local persistence through IndexedDB, with a localStorage fallback.
 - JSON export and import for the complete set of workspaces.
 - PWA manifest and an offline-cached static app shell.
-- Optional Chrome MV3 companion for user-selected tab import and return-to-original-tab.
 - Responsive layout for desktop and smaller screens.
 - GitHub Actions deployment to GitHub Pages.
 
@@ -31,16 +30,13 @@ Nolane Infinite is a local-first canvas for arranging websites, ideas and tools 
 - The static hosting provider may receive ordinary delivery/security logs.
 - Import/export files remain under the user's control.
 
-## Important compatibility boundary
+## Windows-native website runtime
 
-An iframe may still be blocked by CSP/X-Frame-Options, and sandboxed frames may break origin-bound storage. The primary path for full website interaction is the **Windows background bridge**: its native WebView2 child browsers are positioned over website cards in the Chrome/Edge window that contains Nolane. The website remains the workspace UI; the Windows process stays in the notification area and runs quietly in the background. It does not need a Chrome extension or debugger permission. A one-time Loopback Network Access permission is required by Chrome/Edge so the HTTPS website can connect to the local Windows process.
+An iframe may still be blocked by CSP/X-Frame-Options, and sandboxed frames may break origin-bound storage. The supported path for full website interaction is the **Windows background bridge**. It positions real WebView2 child browsers over website cards in the Chrome/Edge window that contains Nolane. The website remains the workspace UI; the Windows process stays in the notification area and runs quietly in the background.
 
-The optional Chrome MV3 Browser Companion is now included in extension/. It asks for the Tabs permission only after the user clicks its grant button, lets the user select open tabs, and adds their titles/URLs as workspace cards. Selecting a card focuses the original Chrome tab, so its existing login session stays in Chrome. The extension does not read cookies, passwords, page contents or tokens. It does not turn tabs into embedded DOM surfaces; universal authenticated surfaces still require a local browser runtime (for example a custom Chromium host or a native WebView host). See extension/README.md and docs/ARCHITECTURE.md.
+Install the Windows host once, open Nolane in Chrome or Edge, and connect it from the website. The browser asks for a one-time Loopback Network Access permission so the HTTPS workspace can reach the local service at `127.0.0.1:43172`. After permission is granted, the site reconnects automatically while the host is running.
 
-
-## Legacy Chrome companion
-
-The `extension/` directory remains in the repository for older workspaces and compatibility experiments. It is **not required for the current Windows background bridge** and is no longer part of the primary setup path. The native bridge uses WebView2 directly and does not ask Chrome for debugger, tab-capture or extension permissions.
+There is no Chrome extension, tab-capture, or debugger integration in the supported product. WebView2 uses its own local profiles and sign-ins; it does not import Chrome cookies, passwords or browser profile data. Add website cards by URL, then use the native surface directly on the canvas.
 
 ## Run locally
 
@@ -67,7 +63,7 @@ One-time repository setup is required: open Settings → Pages → Build and dep
 
 ## Project status
 
-Nolane Infinite is a local-first web workspace with a static website UI and an optional Windows background browser runtime. Native WebView2 surfaces provide direct in-canvas interaction where iframe embedding is blocked, subject to the documented compatibility and resource limits. Chrome sign-in data remains separate from the WebView2 profiles.
+Nolane Infinite is a local-first web workspace with a static website UI and a Windows background browser runtime for native in-canvas website interaction. Native WebView2 surfaces provide direct in-canvas interaction where iframe embedding is blocked, subject to the documented compatibility and resource limits. Chrome sign-in data remains separate from the WebView2 profiles.
 
 
 ## Windows background bridge and native web surfaces
@@ -80,13 +76,13 @@ The bridge listens on IPv4 loopback only at `127.0.0.1:43172`. It accepts a WebS
 
 The native process detects the Chromium page-render window and aligns a transparent native overlay to its real viewport. The overlay contains real WebView2 website surfaces and follows canvas movement, zoom, card resizing and browser-window changes. Its native window region is restricted to visible website-card bodies and open native panels, so the empty canvas remains interactive and click-through. If the active Chromium viewport cannot be located confidently, the overlay stays hidden rather than drawing in the wrong place.
 
-WebView2 has its own persistent browser profiles and sign-ins. It does not import Chrome cookies, passwords or browser profile data. The Chrome Companion source remains only as a legacy optional component; the current product path does not need it.
+WebView2 has its own persistent browser profiles and sign-ins. It does not import Chrome cookies, passwords or browser profile data. The Windows background host is the sole supported in-canvas browser runtime.
 
 The website toolbar opens native Downloads, Library and Profiles panels over the workspace; users do not need to operate the Windows process window. Browser-owned UI such as file pickers, passkeys and some OS prompts still follows Windows/WebView2 behavior.
 
 ## Native browser controls and safety
 
-Each native website card now has independent Back, Forward, Reload and Mute controls. The current HTTP(S) page address is synced back into the workspace, so navigation survives a future restart/export. WebView2 runtime availability is checked at startup and updates are detected; restart Nolane after a runtime update is ready. Camera, microphone, geolocation, notifications and other WebView2 permissions are requested through an explicit Allow once/Block prompt and are not persisted by Nolane. WebView2 keeps its native user-driven download dialog. Unsolicited `window.open` popups are blocked; user-initiated popups open in the system browser.
+Each native website card now has independent Back, Forward, Reload and Mute controls. The current HTTP(S) page address is synced back into the workspace, so navigation survives a future restart/export. WebView2 runtime availability is checked at startup and updates are detected; Nolane shows a Windows notification-area alert when a newer runtime is ready. Choose **Restart bridge…** from the tray menu to apply it. Nolane asks for confirmation first and warns when active or resumable downloads may be interrupted; the restart closes native website cards, waits for WebView2 and the loopback listener to shut down, then relaunches the background host. Camera, microphone, geolocation, notifications and other WebView2 permissions are requested through an explicit Allow once/Block prompt and are not persisted by Nolane. WebView2 keeps its native user-driven download dialog. Unsolicited `window.open` popups are blocked; user-initiated popups open in the system browser.
 
 Native website cards also expose an address field in the card header. Enter a hostname or full HTTP(S) URL and press Enter to navigate that card in place; the host rejects unsafe schemes and embedded credentials, and the current URL is synced back into the saved workspace.
 
@@ -148,3 +144,34 @@ The startup choice is stored in a separate per-user application registry key; th
 
 
 The native Downloads panel labels each transfer with its originating browser profile and filters All profiles, Default, named profiles or Private sessions. The filter applies to the visible list and Clear finished action. Downloads still go to the destination chosen in WebView2's Save dialog; Nolane does not silently move files into profile-specific folders.
+
+
+## Large-workspace canvas
+
+Each local space accepts up to **2,000 website cards and notes**. The complete model remains in local storage, while ordinary card DOM is mounted only near the viewport. A grid-based spatial index narrows viewport queries; selected cards remain mounted to preserve focus and drag state; native WebView2 surfaces are positioned independently by the Windows overlay. Search remains workspace-wide but keeps off-screen results in the search index rather than mounting every match. Press Enter to jump to the next match and Shift+Enter to move backward.
+
+Native WebView2 synchronization derives body rectangles from the camera transform, so it still sends descriptors for off-screen cards that have no DOM element. The Windows host continues to decide which small number of actual browser renderers can be visible. The minimap draws into one Canvas instead of creating one HTML element per item.
+
+The 2,000-item ceiling is a resource guard, not a claim of mathematically unbounded storage. Raising it requires profiling import/export size, IndexedDB latency, camera movement and native synchronization on low-memory Windows devices.
+
+
+Browser profile choices and per-profile card usage are memoized from workspace data. Workspace persistence invalidates those derived caches, so camera frames and repeated card construction do not rescan every node for the same metadata.
+Search indexing also memoizes each node's normalized title, URL, content and description in a `WeakMap`; workspace mutations replace the cache, allowing repeated filter and native-visibility checks to reuse the normalized text without keeping deleted nodes alive.
+
+Native Windows synchronization is also bounded independently of workspace size: each camera update contains at most eight topmost website-card candidates intersecting the current viewport, while the host activates only its adaptive 2–4 renderer budget after successful initialization. Extra candidates allow the host to fall back when a higher-z card cannot initialize or is held open for an active download. A complete list of native website-card IDs is sent only when workspace membership changes or the bridge reconnects. Off-screen native surfaces are hidden and can remain in the host's small cache (up to 8); deleted cards are released, except while an active download is being retained.
+Native workspace membership and profile summaries are sent as a revisioned snapshot separate from camera frames. The sender divides membership IDs and profile rows into 256-entry chunks; the Windows host validates all chunk indices, expected lengths, unique safe IDs, profile quotas and the final revision before atomically replacing its accepted snapshot. Incomplete or malformed transfers leave the previous accepted membership/profile state untouched. New Windows hosts advertise snapshot capability in the ready message; older installed hosts continue using the original protocol-v2 inline fields until upgraded. The host acknowledges a snapshot only after its atomic commit; the website waits for that revision-bound ACK and retries an unacknowledged transfer with a newer revision after five seconds. Older or delayed ACKs cannot clear a newer pending snapshot. Website URLs are capped at 4,096 characters at normalization time, matching the native descriptor parser's bound.
+Profile summaries are serialized as compact `[name,count]` tuples (while the host still accepts the previous object form). The Windows host validates the complete summary before replacing its last good state: profile names must match the workspace safe-name policy, entries and the aggregate count cannot exceed the total 12×2,000-card quota, and duplicate names are merged with checked wide-integer arithmetic. Workspace IDs are restricted to 80 safe ASCII characters and normalized URLs to 4,096 characters, so the maximum membership/profile snapshot and at most eight visible descriptors stay within the bridge's 2 MiB frame guard.
+
+Workspace ingestion assigns a safe unique ID to each node and space. The first valid occurrence of an ID is preserved; later duplicate or unsafe IDs are regenerated. Invalid website records are rejected before they can reserve an ID. Normalization processes no more than 2,000 valid nodes per space and 12 valid spaces.
+
+World coordinates are normalized to a finite range of ±8,000,000 units. Camera translations are bounded by the same world range multiplied by the active zoom (at most 17,600,000 CSS pixels), keeping ordinary CSS layout positions and transformed coordinates comfortably inside Chromium's current CSS length range. A saved card and its saved camera therefore retain the same coordinate system across reload and import.
+
+
+### Viewport origin rebasing
+
+The canvas keeps node positions in stable world coordinates for saving, search, spatial queries, undo and native WebView2 geometry. The DOM renderer uses a separate, transient origin snapped to a 4,096-unit grid near the viewport center. Each rendered card is positioned at `node - origin`, while the world transform becomes `cameraTranslation + origin × zoom`. The two transforms cancel algebraically, so the card remains at exactly the same screen pixel while its CSS left/top values stay close to the viewport. The render origin is never serialized and never sent to the Windows host. Run `node scripts/benchmark-spatial.mjs` to compare index build, viewport query p50/p95 and incremental updates at 2,000, 10,000, 50,000 and 100,000 synthetic cards.
+
+
+### Multi-resolution spatial lookup
+
+The spatial index maintains a 640-unit fine grid and a 64× coarser grid. Normal viewport queries use the fine grid; zoomed-out or broad queries switch to the coarse grid when the fine query would touch more than 4,096 cells. Each layer has its own bounded oversized-entry set, and all candidates are filtered with exact rectangle intersection. Only queries too broad for both grids use the final full-entry fallback. The additional coarse lookup is independent of workspace persistence and does not change the public query API.

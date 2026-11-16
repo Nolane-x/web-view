@@ -27,6 +27,7 @@ public sealed partial class MainWindow : Window
     private const long MaxLibraryBackupBytes = 5L * 1024 * 1024;
     private const string AllLibraryProfilesFilter = "\0all";
     private const string PrivateDownloadsProfileFilter = "\0private";
+    private const int MaxSurfaceCandidates = 8;
     private readonly int _maxVisibleSurfaces = DetermineVisibleSurfaceBudget();
 
     private int MaxVisibleSurfaces => _maxVisibleSurfaces;
@@ -37,12 +38,17 @@ public sealed partial class MainWindow : Window
     private readonly Dictionary<string, int> _profileCardUsage = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _deletedProfileNames = new(StringComparer.OrdinalIgnoreCase);
     private bool _profileUsageReceived;
+    private readonly HashSet<string> _knownWorkspaceSurfaceIds = new(StringComparer.Ordinal);
+    private readonly WorkspaceSnapshotReceiver _workspaceSnapshotReceiver = new();
+    private bool _workspaceSurfaceIdsReceived;
     private bool _workspaceReady;
     private long _syncRevision;
     private List<SurfaceDescriptor>? _pendingSurfaceSync;
     private bool _surfaceSyncRunning;
     private readonly SemaphoreSlim _permissionDialogGate = new(1, 1);
     private bool _runtimeUpdateAvailable;
+    private Task _shutdownTask = Task.CompletedTask;
+    private Action<string, string>? _trayNotification;
     private string? _downloadHistoryPath;
     private string? _browserLibraryPath;
     private readonly List<DownloadEntry> _downloads = new();
@@ -134,6 +140,39 @@ public sealed partial class MainWindow : Window
         return 4;
     }
 
+    public void SetTrayNotificationHandler(Action<string, string> notificationHandler)
+    {
+        _trayNotification = notificationHandler ?? throw new ArgumentNullException(nameof(notificationHandler));
+    }
+
+    public async Task<bool> ConfirmRestartAsync()
+    {
+        var activeDownloads = _downloads.Count(entry =>
+            entry.Operation is { } operation &&
+            (operation.State == CoreWebView2DownloadState.InProgress ||
+             (operation.State == CoreWebView2DownloadState.Interrupted && operation.CanResume)));
+
+        var message = "All open native website cards will close. Your Nolane workspace and saved browser profiles remain on this device, but page state that a website has not saved may be lost.";
+        if (activeDownloads > 0)
+        {
+            message += Environment.NewLine + Environment.NewLine +
+                activeDownloads + " active or resumable download(s) will be interrupted. Resume may not be available after the bridge restarts.";
+        }
+
+        var dialog = new ContentDialog
+        {
+            Title = "Restart the Nolane background bridge?",
+            Content = message,
+            PrimaryButtonText = "Restart bridge",
+            CloseButtonText = "Keep working",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = Content.XamlRoot
+        };
+        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+    }
+
+    public Task ShutdownTask => _shutdownTask;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -142,18 +181,20 @@ public sealed partial class MainWindow : Window
         BrowserSurfaceLayer.Loaded += MainWindow_Loaded;
         SizeChanged += (_, _) => BrowserSurfaceLayer.InvalidateArrange();
         InitializeOverlayWindow();
-        Closed += async (_, _) =>
+        Closed += (_, _) => _shutdownTask = ShutdownAsync();
+    }
+
+    private async Task ShutdownAsync()
+    {
+        _overlayTimer?.Stop();
+        HideOverlayWindow();
+        SaveDownloadHistory();
+        foreach (var surface in _surfaces.Values.ToArray())
         {
-            _overlayTimer?.Stop();
-            HideOverlayWindow();
-            SaveDownloadHistory();
-            foreach (var surface in _surfaces.Values.ToArray())
-            {
-                try { surface.View.Close(); } catch { }
-            }
-            _surfaces.Clear();
-            if (_bridgeServer is not null) await _bridgeServer.DisposeAsync();
-        };
+            try { surface.View.Close(); } catch { }
+        }
+        _surfaces.Clear();
+        if (_bridgeServer is not null) await _bridgeServer.DisposeAsync();
     }
 
     private static Microsoft.UI.Xaml.Media.SolidColorBrush LibraryBrush(byte red, byte green, byte blue) =>
@@ -309,16 +350,32 @@ public sealed partial class MainWindow : Window
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
+        var stage = "startup";
+        HostDiagnostics.Initialize();
+        HostDiagnostics.Write("MainWindow loaded; beginning native bridge startup.");
+
         try
         {
+            stage = "webview2-runtime-detection";
             string runtimeVersion;
-            try { runtimeVersion = CoreWebView2Environment.GetAvailableBrowserVersionString(); }
+            try
+            {
+                runtimeVersion = CoreWebView2Environment.GetAvailableBrowserVersionString();
+                HostDiagnostics.Write("WebView2 Runtime detected: " + runtimeVersion);
+            }
             catch (Exception error)
             {
-                StatusText.Text = "WebView2 Runtime missing: " + error.Message;
+                var message = "Microsoft Edge WebView2 Runtime is unavailable. Install the Evergreen Runtime, then restart Nolane Infinite. " + error.Message;
+                StatusText.Text = message;
+                HostDiagnostics.WriteException(stage, error);
+                _trayNotification?.Invoke(
+                    "Nolane needs WebView2 Runtime",
+                    "The browser engine is unavailable. Install the Microsoft Edge WebView2 Evergreen Runtime, then restart Nolane. See the local host log for details.");
                 HideOverlayWindow();
                 return;
             }
+
+            stage = "user-data-initialization";
             var userData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "Nolane", "NativeWebView2", "UserData");
             Directory.CreateDirectory(userData);
@@ -328,29 +385,52 @@ public sealed partial class MainWindow : Window
             LoadBrowserLibrary();
             RefreshDownloadsUi();
             RefreshLibraryUi();
+            HostDiagnostics.Write("User-data directories and local browser metadata loaded.");
+
+            stage = "webview2-environment-creation";
             _environment = await CoreWebView2Environment.CreateWithOptionsAsync(null, userData, new CoreWebView2EnvironmentOptions());
-            _environment.NewBrowserVersionAvailable += (_, _) => _runtimeUpdateAvailable = true;
+            HostDiagnostics.Write("WebView2 environment created successfully.");
+            _environment.NewBrowserVersionAvailable += (_, _) => DispatcherQueue.TryEnqueue(() =>
+            {
+                if (_runtimeUpdateAvailable) return;
+                _runtimeUpdateAvailable = true;
+                const string updateMessage = "A newer WebView2 Runtime is ready. Choose Restart bridge from the Nolane tray menu to apply it. Open browser cards will close.";
+                StatusText.Text = "WebView2 update ready · restart the background bridge to apply it.";
+                HostDiagnostics.Write("A newer WebView2 Runtime version is ready.");
+                _trayNotification?.Invoke("WebView2 update ready", updateMessage);
+            });
             _environment.BrowserProcessExited += (_, _) => DispatcherQueue.TryEnqueue(() =>
             {
+                HostDiagnostics.Write("The shared WebView2 browser process exited.");
                 foreach (var surface in _surfaces.Values.ToArray())
                     PublishSurfaceStatus(surface.Id, "error", "The shared WebView2 process exited. Restart the background bridge.");
                 HideOverlayWindow();
             });
+
+            stage = "loopback-bridge-listener";
             _bridgeServer = new LocalBridgeServer();
             _bridgeServer.ClientConnected += () => DispatcherQueue.TryEnqueue(OnBridgeClientConnected);
             _bridgeServer.ClientDisconnected += () => DispatcherQueue.TryEnqueue(OnBridgeClientDisconnected);
             _bridgeServer.MessageReceived += json => DispatcherQueue.TryEnqueue(() => HandleBridgeMessage(json));
             _bridgeServer.Start();
+            HostDiagnostics.Write("Loopback WebSocket listener started on 127.0.0.1:43172.");
+
+            stage = "overlay-timer";
             _overlayTimer = DispatcherQueue.CreateTimer();
             _overlayTimer.Interval = TimeSpan.FromMilliseconds(250);
             _overlayTimer.Tick += (_, _) => RefreshOverlayActivation();
             _overlayTimer.Start();
             StatusText.Text = $"Nolane background bridge ready · WebView2 {runtimeVersion}";
+            HostDiagnostics.Write("Nolane background bridge startup completed successfully.");
             HideOverlayWindow();
         }
         catch (Exception ex)
         {
-            StatusText.Text = "Background bridge startup failed: " + ex.Message;
+            StatusText.Text = "Background bridge startup failed during " + stage + ": " + ex.Message;
+            HostDiagnostics.WriteException(stage, ex);
+            _trayNotification?.Invoke(
+                "Nolane bridge startup failed",
+                "Startup failed during " + stage + ". Open the Nolane host log in Local AppData and run the diagnostics script from the install ZIP.");
             HideOverlayWindow();
         }
     }
@@ -371,6 +451,11 @@ public sealed partial class MainWindow : Window
 
     private void OnBridgeClientConnected()
     {
+        _knownWorkspaceSurfaceIds.Clear();
+        _workspaceSnapshotReceiver.Reset();
+        _workspaceSurfaceIdsReceived = false;
+        _pendingSurfaceSync = null;
+        _syncRevision++;
         _bridgeHandshakeComplete = false;
         _workspaceReady = false;
         _workspaceVisible = true;
@@ -381,6 +466,7 @@ public sealed partial class MainWindow : Window
 
     private void OnBridgeClientDisconnected()
     {
+        _workspaceSnapshotReceiver.Reset();
         _bridgeHandshakeComplete = false;
         _workspaceReady = false;
         _workspaceVisible = false;
@@ -432,7 +518,7 @@ public sealed partial class MainWindow : Window
                 _bridgeHandshakeComplete = true;
                 _workspaceReady = true;
                 BackgroundTrayIcon.EnableStartupAfterFirstConnection();
-                PostWorkspaceMessage(new { type = "nolane.native.ready", protocol = 2, engine = "WebView2-background", maxVisibleSurfaces = MaxVisibleSurfaces });
+                PostWorkspaceMessage(new { type = "nolane.native.ready", protocol = 2, engine = "WebView2-background", maxVisibleSurfaces = MaxVisibleSurfaces, workspaceSnapshotProtocol = 1 });
                 return;
             }
             if (!_bridgeHandshakeComplete) return;
@@ -667,7 +753,7 @@ public sealed partial class MainWindow : Window
         if (type == "nolane.host.hello")
         {
             _workspaceReady = true;
-            PostWorkspaceMessage(new { type = "nolane.native.ready", protocol = 2, engine = "WebView2-background", maxVisibleSurfaces = MaxVisibleSurfaces });
+            PostWorkspaceMessage(new { type = "nolane.native.ready", protocol = 2, engine = "WebView2-background", maxVisibleSurfaces = MaxVisibleSurfaces, workspaceSnapshotProtocol = 1 });
             return;
         }
         if (type == "nolane.panel.command")
@@ -686,7 +772,32 @@ public sealed partial class MainWindow : Window
             }
             return;
         }
+        if (type == "nolane.workspace.snapshot.begin")
+        {
+            _workspaceSnapshotReceiver.TryBegin(root);
+            return;
+        }
+        if (type == "nolane.workspace.snapshot.chunk")
+        {
+            _workspaceSnapshotReceiver.TryAddChunk(root);
+            return;
+        }
+        if (type == "nolane.workspace.snapshot.commit")
+        {
+            if (_workspaceSnapshotReceiver.TryCommit(root, out var snapshot) && snapshot is not null)
+            {
+                ApplyWorkspaceSnapshot(snapshot);
+                PostWorkspaceMessage(new
+                {
+                    type = "nolane.workspace.snapshot.ack",
+                    protocol = 2,
+                    revision = snapshot.Revision
+                });
+            }
+            return;
+        }
         if (type != "nolane.surfaces.sync") return;
+        UpdateWorkspaceSurfaceIds(root);
         UpdateProfileCardUsage(root);
         if (!UpdateOverlayBounds(root))
         {
@@ -703,10 +814,12 @@ public sealed partial class MainWindow : Window
             }
             return;
         }
-        if (!root.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array) return;
+        if (!root.TryGetProperty("items", out var items) ||
+            items.ValueKind != JsonValueKind.Array || items.GetArrayLength() > MaxSurfaceCandidates) return;
         var parsed = new List<SurfaceDescriptor>();
         foreach (var item in items.EnumerateArray())
-            if (TryParseDescriptor(item, out var descriptor)) parsed.Add(descriptor);
+            if (TryParseDescriptor(item, out var descriptor) && descriptor.Visible) parsed.Add(descriptor);
+        parsed = parsed.OrderByDescending(item => item.ZIndex).Take(MaxSurfaceCandidates).ToList();
         _pendingSurfaceSync = parsed;
         _syncRevision++;
         if (!_surfaceSyncRunning) { _surfaceSyncRunning = true; _ = DrainSurfaceSyncQueueAsync(); }
@@ -741,8 +854,24 @@ public sealed partial class MainWindow : Window
         if (revision != _syncRevision) return;
             var activeItems = new List<SurfaceDescriptor>();
             var present = items.Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
-            foreach (var staleId in _surfaces.Keys.Where(id => !present.Contains(id)).ToArray())
-                await RemoveSurfaceAsync(staleId);
+
+            // A viewport is not a complete membership set. Cached surfaces are not
+            // evicted until a legacy or revisioned full membership snapshot commits.
+            if (_workspaceSurfaceIdsReceived)
+            {
+                foreach (var stale in _surfaces.Values
+                             .Where(surface => !_knownWorkspaceSurfaceIds.Contains(surface.Id) && !surface.PendingRemoval)
+                             .ToArray())
+                    await RemoveSurfaceAsync(stale.Id);
+            }
+
+            // Cards absent from the current viewport remain eligible for the host's
+            // small hidden-surface cache, but must not remain visible in the overlay.
+            foreach (var hidden in _surfaces.Values
+                         .Where(surface => !present.Contains(surface.Id) &&
+                             surface.View.Visibility == Visibility.Visible)
+                         .ToArray())
+                await SetSurfaceVisibleAsync(hidden, false);
 
             var activeCount = 0;
             foreach (var item in items.OrderByDescending(item => item.ZIndex))
@@ -760,7 +889,6 @@ public sealed partial class MainWindow : Window
                     continue;
                 }
 
-                activeCount++;
                 if (_surfaces.TryGetValue(item.Id, out var configured) &&
                     (configured.IsPrivate != item.PrivateMode ||
                      !StringComparer.OrdinalIgnoreCase.Equals(configured.ProfileName, item.ProfileName)))
@@ -769,6 +897,8 @@ public sealed partial class MainWindow : Window
                     {
                         ApplyBounds(configured.View, item);
                         await SetSurfaceVisibleAsync(configured, true);
+                        activeItems.Add(item);
+                        activeCount++;
                         PublishSurfaceState(configured, "ready",
                             "Finish or cancel this card's active download before changing its browser profile or privacy mode.");
                         continue;
@@ -777,6 +907,7 @@ public sealed partial class MainWindow : Window
                 }
                 var surface = await GetOrCreateSurfaceAsync(item);
                 if (surface is null) continue;
+                activeCount++;
                 surface.LastVisibleAt = DateTimeOffset.UtcNow;
                 surface.PendingRemoval = false;
                 ApplyBounds(surface.View, item);
@@ -1843,26 +1974,46 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void UpdateProfileCardUsage(JsonElement root)
+    private void UpdateWorkspaceSurfaceIds(JsonElement root)
     {
-        if (!root.TryGetProperty("profileUsage", out var profiles) || profiles.ValueKind != JsonValueKind.Array) return;
-        var updated = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        foreach (var entry in profiles.EnumerateArray())
+        if (!root.TryGetProperty("workspaceIds", out var ids) || ids.ValueKind != JsonValueKind.Array ||
+            ids.GetArrayLength() > 2000) return;
+
+        var updated = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var entry in ids.EnumerateArray())
         {
-            if (entry.ValueKind != JsonValueKind.Object ||
-                !entry.TryGetProperty("name", out var nameProperty) ||
-                nameProperty.ValueKind != JsonValueKind.String ||
-                !entry.TryGetProperty("count", out var countProperty) ||
-                !countProperty.TryGetInt32(out var count) || count < 1 || count > 1000) continue;
-            var name = NormalizeLibraryProfileName(nameProperty.GetString());
-            if (name is null) continue;
-            updated[name] = updated.TryGetValue(name, out var existing) ? existing + count : count;
+            if (entry.ValueKind != JsonValueKind.String) return;
+            var id = entry.GetString();
+            if (string.IsNullOrWhiteSpace(id) || id.Length > 128) return;
+            updated.Add(id);
         }
 
+        _knownWorkspaceSurfaceIds.Clear();
+        foreach (var id in updated) _knownWorkspaceSurfaceIds.Add(id);
+        _workspaceSurfaceIdsReceived = true;
+    }
+
+    private void UpdateProfileCardUsage(JsonElement root)
+    {
+        if (!root.TryGetProperty("profileUsage", out var profiles) ||
+            !ProfileUsageSnapshot.TryParse(profiles, out var updated)) return;
+        ApplyProfileCardUsage(updated);
+    }
+
+    private void ApplyProfileCardUsage(Dictionary<string, int> updated)
+    {
         _profileCardUsage.Clear();
         foreach (var item in updated) _profileCardUsage[item.Key] = item.Value;
         _profileUsageReceived = true;
         ProfilesButton.IsEnabled = true;
+    }
+
+    private void ApplyWorkspaceSnapshot(WorkspaceSnapshotCommit snapshot)
+    {
+        _knownWorkspaceSurfaceIds.Clear();
+        foreach (var id in snapshot.WorkspaceIds) _knownWorkspaceSurfaceIds.Add(id);
+        _workspaceSurfaceIdsReceived = true;
+        ApplyProfileCardUsage(snapshot.ProfileUsage);
     }
 
     private string[] GetKnownBrowserProfiles()

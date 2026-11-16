@@ -5,7 +5,7 @@
   const DB_VERSION = 1;
   const STORE_NAME = "workspace";
   const STORAGE_KEY = "nolane-infinite-workspace-v1";
-  const MAX_NODES = 150;
+  const MAX_NODES = 2000;
   const MIN_SCALE = 0.25;
   const MAX_SCALE = 2.2;
   const SAFE_FRAME_SANDBOX = "allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals";
@@ -24,6 +24,8 @@
   let db = null;
   let saveTimer = null;
   let selectedId = null;
+  let searchResultIds = [];
+  let searchResultIndex = -1;
   let activeTab = "website";
   let activeView = "canvas";
   let editingId = null;
@@ -39,20 +41,53 @@
   let activeSpaceId = "personal";
   let nativeHostAvailable = false;
   let nativeMaxVisibleSurfaces = 2;
+  let nativeWorkspaceIdsDirty = true;
+  let nativeWorkspaceIdsCache = [];
+  let nativeProfileUsageDirty = true;
+  let nativeWorkspaceSnapshotProtocol = false;
+  let nativeWorkspaceSnapshotRevision = 0;
+  let nativeWorkspaceSnapshotPendingRevision = 0;
+  let nativeWorkspaceSnapshotRetryTimer = 0;
   let nativeSyncFrame = 0;
   let nativeHostReadyNotified = false;
   let nativeBridgeSocket = null;
   let nativeBridgePermission = "unknown";
+  let nativeBridgeLastError = "";
   let nativeBridgeReconnectTimer = 0;
   let nativeBridgeReconnectAttempts = 0;
-  let bridgeConnected = false;
-  let bridgeSessionId = "";
-  const liveSurfaces = new Map();
   const nativeSurfaceStates = new Map();
-  const stoppedLiveSurfaceIds = new Set();
+  const spatialIndex = new window.NolaneSpatialIndex.SpatialIndex(640);
+  const renderedNodeElements = new Map();
+  let canvasRenderOrigin = { x: 0, y: 0 };
+  const CANVAS_RENDER_ORIGIN_QUANTUM = 4096;
+  const CANVAS_OVERSCAN_PX = 280;
+  const MAX_NATIVE_SURFACE_CANDIDATES = 8;
+  let canvasRenderFrame = 0;
+  let minimapFrame = 0;
+  let minimapGeometryDirty = true;
+  let minimapGeometryCache = null;
+  let canvasResizeObserver = null;
+  let availableBrowserProfilesCache = null;
+  let nativeProfileUsageCache = null;
+  let nodeSearchTextCache = new WeakMap();
 
-  const uid = () => "node-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+  const uid = () => {
+    let candidate;
+    do {
+      candidate = "node-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+    } while (nodes.some((node) => node.id === candidate) || spaces.some((space) => space.id === candidate));
+    return candidate;
+  };
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+  const MAX_WORLD_COORDINATE = 8_000_000;
+  const normalizeCanvasCoordinate = (value, fallback = 0) =>
+    window.NolaneSpatialIndex.normalizeWorldCoordinate(value, fallback, MAX_WORLD_COORDINATE);
+  const normalizeCanvasView = (value) =>
+    window.NolaneSpatialIndex.normalizeViewState(value, {
+      defaultX: 25, defaultY: 0, defaultScale: 1,
+      minScale: MIN_SCALE, maxScale: MAX_SCALE,
+      maxWorldCoordinate: MAX_WORLD_COORDINATE
+    });
   const escapeHTML = (value) => String(value == null ? "" : value).replace(/[&<>"']/g, (char) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
   })[char]);
@@ -94,16 +129,25 @@
     ];
   }
 
-  function normalizeSpace(space, index) {
-    if (!space || typeof space !== "object") return null;
-    const id = String(space.id || uid()).slice(0, 80);
+  function normalizeSpace(space, index, usedSpaceIds) {
+    if (!space || typeof space !== "object" || Array.isArray(space)) return null;
+    const id = window.NolaneSpatialIndex.claimUniqueId(space.id, usedSpaceIds, uid);
     const name = String(space.name || ("Space " + (index + 1))).trim().slice(0, 48) || ("Space " + (index + 1));
-    const cleanNodes = Array.isArray(space.nodes) ? space.nodes.map(validateNode).filter(Boolean).slice(0, MAX_NODES) : [];
+    const cleanNodes = normalizeNodeCollection(space.nodes);
     const rawView = space.view || {};
-    const cleanView = Number.isFinite(rawView.x) && Number.isFinite(rawView.y) && Number.isFinite(rawView.scale)
-      ? { x: clamp(rawView.x, -100000, 100000), y: clamp(rawView.y, -100000, 100000), scale: clamp(rawView.scale, MIN_SCALE, MAX_SCALE) }
-      : { x: 25, y: 0, scale: 1 };
+    const cleanView = normalizeCanvasView(rawView);
     return { id, name, nodes: cleanNodes, view: cleanView };
+  }
+
+  function normalizeSpaceCollection(rawSpaces) {
+    if (!Array.isArray(rawSpaces)) return [];
+    const usedSpaceIds = new Set();
+    const normalized = [];
+    for (let index = 0; index < rawSpaces.length && normalized.length < 12; index += 1) {
+      const space = normalizeSpace(rawSpaces[index], index, usedSpaceIds);
+      if (space) normalized.push(space);
+    }
+    return normalized;
   }
 
   function activeSpace() {
@@ -120,7 +164,6 @@
 
   function switchSpace(id) {
     if (id === activeSpaceId) return;
-    stopAllLiveSurfaces("Live surfaces stopped because you switched workspaces.");
     syncActiveSpace();
     const next = spaces.find((space) => space.id === id);
     if (!next) return;
@@ -172,8 +215,8 @@
     const space = spaces.find((item) => item.id === id);
     if (!space) return;
     if (!window.confirm('Delete "' + space.name + '" and all of its local items? This cannot be undone.')) return;
-    if (activeSpaceId === id) stopAllLiveSurfaces("Live surfaces stopped because their workspace was deleted.");
     syncActiveSpace();
+    invalidateNativeProfileUsageCache();
     spaces = spaces.filter((item) => item.id !== id);
     if (activeSpaceId === id) {
       activeSpaceId = spaces[0].id;
@@ -226,6 +269,7 @@
   function normalizeUrl(raw) {
     let value = String(raw || "").trim();
     if (!value) throw new Error("Enter a website address first.");
+    if (value.length > 4096) throw new Error("Website addresses must be 4,096 characters or fewer.");
     if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) value = "https://" + value;
     let parsed;
     try { parsed = new URL(value); } catch (_) { throw new Error("That address does not look valid."); }
@@ -236,6 +280,7 @@
     if (!parsed.hostname || (parsed.hostname.indexOf(".") === -1 && parsed.hostname !== "localhost" && !parsed.hostname.startsWith("["))) {
       throw new Error("Enter a full website address, such as example.com.");
     }
+    if (parsed.href.length > 4096) throw new Error("Normalized website addresses must be 4,096 characters or fewer.");
     return parsed.href;
   }
 
@@ -297,16 +342,16 @@
     }
 
     if (saved && Array.isArray(saved.spaces) && saved.spaces.length) {
-      spaces = saved.spaces.map(normalizeSpace).filter(Boolean).slice(0, 12);
+      spaces = normalizeSpaceCollection(saved.spaces);
       activeSpaceId = spaces.some((space) => space.id === saved.activeSpaceId) ? saved.activeSpaceId : spaces[0].id;
       const current = activeSpace();
       nodes = current.nodes.map((node) => ({ ...node }));
       view = { ...current.view };
       toast("Your local workspaces were restored.");
     } else if (saved && Array.isArray(saved.nodes)) {
-      nodes = saved.nodes.map(validateNode).filter(Boolean).slice(0, MAX_NODES);
-      if (saved.view && Number.isFinite(saved.view.x) && Number.isFinite(saved.view.y) && Number.isFinite(saved.view.scale)) {
-        view = { x: saved.view.x, y: saved.view.y, scale: clamp(saved.view.scale, MIN_SCALE, MAX_SCALE) };
+      nodes = normalizeNodeCollection(saved.nodes);
+      if (saved.view && typeof saved.view === "object" && !Array.isArray(saved.view)) {
+        view = normalizeCanvasView(saved.view);
       }
       spaces = [
         { id: "personal", name: "My workspace", nodes: nodes.map((node) => ({ ...node })), view: { ...view } },
@@ -336,14 +381,27 @@
     scheduleSave(600);
   }
 
-  function validateNode(node) {
-    if (!node || typeof node !== "object" || !["website", "note"].includes(node.type)) return null;
+  function normalizeNodeCollection(rawNodes) {
+    if (!Array.isArray(rawNodes)) return [];
+    const usedIds = new Set();
+    const normalized = [];
+    for (const candidate of rawNodes) {
+      const node = validateNode(candidate, usedIds);
+      if (!node) continue;
+      normalized.push(node);
+      if (normalized.length >= MAX_NODES) break;
+    }
+    return normalized;
+  }
+
+  function validateNode(node, usedIds) {
+    if (!node || typeof node !== "object" || Array.isArray(node) || !["website", "note"].includes(node.type)) return null;
     const clean = {
-      id: String(node.id || uid()).slice(0, 80),
+      id: "",
       type: node.type,
       title: String(node.title || (node.type === "note" ? "Untitled note" : "Website")).slice(0, 120),
-      x: clamp(Number(node.x) || 0, -100000, 100000),
-      y: clamp(Number(node.y) || 0, -100000, 100000),
+      x: normalizeCanvasCoordinate(node.x, 0),
+      y: normalizeCanvasCoordinate(node.y, 0),
       w: clamp(Number(node.w) || 360, 230, 1800),
       h: clamp(Number(node.h) || 280, 150, 1200),
       z: clamp(Number(node.z) || 1, 1, 100000),
@@ -356,13 +414,13 @@
       clean.privateMode = node.privateMode === true;
       const browserProfile = window.NolaneNativeBridge?.normalizeProfileName(node.browserProfile);
       if (browserProfile) clean.browserProfile = browserProfile;
-      if (Number.isInteger(node.browserTabId) && node.browserTabId >= 0) clean.browserTabId = node.browserTabId;
-      if (Number.isInteger(node.browserWindowId) && node.browserWindowId >= 0) clean.browserWindowId = node.browserWindowId;
-      if (typeof node.browserSessionId === "string" && node.browserSessionId.length >= 20 && node.browserSessionId.length <= 80) clean.browserSessionId = node.browserSessionId;
     } else {
       clean.content = String(node.content || "").slice(0, 12000);
       clean.color = ["lavender", "mint", "peach", "blue"].includes(node.color) ? node.color : "lavender";
     }
+    // Claim the ID only after the record has passed validation, so an invalid
+    // earlier import record cannot force a later valid card to receive a new ID.
+    clean.id = window.NolaneSpatialIndex.claimUniqueId(node.id, usedIds || new Set(), uid);
     return clean;
   }
 
@@ -383,6 +441,10 @@
   }
 
   function scheduleSave(delay) {
+    // Keep the active space's sanitized model current when data changes, not on every camera frame.
+    syncActiveSpace();
+    refreshNativeWorkspaceIdsSnapshot();
+    invalidateWorkspaceDerivedCaches();
     clearTimeout(saveTimer);
     setSaveState("saving", "Saving locally…");
     saveTimer = setTimeout(saveWorkspace, typeof delay === "number" ? delay : 450);
@@ -407,21 +469,17 @@
   }
 
   function applyView() {
-    world.style.transform = "translate(" + view.x + "px," + view.y + "px) scale(" + view.scale + ")";
+    updateCanvasRenderOrigin();
+    applyCanvasWorldTransform();
     grid.style.backgroundPosition = (view.x % (24 * view.scale)) + "px " + (view.y % (24 * view.scale)) + "px";
     $("#zoomValue").textContent = Math.round(view.scale * 100) + "%";
+    scheduleCanvasVirtualization();
     updateMinimap();
     scheduleNativeSurfaceSync();
   }
 
-  function isChromeOwnedNode(node) {
-    return !!(bridgeConnected && node && node.browserTabId !== undefined &&
-      node.browserSessionId === bridgeSessionId);
-  }
-
   function canUseNativeSurface(node) {
-    return !!(nativeHostAvailable && node && node.type === "website" &&
-      !isChromeOwnedNode(node) && !liveSurfaces.has(node.id));
+    return !!(nativeHostAvailable && node && node.type === "website");
   }
 
   function sendNativePanelCommand(panel) {
@@ -455,64 +513,227 @@
     toast("Navigating to " + hostOf(url) + ".");
   }
 
+  function currentCanvasWorldBounds(overscanPixels) {
+    const rect = canvas.getBoundingClientRect();
+    const overscan = Math.max(0, Number(overscanPixels) || 0) / view.scale;
+    return { x: -view.x / view.scale - overscan, y: -view.y / view.scale - overscan,
+      w: rect.width / view.scale + overscan * 2, h: rect.height / view.scale + overscan * 2 };
+  }
+
+  function applyCanvasWorldTransform() {
+    const transform = window.NolaneSpatialIndex.createRebasedTransform(view, canvasRenderOrigin);
+    world.style.transform = "translate(" + transform.x + "px," + transform.y + "px) scale(" + transform.scale + ")";
+  }
+
+  function positionCanvasNodeElement(element, node) {
+    const local = window.NolaneSpatialIndex.rebasePoint(node, canvasRenderOrigin);
+    element.style.left = local.x + "px";
+    element.style.top = local.y + "px";
+  }
+
+  function updateCanvasRenderOrigin() {
+    const rect = canvas.getBoundingClientRect();
+    const next = window.NolaneSpatialIndex.computeRenderOrigin(
+      view,
+      { width: rect.width, height: rect.height },
+      CANVAS_RENDER_ORIGIN_QUANTUM
+    );
+    if (next.x === canvasRenderOrigin.x && next.y === canvasRenderOrigin.y) return false;
+    canvasRenderOrigin = next;
+    for (const [id, element] of renderedNodeElements) {
+      const node = spatialIndex.get(id);
+      if (node) positionCanvasNodeElement(element, node);
+    }
+    applyCanvasWorldTransform();
+    return true;
+  }
+
+  function cachedNodeSearchText(node) {
+    let searchText = nodeSearchTextCache.get(node);
+    if (searchText === undefined) {
+      searchText = [node.title, node.url || "", node.content || "", node.description || ""]
+        .join(" ").toLowerCase();
+      nodeSearchTextCache.set(node, searchText);
+    }
+    return searchText;
+  }
+
+  function matchesNodeFilters(node, query) {
+    if (!node) return false;
+    const typeMatch = activeView === "canvas" ||
+      (activeView === "websites" && node.type === "website") ||
+      (activeView === "notes" && node.type === "note");
+    if (!typeMatch) return false;
+    return !query || cachedNodeSearchText(node).includes(query);
+  }
+
+  function scheduleCanvasVirtualization() {
+    if (canvasRenderFrame) return;
+    canvasRenderFrame = requestAnimationFrame(() => {
+      canvasRenderFrame = 0;
+      syncCanvasNodeElements(false);
+    });
+  }
+
+  function syncCanvasNodeElements(forceRefresh) {
+    updateCanvasRenderOrigin();
+    const query = $("#searchInput").value.trim().toLowerCase();
+    const wanted = new Map();
+    for (const node of spatialIndex.query(currentCanvasWorldBounds(CANVAS_OVERSCAN_PX))) {
+      if (matchesNodeFilters(node, query)) wanted.set(node.id, node);
+    }
+    if (selectedId) {
+      const selectedNode = spatialIndex.get(selectedId);
+      if (selectedNode) wanted.set(selectedNode.id, selectedNode);
+    }
+    for (const [id, element] of renderedNodeElements) {
+      if (wanted.has(id)) continue;
+      element.remove();
+      renderedNodeElements.delete(id);
+    }
+    for (const node of wanted.values()) {
+      let element = renderedNodeElements.get(node.id);
+      if (!element || forceRefresh) {
+        const replacement = createNodeElement(node);
+        if (element) element.replaceWith(replacement);
+        else world.appendChild(replacement);
+        element = replacement;
+        renderedNodeElements.set(node.id, element);
+      } else {
+        positionCanvasNodeElement(element, node);
+        element.style.width = node.w + "px";
+        element.style.height = node.h + "px";
+        element.style.zIndex = node.z || 1;
+        element.classList.toggle("selected", node.id === selectedId);
+      }
+      element.classList.toggle("hidden-by-search", !matchesNodeFilters(node, query));
+    }
+  }
+
+  function clearNativeWorkspaceSnapshotRetry() {
+    if (!nativeWorkspaceSnapshotRetryTimer) return;
+    window.clearTimeout(nativeWorkspaceSnapshotRetryTimer);
+    nativeWorkspaceSnapshotRetryTimer = 0;
+  }
+
+  function scheduleNativeWorkspaceSnapshotRetry(revision) {
+    clearNativeWorkspaceSnapshotRetry();
+    nativeWorkspaceSnapshotRetryTimer = window.setTimeout(() => {
+      nativeWorkspaceSnapshotRetryTimer = 0;
+      if (nativeWorkspaceSnapshotPendingRevision !== revision) return;
+      // WebSocket.send() only confirms local queueing, not that the Windows
+      // receiver assembled and committed every chunk. Retry with a new revision
+      // so an incomplete receiver transaction is always superseded.
+      nativeWorkspaceIdsDirty = true;
+      nativeProfileUsageDirty = true;
+      if (nativeBridgeSocket?.readyState === WebSocket.OPEN) scheduleNativeSurfaceSync();
+    }, 5000);
+  }
+
+  function sendNativeWorkspaceSnapshot() {
+    if (!nativeWorkspaceSnapshotProtocol ||
+        (!nativeWorkspaceIdsDirty && !nativeProfileUsageDirty)) return true;
+    const revision = nativeWorkspaceSnapshotRevision + 1;
+    const profiles = cachedNativeProfileUsage().map((item) => ({ name: item.name, count: item.count }));
+    const messages = window.NolaneNativeBridge?.createWorkspaceSnapshotMessages(
+      revision, nativeWorkspaceIdsCache, profiles
+    );
+    if (!messages) return false;
+
+    // Consume the revision before sending. If a socket failure interrupts this
+    // transfer, the next attempt uses a newer revision and supersedes the partial one.
+    clearNativeWorkspaceSnapshotRetry();
+    nativeWorkspaceSnapshotRevision = revision;
+    nativeWorkspaceSnapshotPendingRevision = revision;
+    for (const message of messages) {
+      if (!sendNativeBridgeMessage(message)) {
+        nativeWorkspaceSnapshotPendingRevision = 0;
+        return false;
+      }
+    }
+    nativeWorkspaceIdsDirty = false;
+    nativeProfileUsageDirty = false;
+    scheduleNativeWorkspaceSnapshotRetry(revision);
+    return true;
+  }
+
   function scheduleNativeSurfaceSync() {
     if (!nativeHostAvailable || !nativeBridgeSocket || nativeBridgeSocket.readyState !== WebSocket.OPEN || nativeSyncFrame) return;
     nativeSyncFrame = requestAnimationFrame(() => {
       nativeSyncFrame = 0;
-      syncActiveSpace();
       const area = canvas.getBoundingClientRect();
+      const uiBlocked = !!document.querySelector("dialog[open], #sidebar.open");
+      const scale = view.scale;
+      const query = $("#searchInput").value.trim().toLowerCase();
       const items = [];
-      const profileUsage = window.NolaneNativeBridge?.summarizeProfileUsage(spaces) || [];
-      for (const node of nodes) {
-        if (!canUseNativeSurface(node) || items.length >= 80) continue;
-        const card = $('.node[data-id="' + CSS.escape(node.id) + '"]', world);
-        const body = card?.querySelector(".node-body");
-        if (!body) continue;
-        const rect = body.getBoundingClientRect();
-        const style = getComputedStyle(body);
-        const uiBlocked = !!document.querySelector("dialog[open], #sidebar.open");
-        const clipLeft = Math.max(rect.left, area.left);
-        const clipTop = Math.max(rect.top, area.top);
-        const clipRight = Math.min(rect.right, area.right);
-        const clipBottom = Math.min(rect.bottom, area.bottom);
-        const clipWidth = Math.max(0, clipRight - clipLeft);
-        const clipHeight = Math.max(0, clipBottom - clipTop);
-        const visible = !uiBlocked && style.display !== "none" && style.visibility !== "hidden" &&
-          rect.width >= 80 && rect.height >= 60 && clipWidth >= 80 && clipHeight >= 60;
-        items.push({
-          id: node.id,
-          url: node.privateMode && node.transientUrl ? node.transientUrl : node.url,
-          title: node.title,
-          privateMode: node.privateMode === true,
-          profileName: node.browserProfile || "",
-          x: Math.round(rect.left * 100) / 100,
-          y: Math.round(rect.top * 100) / 100,
-          width: Math.round(rect.width * 100) / 100,
-          height: Math.round(rect.height * 100) / 100,
-          clipX: Math.round((clipLeft - rect.left) * 100) / 100,
-          clipY: Math.round((clipTop - rect.top) * 100) / 100,
-          clipWidth: Math.round(clipWidth * 100) / 100,
-          clipHeight: Math.round(clipHeight * 100) / 100,
-          zIndex: Number(node.z) || 1, visible
-        });
+
+      // Send a small z-ranked candidate pool from the real viewport. The host still
+      // activates only its adaptive renderer budget; extra candidates are fallbacks
+      // when a higher card cannot initialize or must be retained for an active download.
+      if (!uiBlocked && document.visibilityState === "visible") {
+        const candidates = window.NolaneSpatialIndex.sortByZIndex(
+          spatialIndex.query(currentCanvasWorldBounds(0))
+            .filter((node) => canUseNativeSurface(node) && matchesNodeFilters(node, query))
+        );
+
+        const candidateLimit = Math.min(MAX_NATIVE_SURFACE_CANDIDATES, nativeMaxVisibleSurfaces + 4);
+        for (const node of candidates) {
+          const rect = {
+            left: area.left + view.x + (node.x + 1) * scale,
+            top: area.top + view.y + (node.y + 40) * scale,
+            width: Math.max(0, node.w - 2) * scale,
+            height: Math.max(0, node.h - 41) * scale
+          };
+          const right = rect.left + rect.width, bottom = rect.top + rect.height;
+          const clipLeft = Math.max(rect.left, area.left), clipTop = Math.max(rect.top, area.top);
+          const clipRight = Math.min(right, area.right), clipBottom = Math.min(bottom, area.bottom);
+          const clipWidth = Math.max(0, clipRight - clipLeft), clipHeight = Math.max(0, clipBottom - clipTop);
+          if (rect.width < 80 || rect.height < 60 || clipWidth < 80 || clipHeight < 60) continue;
+
+          items.push({
+            id: node.id, url: node.privateMode && node.transientUrl ? node.transientUrl : node.url,
+            title: node.title, privateMode: node.privateMode === true, profileName: node.browserProfile || "",
+            x: Math.round(rect.left * 100) / 100, y: Math.round(rect.top * 100) / 100,
+            width: Math.round(rect.width * 100) / 100, height: Math.round(rect.height * 100) / 100,
+            clipX: Math.round((clipLeft - rect.left) * 100) / 100,
+            clipY: Math.round((clipTop - rect.top) * 100) / 100,
+            clipWidth: Math.round(clipWidth * 100) / 100, clipHeight: Math.round(clipHeight * 100) / 100,
+            zIndex: Number(node.z) || 1, visible: true
+          });
+          if (items.length >= candidateLimit) break;
+        }
       }
+
       const outerWidth = Number(window.outerWidth) || window.innerWidth;
       const outerHeight = Number(window.outerHeight) || window.innerHeight;
       const viewport = {
         screenLeft: (Number(window.screenX) || 0) + Math.max(0, (outerWidth - window.innerWidth) / 2),
         screenTop: (Number(window.screenY) || 0) + Math.max(0, outerHeight - window.innerHeight - 8),
-        width: window.innerWidth,
-        height: window.innerHeight,
-        deviceScale: window.devicePixelRatio || 1
+        width: window.innerWidth, height: window.innerHeight, deviceScale: window.devicePixelRatio || 1
       };
-      sendNativeBridgeMessage({
-        type: "nolane.surfaces.sync",
-        protocol: 2,
-        viewport,
+      if (nativeWorkspaceSnapshotProtocol) {
+        // Metadata is chunked and sent only when dirty; camera frames stay compact.
+        if (!sendNativeWorkspaceSnapshot() && nativeBridgeSocket?.readyState === WebSocket.OPEN) {
+          window.setTimeout(scheduleNativeSurfaceSync, 250);
+        }
+      }
+      const message = {
+        type: "nolane.surfaces.sync", protocol: 2, viewport,
         workspaceVisible: document.visibilityState === "visible",
-        items: items.map((item) => document.visibilityState === "visible" ? item : { ...item, visible: false }),
-        profileUsage
-      });
+        items
+      };
+      // Older installed hosts do not advertise snapshot support. Keep the original
+      // protocol-v2 inline fields until those hosts are upgraded.
+      if (!nativeWorkspaceSnapshotProtocol) {
+        if (nativeProfileUsageDirty) {
+          message.profileUsage = cachedNativeProfileUsage().map((item) => [item.name, item.count]);
+        }
+        if (nativeWorkspaceIdsDirty) message.workspaceIds = nativeWorkspaceIdsCache;
+      }
+      if (sendNativeBridgeMessage(message) && !nativeWorkspaceSnapshotProtocol) {
+        if (nativeWorkspaceIdsDirty) nativeWorkspaceIdsDirty = false;
+        if (nativeProfileUsageDirty) nativeProfileUsageDirty = false;
+      }
     });
   }
 
@@ -520,17 +741,30 @@
     const message = event?.data ?? event;
     if (!message || typeof message !== "object") return;
     if (message.type === "nolane.native.ready") {
+      clearNativeWorkspaceSnapshotRetry();
+      nativeWorkspaceSnapshotPendingRevision = 0;
       nativeHostAvailable = true;
+      nativeWorkspaceSnapshotProtocol = message.workspaceSnapshotProtocol === 1;
       nativeBridgePermission = "granted";
       nativeBridgeReconnectAttempts = 0;
       const reportedBudget = Number(message.maxVisibleSurfaces);
       nativeMaxVisibleSurfaces = Number.isInteger(reportedBudget) ? clamp(reportedBudget, 1, 8) : 2;
-      setBridgeConnected(false, "");
+      refreshNativeWorkspaceIdsSnapshot();
+      nativeWorkspaceIdsDirty = true;
+      nativeProfileUsageDirty = true;
+      updateBridgeStatus();
       if (!nativeHostReadyNotified) {
         nativeHostReadyNotified = true;
         toast("Nolane Windows Bridge connected. Website cards now use native browser surfaces.");
       }
       renderNodes();
+      return;
+    }
+    if (message.type === "nolane.workspace.snapshot.ack") {
+      if (window.NolaneNativeBridge?.isWorkspaceSnapshotAck(message, nativeWorkspaceSnapshotPendingRevision)) {
+        nativeWorkspaceSnapshotPendingRevision = 0;
+        clearNativeWorkspaceSnapshotRetry();
+      }
       return;
     }
     if (message.type === "nolane.native.surface") {
@@ -549,6 +783,7 @@
         if (savedProfile !== actualProfile) {
           if (actualProfile) node.browserProfile = actualProfile;
           else delete node.browserProfile;
+          invalidateNativeProfileUsageCache();
           scheduleSave();
           scheduleNativeSurfaceSync();
         }
@@ -638,10 +873,12 @@
   document.addEventListener("visibilitychange", () => {
     sendNativeBridgeMessage({ type: "nolane.workspace.visibility", protocol: 2, visible: document.visibilityState === "visible" });
     scheduleNativeSurfaceSync();
+    if (document.visibilityState === "visible" && !nativeHostAvailable) queueWindowsBridgeReconnect();
   });
   window.addEventListener("focus", () => {
     sendNativeBridgeMessage({ type: "nolane.workspace.visibility", protocol: 2, visible: true });
     scheduleNativeSurfaceSync();
+    if (!nativeHostAvailable) queueWindowsBridgeReconnect();
   });
   window.addEventListener("blur", () => {
     sendNativeBridgeMessage({ type: "nolane.workspace.visibility", protocol: 2, visible: document.visibilityState === "visible" });
@@ -666,9 +903,11 @@
     const anchorX = (px - view.x) / view.scale;
     const anchorY = (py - view.y) / view.scale;
     const next = clamp(view.scale * factor, MIN_SCALE, MAX_SCALE);
-    view.x = px - anchorX * next;
-    view.y = py - anchorY * next;
-    view.scale = next;
+    view = normalizeCanvasView({
+      x: px - anchorX * next,
+      y: py - anchorY * next,
+      scale: next
+    });
     applyView();
     scheduleSave();
   }
@@ -683,9 +922,11 @@
     const rect = canvas.getBoundingClientRect();
     const pad = 100;
     const scale = clamp(Math.min((rect.width - pad * 2) / Math.max(1, maxX - minX), (rect.height - pad * 2) / Math.max(1, maxY - minY)), MIN_SCALE, 1.25);
-    view.scale = scale;
-    view.x = (rect.width - (maxX - minX) * scale) / 2 - minX * scale;
-    view.y = (rect.height - (maxY - minY) * scale) / 2 - minY * scale;
+    view = normalizeCanvasView({
+      scale,
+      x: (rect.width - (maxX - minX) * scale) / 2 - minX * scale,
+      y: (rect.height - (maxY - minY) * scale) / 2 - minY * scale
+    });
     applyView();
     scheduleSave();
   }
@@ -695,37 +936,32 @@
     $("#noteCount").textContent = nodes.filter((node) => node.type === "note").length;
   }
 
-  function clearUnavailableChromeTabBindings() {
-    if (!nativeHostAvailable) return 0;
-    let cleared = 0;
-    nodes.forEach((node) => {
-      if (node.browserTabId !== undefined &&
-          (!bridgeConnected || !node.browserSessionId || node.browserSessionId !== bridgeSessionId)) {
-        delete node.browserTabId;
-        delete node.browserWindowId;
-        delete node.browserSessionId;
-        cleared++;
-      }
-    });
-    if (cleared) {
-      scheduleSave();
-      toast("Converted " + cleared + " imported Chrome tab link(s) to native website cards. Sign in again in this WebView2 profile.", "info");
-    }
-    return cleared;
-  }
-
   function renderNodes() {
-    clearUnavailableChromeTabBindings();
-    world.replaceChildren();
-    nodes.forEach((node) => world.appendChild(createNodeElement(node)));
+    invalidateWorkspaceDerivedCaches();
+    invalidateNativeProfileUsageCache();
+    refreshNativeWorkspaceIdsSnapshot();
+    spatialIndex.rebuild(nodes);
+    updateCanvasRenderOrigin();
+    syncCanvasNodeElements(true);
     updateViewFilter();
     updateCounts();
     renderSpaces();
-    updateMinimap();
+    updateMinimap(true);
     scheduleNativeSurfaceSync();
   }
 
+  function invalidateWorkspaceDerivedCaches() {
+    availableBrowserProfilesCache = null;
+    nodeSearchTextCache = new WeakMap();
+  }
+
+  function invalidateNativeProfileUsageCache() {
+    nativeProfileUsageCache = null;
+    nativeProfileUsageDirty = true;
+  }
+
   function availableBrowserProfiles() {
+    if (availableBrowserProfilesCache) return availableBrowserProfilesCache;
     const profiles = new Map();
     ["Work", "Personal", "Research"].forEach((name) => profiles.set(name.toLowerCase(), name));
     const allNodes = [...nodes, ...spaces.flatMap((space) => Array.isArray(space.nodes) ? space.nodes : [])];
@@ -733,15 +969,31 @@
       const name = window.NolaneNativeBridge?.normalizeProfileName(item?.browserProfile);
       if (name) profiles.set(name.toLowerCase(), name);
     }
-    return [...profiles.values()].sort((a, b) => a.localeCompare(b));
+    availableBrowserProfilesCache = [...profiles.values()].sort((a, b) => a.localeCompare(b));
+    return availableBrowserProfilesCache;
+  }
+
+  function cachedNativeProfileUsage() {
+    if (!nativeProfileUsageCache) {
+      nativeProfileUsageCache = window.NolaneNativeBridge?.summarizeProfileUsage(spaces) || [];
+    }
+    return nativeProfileUsageCache;
+  }
+
+  function refreshNativeWorkspaceIdsSnapshot() {
+    const next = nodes.filter(canUseNativeSurface).map((node) => node.id);
+    if (next.length !== nativeWorkspaceIdsCache.length ||
+        next.some((id, index) => id !== nativeWorkspaceIdsCache[index])) {
+      nativeWorkspaceIdsCache = next;
+      nativeWorkspaceIdsDirty = true;
+    }
   }
 
   function createNodeElement(node) {
     const article = document.createElement("article");
     article.className = "node" + (node.id === selectedId ? " selected" : "");
     article.dataset.id = node.id;
-    article.style.left = node.x + "px";
-    article.style.top = node.y + "px";
+    positionCanvasNodeElement(article, node);
     article.style.width = node.w + "px";
     article.style.height = node.h + "px";
     article.style.zIndex = node.z || 1;
@@ -768,10 +1020,10 @@
               availableBrowserProfiles().map((name) => '<option value="' + escapeHTML(name) + '"' + ((node.browserProfile || "").toLowerCase() === name.toLowerCase() ? " selected" : "") + '>' + escapeHTML(name) + '</option>').join("") +
               '<option value="__new__">+ New profile…</option>' +
             '</select>'
-          : '<span class="node-subtitle">' + escapeHTML(node.type === "website" ? ((node.browserTabId !== undefined ? "Chrome tab · " : "") + hostOf(node.url)) : "Personal note") + '</span>') +
+          : '<span class="node-subtitle">' + escapeHTML(node.type === "website" ? hostOf(node.url) : "Personal note") + '</span>') +
       '</span>' +
       '<span class="node-actions">' + nativeTools +
-        (node.type === "website" ? '<button class="node-action" data-action="open" title="' + (node.browserTabId !== undefined ? "Switch to existing Chrome tab" : "Open in browser") + '"><svg class="icon"><use href="#i-external"/></svg></button>' : '<button class="node-action" data-action="edit" title="Edit note"><svg class="icon"><use href="#i-sticky"/></svg></button>') +
+        (node.type === "website" ? '<button class="node-action" data-action="open" title="' + "Open in browser" + '"><svg class="icon"><use href="#i-external"/></svg></button>' : '<button class="node-action" data-action="edit" title="Edit note"><svg class="icon"><use href="#i-sticky"/></svg></button>') +
         '<button class="node-action" data-action="delete" title="Remove"><svg class="icon"><use href="#i-x"/></svg></button>' +
       '</span>';
     article.appendChild(header);
@@ -838,20 +1090,15 @@
 
     const body = document.createElement("div");
     body.className = "node-body";
-    if (node.type === "website" && liveSurfaces.has(node.id)) {
-      body.appendChild(createLiveSurfaceElement(node, liveSurfaces.get(node.id)));
-    } else if (node.type === "website") {
-      const previewActions = node.browserTabId !== undefined
-        ? '<div class="preview-actions"><button class="mini-button" data-action="open"><svg class="icon"><use href="#i-external"/></svg> Focus source tab</button><button class="mini-button secondary" data-action="open-url">Open URL</button><button class="mini-button secondary" data-action="live-help">Stream help</button></div>'
-        : '<div class="preview-actions"><button class="mini-button" data-action="open"><svg class="icon"><use href="#i-external"/></svg> Open tab</button><button class="mini-button secondary" data-action="live-help">Create live surface</button></div>';
+    if (node.type === "website") {
       body.innerHTML =
         '<div class="web-preview">' +
           '<div class="preview-mark">' + escapeHTML(initials(hostOf(node.url))) + '</div>' +
           '<div class="preview-title">' + escapeHTML(node.title) + '</div>' +
           '<div class="preview-domain">' + escapeHTML(hostOf(node.url)) + '</div>' +
-          '<p class="preview-description">' + escapeHTML(node.description || "Open this website in Chrome, then stream its real tab into this card.") + '</p>' +
-          previewActions +
-          '<div class="embed-note">Live view uses the real Chrome tab; it does not rely on iframe embedding.</div>' +
+          '<p class="preview-description">' + escapeHTML(node.description || "Connect the Windows background bridge to open this website as a native browser surface.") + '</p>' +
+          '<div class="preview-actions"><button class="mini-button" data-action="open"><svg class="icon"><use href="#i-external"/></svg> Open in browser</button></div>' +
+          '<div class="embed-note">Native website rendering is provided by the Windows background bridge.</div>' +
         '</div>';
     } else {
       body.innerHTML =
@@ -875,819 +1122,56 @@
   }
 
 
-  function postLiveInput(surface, payload) {
-    window.postMessage({
-      source: "nolane-workspace",
-      type: "LIVE_INPUT",
-      surfaceId: surface.surfaceId,
-      browserSessionId: surface.browserSessionId,
-      ...payload
-    }, location.origin);
-  }
-
-  function createLiveSurfaceElement(node, surface) {
-    const root = document.createElement("div");
-    root.className = "live-surface";
-    const toolbar = document.createElement("div");
-    toolbar.className = "live-surface-toolbar";
-    toolbar.innerHTML =
-      '<span class="live-indicator"><i></i> ' + (surface.interactive ? "LIVE CHROME TAB" : "LIVE VIDEO · VIEW ONLY") + '</span>' +
-      '<span class="live-health-status" data-health="' + (surface.healthState || "checking") + '">' +
-      (surface.healthState === "healthy" ? "VIDEO FLOWING" : surface.healthState === "recovering" ? "RECOVERING VIDEO" : surface.healthState === "stalled" ? "NO NEW FRAMES" : surface.healthState === "muted" ? "VIDEO TRACK MUTED" : "CHECKING VIDEO") +
-      '</span>' +
-      '<span class="live-input-status" data-input-state="' + (surface.interactive ? "untested" : "readonly") + '" title="' + (surface.interactive ? "Input controller attached; click inside the page to verify interaction." : "Chrome did not allow interactive control for this tab.") + '">' +
-      (surface.interactive ? "INPUT NOT TESTED" : "READ ONLY") + '</span>' +
-      '<span class="live-surface-actions">' +
-      '<button class="live-tool" data-action="refresh-live" title="Reconnect the local video presentation without restarting Chrome capture">Refresh video</button>' +
-      '<button class="live-tool" data-action="toggle-live-audio" title="Enable sound from this Chrome tab">Enable sound</button>' +
-      '<button class="live-tool" data-action="focus-live" title="Focus the original Chrome tab">Focus source</button>' +
-      '<button class="live-tool danger" data-action="stop-live" title="Stop live capture">Stop</button>' +
-      '</span>';
-    const stage = document.createElement("div");
-    stage.className = "live-surface-stage";
-    stage.tabIndex = 0;
-    stage.setAttribute("role", "application");
-    stage.setAttribute("aria-label", "Live Chrome page. Click to send mouse and keyboard input to the original tab.");
-    const inputProxy = document.createElement("textarea");
-    inputProxy.className = "live-input-proxy";
-    inputProxy.rows = 1;
-    inputProxy.autocomplete = "off";
-    inputProxy.autocapitalize = "off";
-    inputProxy.spellcheck = false;
-    inputProxy.setAttribute("aria-label", "Text input for the live Chrome page");
-    inputProxy.setAttribute("autocorrect", "off");
-    const video = document.createElement("video");
-    video.className = "live-surface-video";
-    video.autoplay = true;
-    video.muted = true;
-    video.playsInline = true;
-    video.srcObject = surface.stream;
-    const hint = document.createElement("div");
-    hint.className = "live-surface-hint";
-    hint.textContent = surface.interactive
-      ? "Click inside to interact · Input is sent to the original Chrome tab"
-      : (surface.interactionReason || "Video-only mode · Use Focus source to interact with the original Chrome tab");
-    if (surface.keepSourceVisible) {
-      hint.textContent += " · Source page stays selected in a separate Chrome window; keep both windows unminimized.";
-    }
-    stage.append(video, hint, inputProxy);
-
-    if (!surface.interactive) {
-      stage.classList.add("live-surface-readonly");
-      stage.tabIndex = -1;
-      stage.setAttribute("aria-label", "Read-only live video from the original Chrome tab. Use Focus source to interact.");
-      root.append(toolbar, stage);
-      video.play().catch(() => {});
-      if (surface.connected) bindLiveFrameMonitor(node.id, surface, video);
-      return root;
-    }
-
-    function coordinates(event, clampEdges = false) {
-      const rect = stage.getBoundingClientRect();
-      const videoWidth = video.videoWidth || surface.viewport.width;
-      const videoHeight = video.videoHeight || surface.viewport.height;
-      const aspect = videoWidth / Math.max(1, videoHeight);
-      const boxAspect = rect.width / Math.max(1, rect.height);
-      let contentWidth = rect.width;
-      let contentHeight = rect.height;
-      if (aspect > boxAspect) contentHeight = rect.width / aspect;
-      else contentWidth = rect.height * aspect;
-      const offsetX = (rect.width - contentWidth) / 2;
-      const offsetY = (rect.height - contentHeight) / 2;
-      const localX = event.clientX - rect.left - offsetX;
-      const localY = event.clientY - rect.top - offsetY;
-      const outside = localX < 0 || localY < 0 || localX > contentWidth || localY > contentHeight;
-      if (outside && !clampEdges) return null;
-      const mappedX = Math.max(0, Math.min(contentWidth, localX));
-      const mappedY = Math.max(0, Math.min(contentHeight, localY));
-      return {
-        x: Math.max(0, Math.min(surface.viewport.width, mappedX / contentWidth * surface.viewport.width)),
-        y: Math.max(0, Math.min(surface.viewport.height, mappedY / contentHeight * surface.viewport.height))
-      };
-    }
-
-    function modifiers(event) {
-      return {
-        altKey: !!event.altKey,
-        ctrlKey: !!event.ctrlKey,
-        metaKey: !!event.metaKey,
-        shiftKey: !!event.shiftKey
-      };
-    }
-
-    let lastMoveAt = 0;
-    stage.addEventListener("pointerdown", (event) => {
-      if (surface.audioEnabled && surface.audioContext?.state === "suspended") surface.audioContext.resume().catch(() => {});
-      const point = coordinates(event);
-      if (!point) return;
-      inputProxy.focus({ preventScroll: true });
-      try { stage.setPointerCapture(event.pointerId); } catch (_) {}
-      postLiveInput(surface, {
-        kind: "mousePressed", ...point,
-        button: event.button === 2 ? "right" : event.button === 1 ? "middle" : "left",
-        buttons: event.buttons || 1,
-        clickCount: event.detail || 1,
-        ...modifiers(event)
-      });
-      event.preventDefault();
-      event.stopPropagation();
-    });
-    stage.addEventListener("pointermove", (event) => {
-      const now = performance.now();
-      if (now - lastMoveAt < 28) return;
-      lastMoveAt = now;
-      const point = coordinates(event);
-      if (!point) return;
-      postLiveInput(surface, { kind: "mouseMoved", ...point, buttons: event.buttons || 0, ...modifiers(event) });
-      event.preventDefault();
-      event.stopPropagation();
-    });
-    const endPointer = (event) => {
-      const point = coordinates(event, true);
-      if (point) {
-        postLiveInput(surface, {
-          kind: "mouseReleased", ...point,
-          button: event.button === 2 ? "right" : event.button === 1 ? "middle" : "left",
-          buttons: 0,
-          clickCount: event.detail || 1,
-          ...modifiers(event)
-        });
-      }
-      try { stage.releasePointerCapture(event.pointerId); } catch (_) {}
-      event.preventDefault();
-      event.stopPropagation();
-    };
-    stage.addEventListener("pointerup", endPointer);
-    stage.addEventListener("pointercancel", endPointer);
-    stage.addEventListener("wheel", (event) => {
-      const point = coordinates(event);
-      if (!point) return;
-      postLiveInput(surface, { kind: "mouseWheel", ...point, deltaX: event.deltaX, deltaY: event.deltaY, ...modifiers(event) });
-      event.preventDefault();
-      event.stopPropagation();
-    }, { passive: false });
-    stage.addEventListener("contextmenu", (event) => { event.preventDefault(); event.stopPropagation(); });
-    stage.addEventListener("keydown", (event) => {
-      if (event.isComposing || surface.composing) return;
-      const shortcutKey = event.key.toLowerCase();
-      const browserShortcut =
-        ((event.ctrlKey || event.metaKey) && ["w", "t", "n", "l"].includes(shortcutKey)) ||
-        ((event.ctrlKey || event.metaKey) && event.shiftKey && shortcutKey === "w") ||
-        ((event.ctrlKey || event.metaKey) && ["tab"].includes(shortcutKey)) ||
-        (event.altKey && shortcutKey === "f4") || event.key === "F11";
-      if (browserShortcut) { event.preventDefault(); event.stopPropagation(); return; }
-      const printable = event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey;
-      const pasteShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v";
-      // Let the focused proxy textarea handle printable text, paste and IME composition.
-      if (printable || pasteShortcut) return;
-      postLiveInput(surface, {
-        kind: "keyDown",
-        key: event.key,
-        code: event.code,
-        keyCode: event.keyCode,
-        location: event.location,
-        repeat: event.repeat,
-        ...modifiers(event)
-      });
-      event.preventDefault();
-      event.stopPropagation();
-    });
-    stage.addEventListener("keyup", (event) => {
-      if (event.isComposing || surface.composing) return;
-      const printable = event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey;
-      const pasteShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v";
-      if (printable || pasteShortcut) return;
-      postLiveInput(surface, {
-        kind: "keyUp",
-        key: event.key,
-        code: event.code,
-        keyCode: event.keyCode,
-        location: event.location,
-        ...modifiers(event)
-      });
-      event.preventDefault();
-      event.stopPropagation();
-    });
-    inputProxy.addEventListener("compositionstart", () => { surface.composing = true; });
-    inputProxy.addEventListener("compositionend", (event) => {
-      surface.composing = false;
-      const text = String(event.data || inputProxy.value || "").slice(0, 2000);
-      inputProxy.value = "";
-      if (text) postLiveInput(surface, { kind: "insertText", text });
-    });
-    inputProxy.addEventListener("input", (event) => {
-      if (event.isComposing || surface.composing) return;
-      const text = inputProxy.value.slice(0, 2000);
-      inputProxy.value = "";
-      if (text) postLiveInput(surface, { kind: "insertText", text });
-    });
-    root.append(toolbar, stage);
-    video.play().catch(() => {});
-    if (surface.connected) bindLiveFrameMonitor(node.id, surface, video);
-    return root;
-  }
-
-  function toggleLiveAudio(nodeId, button) {
-    const surface = liveSurfaces.get(nodeId);
-    if (!surface || !surface.audioGainNode || !surface.audioContext) {
-      if (button) { button.textContent = "No audio"; button.disabled = true; }
-      return;
-    }
-    surface.audioEnabled = !surface.audioEnabled;
-    const now = surface.audioContext.currentTime;
-    surface.audioGainNode.gain.cancelScheduledValues(now);
-    surface.audioGainNode.gain.setTargetAtTime(surface.audioEnabled ? 1 : 0, now, 0.025);
-    if (surface.audioEnabled) surface.audioContext.resume().catch((error) => toast("Audio could not start: " + error.message, "error"));
-    if (button) {
-      button.textContent = surface.audioEnabled ? "Mute sound" : "Enable sound";
-      button.title = surface.audioEnabled ? "Mute the source tab audio" : "Enable sound from this Chrome tab";
-      button.setAttribute("aria-pressed", String(surface.audioEnabled));
-    }
-    toast(surface.audioEnabled ? "Source tab audio enabled." : "Source tab audio muted.");
-  }
-
-
-  function liveVideoMetrics(video, track, metadata, previousFrame) {
-    const targetVideo = video || null;
-    let settings = {};
-    let quality = {};
-    try { settings = track?.getSettings ? track.getSettings() : {}; } catch (_) {}
-    try { quality = targetVideo?.getVideoPlaybackQuality ? targetVideo.getVideoPlaybackQuality() : {}; } catch (_) {}
-    let frameRate = Number.isFinite(settings.frameRate) && settings.frameRate > 0 ? settings.frameRate : null;
-    if ((!frameRate || frameRate < 0.1) && metadata && previousFrame &&
-        Number.isFinite(metadata.presentedFrames) && Number.isFinite(previousFrame.presentedFrames) &&
-        Number.isFinite(metadata.mediaTime) && Number.isFinite(previousFrame.mediaTime)) {
-      const frames = metadata.presentedFrames - previousFrame.presentedFrames;
-      const seconds = metadata.mediaTime - previousFrame.mediaTime;
-      if (frames > 0 && seconds > 0) frameRate = Math.min(240, frames / seconds);
-    }
-    return {
-      width: targetVideo?.videoWidth || 0,
-      height: targetVideo?.videoHeight || 0,
-      frameRate,
-      presentedFrames: Number.isFinite(metadata?.presentedFrames) ? metadata.presentedFrames :
-        (Number.isFinite(quality.totalVideoFrames) ? quality.totalVideoFrames : null),
-      mediaTime: Number.isFinite(metadata?.mediaTime) ? metadata.mediaTime :
-        (Number.isFinite(targetVideo?.currentTime) ? targetVideo.currentTime : null),
-      droppedFrames: Number.isFinite(quality.droppedVideoFrames) ? quality.droppedVideoFrames : null,
-      totalVideoFrames: Number.isFinite(quality.totalVideoFrames) ? quality.totalVideoFrames : null,
-      trackReadyState: track?.readyState || "unknown",
-      trackMuted: !!track?.muted
-    };
-  }
-
-  function setLiveSurfaceHealth(surfaceId, state, videoInfo, notifyExtension = true, forceNotify = false) {
-    let nodeId = "";
-    let surface = null;
-    for (const [id, item] of liveSurfaces) {
-      if (item.surfaceId === surfaceId) { nodeId = id; surface = item; break; }
-    }
-    if (!surface) return;
-    const nextState = ["checking", "healthy", "recovering", "stalled", "muted", "paused", "ended"].includes(state) ? state : "checking";
-    const changed = surface.healthState !== nextState;
-    surface.healthState = nextState;
-    if (videoInfo) surface.videoInfo = videoInfo;
-    const nodeElement = $('.node[data-id="' + CSS.escape(nodeId) + '"]', world);
-    const badge = nodeElement && $(".live-health-status", nodeElement);
-    if (badge) {
-      badge.dataset.health = nextState;
-      badge.textContent = nextState === "healthy" ? "VIDEO FLOWING" :
-        nextState === "recovering" ? "RECOVERING VIDEO" :
-        nextState === "stalled" ? "NO NEW FRAMES" :
-        nextState === "muted" ? "VIDEO TRACK MUTED" :
-        nextState === "paused" ? "VIEW PAUSED" : "CHECKING VIDEO";
-      badge.title = nextState === "stalled"
-        ? "No new decoded frame has reached the compositor for 12 seconds. The source may be paused, throttled or withholding frames; inspect the source tab and compatibility report."
-        : nextState === "recovering"
-          ? "Reattaching the existing captured stream to the local video element. This does not restart Chrome tab capture."
-          : nextState === "muted"
-          ? "Chrome temporarily marked the captured video track as muted."
-          : nextState === "paused" ? "Health monitoring pauses while this workspace or card is hidden." : "Live video frame monitoring.";
-    }
-    if ((changed || forceNotify) && notifyExtension) {
-      window.postMessage({
-        source: "nolane-workspace",
-        type: "LIVE_SURFACE_HEALTH",
-        surfaceId,
-        browserSessionId: surface.browserSessionId,
-        healthState: nextState,
-        videoInfo: surface.videoInfo || null
-      }, location.origin);
-    }
-  }
-
-
-  async function refreshLiveVideo(nodeId, button, automatic = false) {
-    const surface = liveSurfaces.get(nodeId);
-    if (!surface || !surface.connected) {
-      if (!automatic) toast("This website does not have an active live video stream.", "error");
-      return false;
-    }
-    if (surface.recoveryPromise) return surface.recoveryPromise;
-
-    const track = surface.stream.getVideoTracks()[0];
-    if (!track || track.readyState === "ended") {
-      stopLiveSurfaceById(surface.surfaceId, "Chrome ended the source video track. Start a new stream from the Companion.", false);
-      return false;
-    }
-    if (track.muted) {
-      setLiveSurfaceHealth(surface.surfaceId, "muted", liveVideoMetrics(surface.frameMonitor?.video, track));
-      if (!automatic) toast("Chrome has muted the captured video track. Wait for it to unmute or reconnect the source tab.", "error");
-      return false;
-    }
-
-    const now = Date.now();
-    surface.recoveryAttempts = (surface.recoveryAttempts || []).filter((time) => now - time < 300000);
-    if (surface.recoveryAttempts.length >= 3) {
-      if (!automatic) toast("Video refresh is rate-limited. Try again in a few minutes or restart capture from Chrome.", "error");
-      return false;
-    }
-    if (automatic && surface.autoRecoveryAttempted) return false;
-    surface.recoveryAttempts.push(now);
-    if (automatic) surface.autoRecoveryAttempted = true;
-
-    const video = $('.node[data-id="' + CSS.escape(nodeId) + '"] .live-surface-video', world);
-    if (!video) {
-      if (!automatic) toast("The live video element is not currently visible on the canvas.", "error");
-      return false;
-    }
-
-    if (button) {
-      button.disabled = true;
-      button.textContent = "Refreshing…";
-    }
-    setLiveSurfaceHealth(surface.surfaceId, "recovering", liveVideoMetrics(video, track));
-    const recoveryPromise = (async () => {
-      try {
-        // Rebind only the existing stream. Do not mint another Chrome capture
-        // token, so the source page's login/session and capture permission stay intact.
-        video.pause();
-        video.srcObject = null;
-        await new Promise((resolve) => requestAnimationFrame(() => resolve()));
-        if (liveSurfaces.get(nodeId) !== surface || track.readyState !== "live") {
-          throw new Error("The original Chrome capture is no longer live.");
-        }
-        video.srcObject = surface.stream;
-        await video.play();
-        const videoInfo = await waitForLiveVideoFrame(video, surface.stream, 7000);
-        if (liveSurfaces.get(nodeId) !== surface) throw new Error("The live surface was closed during refresh.");
-
-        const monitor = surface.frameMonitor;
-        if (monitor) {
-          monitor.video = video;
-          monitor.lastFrameAt = Date.now();
-          monitor.lastFrameCounter = videoInfo.presentedFrames ?? null;
-          monitor.previousFrame = null;
-          monitor.lastHealthReportAt = 0;
-          if (monitor.callbackId && typeof video.cancelVideoFrameCallback === "function") {
-            try { video.cancelVideoFrameCallback(monitor.callbackId); } catch (_) {}
-            monitor.callbackId = null;
-          }
-          monitor.video = null;
-          bindLiveFrameMonitor(nodeId, surface, video);
-        }
-        setLiveSurfaceHealth(surface.surfaceId, "healthy", liveVideoMetrics(video, track));
-        if (!automatic) toast("Video presentation refreshed without restarting the Chrome capture.");
-        return true;
-      } catch (error) {
-        if (liveSurfaces.get(nodeId) === surface) {
-          // Keep the existing track attached even when the soft refresh fails.
-          try {
-            if (video.srcObject !== surface.stream) video.srcObject = surface.stream;
-            await video.play().catch(() => {});
-          } catch (_) {}
-          setLiveSurfaceHealth(surface.surfaceId, "stalled", liveVideoMetrics(video, track));
-        }
-        if (!automatic) {
-          toast("Video refresh failed: " + String(error?.message || error) + ". Use Focus source, then restart capture from the Companion if needed.", "error");
-        }
-        return false;
-      } finally {
-        if (button?.isConnected) {
-          button.disabled = false;
-          button.textContent = "Refresh video";
-        }
-        if (surface.recoveryPromise === recoveryPromise) surface.recoveryPromise = null;
-      }
-    })();
-    surface.recoveryPromise = recoveryPromise;
-    return recoveryPromise;
-  }
-
-  function bindLiveFrameMonitor(nodeId, surface, video) {
-    if (!surface || !surface.connected || !video) return;
-    if (!surface.frameMonitor) {
-      const track = surface.stream.getVideoTracks()[0];
-      const monitor = {
-        video: null,
-        callbackId: null,
-        intervalId: null,
-        lastFrameAt: Date.now(),
-        lastMetrics: surface.videoInfo || null,
-        lastHealthReportAt: 0,
-        lastFrameCounter: surface.videoInfo?.presentedFrames ?? null,
-        previousFrame: null,
-        track,
-        onTrackMute: null,
-        onTrackUnmute: null,
-        onVisibility: null,
-        autoRecoveryAttempted: !!surface.autoRecoveryAttempted
-      };
-      monitor.onTrackMute = () => setLiveSurfaceHealth(surface.surfaceId, "muted", liveVideoMetrics(monitor.video || video, track));
-      monitor.onTrackUnmute = () => {
-        monitor.lastFrameAt = Date.now();
-        monitor.lastFrameCounter = null;
-        setLiveSurfaceHealth(surface.surfaceId, "checking", liveVideoMetrics(monitor.video || video, track));
-      };
-      monitor.onVisibility = () => {
-        monitor.lastFrameAt = Date.now();
-        if (document.visibilityState !== "visible") {
-          setLiveSurfaceHealth(surface.surfaceId, "paused", liveVideoMetrics(monitor.video || video, track));
-        } else {
-          setLiveSurfaceHealth(surface.surfaceId, "checking", liveVideoMetrics(monitor.video || video, track));
-        }
-      };
-      track?.addEventListener("mute", monitor.onTrackMute);
-      track?.addEventListener("unmute", monitor.onTrackUnmute);
-      document.addEventListener("visibilitychange", monitor.onVisibility);
-      monitor.intervalId = setInterval(() => {
-        if (liveSurfaces.get(nodeId) !== surface) return;
-        if (document.visibilityState !== "visible") {
-          if (surface.healthState !== "paused") setLiveSurfaceHealth(surface.surfaceId, "paused", liveVideoMetrics(monitor.video || video, track));
-          monitor.lastFrameAt = Date.now();
-          return;
-        }
-        const currentVideo = $('.node[data-id="' + CSS.escape(nodeId) + '"] .live-surface-video', world);
-        if (!currentVideo || !currentVideo.isConnected || currentVideo.getClientRects().length === 0) {
-          monitor.lastFrameAt = Date.now();
-          if (surface.healthState !== "paused") setLiveSurfaceHealth(surface.surfaceId, "paused", liveVideoMetrics(monitor.video || video, track));
-          return;
-        }
-        if (monitor.video !== currentVideo) bindLiveFrameMonitor(nodeId, surface, currentVideo);
-        if (track?.readyState === "ended") {
-          stopLiveSurfaceById(surface.surfaceId, "Chrome ended the captured tab video track.", false);
-          return;
-        }
-        if (track?.muted) {
-          if (surface.healthState !== "muted") setLiveSurfaceHealth(surface.surfaceId, "muted", liveVideoMetrics(currentVideo, track));
-          return;
-        }
-        if (typeof currentVideo.requestVideoFrameCallback !== "function") {
-          let quality = {};
-          try { quality = currentVideo.getVideoPlaybackQuality ? currentVideo.getVideoPlaybackQuality() : {}; } catch (_) {}
-          const frameCounter = Number.isFinite(quality.totalVideoFrames) ? quality.totalVideoFrames :
-            (Number.isFinite(currentVideo.currentTime) ? currentVideo.currentTime : null);
-          if (frameCounter !== null && frameCounter !== monitor.lastFrameCounter) {
-            monitor.lastFrameCounter = frameCounter;
-            monitor.lastFrameAt = Date.now();
-            const info = liveVideoMetrics(currentVideo, track);
-            const shouldReport = surface.healthState !== "healthy" || Date.now() - monitor.lastHealthReportAt > 15000;
-            if (shouldReport) {
-              setLiveSurfaceHealth(surface.surfaceId, "healthy", info, true, true);
-              monitor.lastHealthReportAt = Date.now();
-            } else surface.videoInfo = info;
-          }
-        }
-        if (Date.now() - monitor.lastFrameAt > 12000 && surface.healthState !== "recovering") {
-          if (!monitor.autoRecoveryAttempted) {
-            monitor.autoRecoveryAttempted = true;
-            surface.autoRecoveryAttempted = true;
-            void refreshLiveVideo(nodeId, null, true);
-          } else if (surface.healthState !== "stalled") {
-            setLiveSurfaceHealth(surface.surfaceId, "stalled", liveVideoMetrics(currentVideo, track));
-          }
-        }
-      }, 4000);
-      surface.frameMonitor = monitor;
-    }
-
-    const monitor = surface.frameMonitor;
-    if (monitor.video === video) return;
-    if (monitor.video && monitor.callbackId && typeof monitor.video.cancelVideoFrameCallback === "function") {
-      try { monitor.video.cancelVideoFrameCallback(monitor.callbackId); } catch (_) {}
-    }
-    monitor.video = video;
-    monitor.callbackId = null;
-    monitor.lastFrameAt = Date.now();
-    monitor.lastFrameCounter = null;
-
-    if (typeof video.requestVideoFrameCallback === "function") {
-      const onFrame = (_now, metadata) => {
-        if (liveSurfaces.get(nodeId) !== surface || monitor.video !== video) return;
-        monitor.lastFrameAt = Date.now();
-        const info = liveVideoMetrics(video, monitor.track, metadata, monitor.previousFrame);
-        monitor.previousFrame = metadata;
-        monitor.lastMetrics = info;
-        if (info.presentedFrames !== null) monitor.lastFrameCounter = info.presentedFrames;
-        const shouldReport = surface.healthState !== "healthy" || Date.now() - monitor.lastHealthReportAt > 15000;
-        if (shouldReport) {
-          setLiveSurfaceHealth(surface.surfaceId, "healthy", info, true, true);
-          monitor.lastHealthReportAt = Date.now();
-        } else surface.videoInfo = info;
-        monitor.callbackId = video.requestVideoFrameCallback(onFrame);
-      };
-      monitor.callbackId = video.requestVideoFrameCallback(onFrame);
-    } else if (!monitor.intervalId) {
-      monitor.intervalId = setInterval(() => {
-        if (document.visibilityState !== "visible" || !video.isConnected) return;
-        let quality = {};
-        try { quality = video.getVideoPlaybackQuality ? video.getVideoPlaybackQuality() : {}; } catch (_) {}
-        const count = Number.isFinite(quality.totalVideoFrames) ? quality.totalVideoFrames : null;
-        if (count !== null && count !== monitor.lastFrameCounter) {
-          monitor.lastFrameCounter = count;
-          monitor.lastFrameAt = Date.now();
-          const info = liveVideoMetrics(video, monitor.track);
-          surface.videoInfo = info;
-          if (surface.healthState !== "healthy") setLiveSurfaceHealth(surface.surfaceId, "healthy", info);
-        }
-      }, 1000);
-    }
-  }
-
-  function stopLiveFrameMonitor(surface) {
-    const monitor = surface?.frameMonitor;
-    if (!monitor) return;
-    if (monitor.video && monitor.callbackId && typeof monitor.video.cancelVideoFrameCallback === "function") {
-      try { monitor.video.cancelVideoFrameCallback(monitor.callbackId); } catch (_) {}
-    }
-    if (monitor.intervalId) clearInterval(monitor.intervalId);
-    monitor.track?.removeEventListener("mute", monitor.onTrackMute);
-    monitor.track?.removeEventListener("unmute", monitor.onTrackUnmute);
-    document.removeEventListener("visibilitychange", monitor.onVisibility);
-    surface.frameMonitor = null;
-  }
-
-  function waitForLiveVideoFrame(video, stream, timeoutMs = 10000) {
-    return new Promise((resolve, reject) => {
-      const track = stream.getVideoTracks()[0];
-      if (!track) {
-        reject(new Error("Chrome did not provide a video track for this tab."));
-        return;
-      }
-      let settled = false;
-      let frameCallbackPending = false;
-      const timer = setTimeout(() => finish(new Error(
-        "The tab stream opened, but Chrome did not deliver a decoded video frame within 10 seconds. Keep Nolane visible and reconnect."
-      )), timeoutMs);
-
-      function cleanup() {
-        clearTimeout(timer);
-        video.removeEventListener("loadeddata", checkFrame);
-        video.removeEventListener("playing", checkFrame);
-        video.removeEventListener("error", onVideoError);
-        track.removeEventListener("ended", onTrackEnded);
-      }
-      function finish(error, frameMetadata = null) {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        if (error) {
-          reject(error);
-          return;
-        }
-        let settings = {};
-        try { settings = track.getSettings ? track.getSettings() : {}; } catch (_) {}
-        resolve({
-          width: video.videoWidth,
-          height: video.videoHeight,
-          frameRate: Number.isFinite(settings.frameRate) ? settings.frameRate : null,
-          presentedFrames: Number.isFinite(frameMetadata?.presentedFrames) ? frameMetadata.presentedFrames : null,
-          mediaTime: Number.isFinite(frameMetadata?.mediaTime) ? frameMetadata.mediaTime : null,
-          trackReadyState: track.readyState || "unknown",
-          trackMuted: !!track.muted
-        });
-      }
-      function onVideoError() {
-        finish(new Error("Chrome sent a tab stream, but the canvas could not decode its video."));
-      }
-      function onTrackEnded() {
-        finish(new Error("Chrome ended the source tab's video stream before the first frame arrived."));
-      }
-      function checkFrame() {
-        if (settled || video.readyState < 2 || video.videoWidth < 1 || video.videoHeight < 1) return;
-        if (typeof video.requestVideoFrameCallback === "function") {
-          if (frameCallbackPending) return;
-          frameCallbackPending = true;
-          video.requestVideoFrameCallback((_now, metadata) => finish(null, metadata));
-        } else {
-          finish();
-        }
-      }
-
-      video.addEventListener("loadeddata", checkFrame);
-      video.addEventListener("playing", checkFrame);
-      video.addEventListener("error", onVideoError);
-      track.addEventListener("ended", onTrackEnded, { once: true });
-      video.play().then(checkFrame).catch((error) => {
-        finish(new Error("Chrome refused to play the live video: " + String(error?.message || error)));
-      });
-      checkFrame();
-    });
-  }
-
-  async function startLiveSurface(message) {
-    let stream = null;
-    let audioContext = null;
-    let nodeId = "";
-    try {
-      if (message && typeof message.surfaceId === "string" && stoppedLiveSurfaceIds.has(message.surfaceId)) {
-        stoppedLiveSurfaceIds.delete(message.surfaceId);
-        throw new Error("The source tab changed website before the live surface could connect. Start it again from the current tab.");
-      }
-      if (!message || typeof message.surfaceId !== "string" || !Number.isInteger(message.sourceTabId) ||
-          typeof message.streamId !== "string" || message.browserSessionId !== bridgeSessionId) {
-        throw new Error("The live-stream request did not match this Chrome profile.");
-      }
-      if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
-        throw new Error("This browser page cannot consume a tab stream. Open Nolane over its HTTPS GitHub Pages address.");
-      }
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          mandatory: {
-            chromeMediaSource: "tab",
-            chromeMediaSourceId: message.streamId
-          }
-        },
-        video: {
-          mandatory: {
-            chromeMediaSource: "tab",
-            chromeMediaSourceId: message.streamId
-          }
-        }
-      });
-      if (stoppedLiveSurfaceIds.has(message.surfaceId)) {
-        stoppedLiveSurfaceIds.delete(message.surfaceId);
-        throw new Error("The source tab changed website while its video stream was starting.");
-      }
-
-      const safeUrl = normalizeUrl(message.url);
-      addBrowserTabsToWorkspace([{
-        id: message.sourceTabId,
-        url: safeUrl,
-        title: String(message.title || hostOf(safeUrl)).slice(0, 120)
-      }], message.browserSessionId);
-      const node = nodes.find((item) => item.type === "website" &&
-        item.browserTabId === message.sourceTabId && item.browserSessionId === message.browserSessionId);
-      if (!node) throw new Error("The source tab could not be added to the active workspace.");
-
-      const previous = liveSurfaces.get(node.id);
-      if (previous) {
-        previous.stream.getTracks().forEach((track) => track.stop());
-        previous.audioContext?.close().catch(() => {});
-      }
-      let audioGainNode = null;
-      try {
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        if (AudioContextClass && stream.getAudioTracks().length) {
-          audioContext = new AudioContextClass();
-          const audioSource = audioContext.createMediaStreamSource(stream);
-          audioGainNode = audioContext.createGain();
-          audioGainNode.gain.value = 0;
-          audioSource.connect(audioGainNode).connect(audioContext.destination);
-        }
-      } catch (audioError) {
-        console.warn("Live tab audio could not be routed:", audioError);
-        audioContext?.close().catch(() => {});
-        audioContext = null;
-        audioGainNode = null;
-      }
-      const viewport = message.viewport && Number.isFinite(message.viewport.width) && Number.isFinite(message.viewport.height)
-        ? { width: Math.max(1, message.viewport.width), height: Math.max(1, message.viewport.height) }
-        : { width: 1280, height: 720 };
-      nodeId = node.id;
-      liveSurfaces.set(node.id, {
-        surfaceId: message.surfaceId,
-        sourceTabId: message.sourceTabId,
-        browserSessionId: message.browserSessionId,
-        viewport,
-        stream,
-        audioContext,
-        audioGainNode,
-        audioEnabled: false,
-        interactive: !!message.interactive,
-        interactionReason: String(message.interactionReason || "").slice(0, 360),
-        keepSourceVisible: !!message.keepSourceVisible,
-        healthState: "checking",
-        connected: false,
-        frameMonitor: null,
-        autoRecoveryAttempted: false,
-        recoveryAttempts: [],
-        recoveryPromise: null
-      });
-      activeView = "canvas";
-      $("#searchInput").value = "";
-      renderNodes();
-      scheduleSave();
-      const nodeElement = $('.node[data-id="' + CSS.escape(node.id) + '"]', world);
-      const liveVideo = nodeElement && $(".live-surface-video", nodeElement);
-      if (!liveVideo) throw new Error("The live video element was not mounted in the canvas.");
-      const videoInfo = await waitForLiveVideoFrame(liveVideo, stream);
-      const mountedSurface = liveSurfaces.get(node.id);
-      if (mountedSurface?.surfaceId === message.surfaceId) mountedSurface.videoInfo = videoInfo;
-      const liveHint = $(".live-surface-hint", nodeElement);
-      if (liveHint) {
-        const fps = Number.isFinite(videoInfo.frameRate) ? " · " + videoInfo.frameRate.toFixed(1) + " fps" : "";
-        liveHint.textContent += " · " + videoInfo.width + " × " + videoInfo.height + fps;
-      }
-      if (stoppedLiveSurfaceIds.has(message.surfaceId)) {
-        stoppedLiveSurfaceIds.delete(message.surfaceId);
-        throw new Error("The source tab changed website before its first frame was confirmed.");
-      }
-      const liveSurface = liveSurfaces.get(node.id);
-      if (liveSurface?.surfaceId === message.surfaceId) {
-        liveSurface.connected = true;
-        bindLiveFrameMonitor(node.id, liveSurface, liveVideo);
-      }
-      window.postMessage({
-        source: "nolane-workspace",
-        type: "LIVE_SURFACE_ACK",
-        surfaceId: message.surfaceId,
-        browserSessionId: message.browserSessionId,
-        videoInfo
-      }, location.origin);
-      const videoTrack = stream.getVideoTracks()[0];
-      if (videoTrack) videoTrack.addEventListener("ended", () => stopLiveSurfaceById(message.surfaceId, "Chrome ended the captured tab stream.", false), { once: true });
-      toast("Live Chrome surface connected: " + node.title + ".");
-    } catch (error) {
-      const mounted = nodeId ? liveSurfaces.get(nodeId) : null;
-      if (mounted?.surfaceId === message?.surfaceId) {
-        stopLiveFrameMonitor(mounted);
-        liveSurfaces.delete(nodeId);
-      }
-      if (stream) stream.getTracks().forEach((track) => track.stop());
-      if (audioContext && audioContext.state !== "closed") audioContext.close().catch(() => {});
-      if (nodeId) {
-        try { renderNodes(); } catch (_) {}
-      }
-      if (message && typeof message.surfaceId === "string") {
-        window.postMessage({
-          source: "nolane-workspace",
-          type: "LIVE_SURFACE_ERROR",
-          surfaceId: message.surfaceId,
-          browserSessionId: message.browserSessionId || "",
-          error: String(error?.message || error).slice(0, 220)
-        }, location.origin);
-      }
-      throw error;
-    }
-  }
-
-  function stopLiveSurfaceById(surfaceId, reason, notifyExtension = false, render = true) {
-    let nodeId = "";
-    let surface = null;
-    for (const [id, item] of liveSurfaces) {
-      if (item.surfaceId === surfaceId) { nodeId = id; surface = item; break; }
-    }
-    if (!surface) return;
-    liveSurfaces.delete(nodeId);
-    stopLiveFrameMonitor(surface);
-    surface.stream.getTracks().forEach((track) => track.stop());
-    surface.audioContext?.close().catch(() => {});
-    if (notifyExtension) {
-      window.postMessage({
-        source: "nolane-workspace",
-        type: "LIVE_SURFACE_STOP",
-        surfaceId,
-        browserSessionId: surface.browserSessionId
-      }, location.origin);
-    }
-    if (render) renderNodes();
-    if (reason) toast(reason, "error");
-  }
-
-  function stopAllLiveSurfaces(reason) {
-    const surfaceIds = [...liveSurfaces.values()].map((surface) => surface.surfaceId);
-    surfaceIds.forEach((surfaceId) => stopLiveSurfaceById(surfaceId, null, true, false));
-    if (surfaceIds.length && reason) toast(reason);
-  }
-
-  function stopLiveSurface(nodeId) {
-    const surface = liveSurfaces.get(nodeId);
-    if (!surface) return;
-    stopLiveSurfaceById(surface.surfaceId, "Live surface stopped.", true);
-  }
-
   function updateViewFilter() {
     const query = $("#searchInput").value.trim().toLowerCase();
+    searchResultIds = [];
+    searchResultIndex = -1;
     let visibleCount = 0;
-    $$(".node", world).forEach((element) => {
-      const node = nodes.find((item) => item.id === element.dataset.id);
-      const viewMatch = activeView === "canvas" || (activeView === "websites" && node && node.type === "website") || (activeView === "notes" && node && node.type === "note");
-      const searchText = node ? [node.title, node.url || "", node.content || "", node.description || ""].join(" ").toLowerCase() : "";
-      const matches = !!(viewMatch && (!query || searchText.includes(query)));
-      element.classList.toggle("hidden-by-search", !matches);
-      if (matches) visibleCount += 1;
-    });
+    for (const node of nodes) {
+      if (!matchesNodeFilters(node, query)) continue;
+      visibleCount += 1;
+      if (query) searchResultIds.push(node.id);
+    }
+    const nodesById = new Map(nodes.map((node) => [node.id, node]));
+    for (const [id, element] of renderedNodeElements) {
+      element.classList.toggle("hidden-by-search", !matchesNodeFilters(nodesById.get(id), query));
+    }
     const titles = { canvas: "My workspace", websites: "Web surfaces", notes: "Notes" };
     $("#viewTitle").textContent = activeView === "canvas" ? (activeSpace()?.name || titles.canvas) : titles[activeView];
     $("#canvasHeading").textContent = activeView === "websites" ? "Your web, gathered." : activeView === "notes" ? "Thoughts, in context." : (activeSpace()?.name || "A space for everything.");
-    $("#canvasSubheading").textContent = activeView === "websites" ? "Open, arrange and revisit the websites you use." : activeView === "notes" ? "Keep ideas close to the things they belong to." : "Bring your web tools together. Arrange them your way.";
+    $("#canvasSubheading").textContent = query
+      ? (visibleCount ? visibleCount + " matching items · Press Enter to jump, Shift+Enter to go back." : "No items match this search.")
+      : activeView === "websites" ? "Open, arrange and revisit the websites you use."
+        : activeView === "notes" ? "Keep ideas close to the things they belong to."
+          : "Bring your web tools together. Arrange them your way.";
     const empty = $("#emptyState");
     empty.hidden = visibleCount > 0;
     $("#emptyTitle").textContent = query ? "No matches yet." : activeView === "websites" ? "No websites here yet." : activeView === "notes" ? "No notes here yet." : "A fresh space.";
     $("#emptyDescription").textContent = query ? "Try a different search, or clear the search field." : "Start with a website, a note, or both. Your workspace grows with you.";
     $$(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === activeView));
+    scheduleCanvasVirtualization();
     scheduleNativeSurfaceSync();
+  }
+
+  function focusSearchResult(reverse) {
+    if (!$("#searchInput").value.trim() || !searchResultIds.length) return;
+    searchResultIndex = window.NolaneSpatialIndex.cycleIndex(
+      searchResultIndex, searchResultIds.length, reverse
+    );
+    if (searchResultIndex < 0) return;
+    const node = nodes.find((item) => item.id === searchResultIds[searchResultIndex]);
+    if (!node) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const scale = clamp(Math.max(view.scale, 0.6), MIN_SCALE, MAX_SCALE);
+    view = normalizeCanvasView({
+      scale,
+      x: rect.width / 2 - (node.x + node.w / 2) * scale,
+      y: rect.height / 2 - (node.y + node.h / 2) * scale
+    });
+    selectNode(node.id);
+    applyView();
+    toast("Match " + (searchResultIndex + 1) + " of " + searchResultIds.length + ": " + node.title);
   }
 
   function selectNode(id) {
@@ -1699,6 +1183,7 @@
       const element = $('.node[data-id="' + CSS.escape(id) + '"]', world);
       if (element) element.style.zIndex = node.z;
       scheduleSave();
+      scheduleCanvasVirtualization();
       scheduleNativeSurfaceSync();
     }
   }
@@ -1732,11 +1217,6 @@
     if (action === "embed" && node.type === "website") activateEmbed(node, article, node.embedMode || "safe");
     if (action === "compatibility" && node.type === "website") setEmbedMode(node, article, "compat");
     if (action === "safe-mode" && node.type === "website") setEmbedMode(node, article, "safe");
-    if (action === "stop-live" && node.type === "website") stopLiveSurface(node.id);
-    if (action === "refresh-live" && node.type === "website") void refreshLiveVideo(node.id, button, false);
-    if (action === "toggle-live-audio" && node.type === "website") toggleLiveAudio(node.id, button);
-    if (action === "focus-live" && node.type === "website") openWebsite(node);
-    if (action === "live-help" && node.type === "website") toast("Open this website in a Chrome tab, click the Nolane Companion icon there, then choose Stream this tab to Nolane.");
     if (action === "reload") {
       const frame = $("iframe", article);
       if (frame) { frame.src = node.url; toast("Refreshing " + node.title + "."); }
@@ -1812,167 +1292,37 @@
   }
 
   function openWebsite(node) {
-    if (node.browserTabId !== undefined && bridgeConnected && node.browserSessionId && node.browserSessionId === bridgeSessionId) {
-      window.postMessage({ source: "nolane-workspace", type: "FOCUS_BROWSER_TAB", tabId: node.browserTabId, browserSessionId: node.browserSessionId, expectedOrigin: new URL(node.url).origin }, location.origin);
-      toast("Switching to the original Chrome tab for " + node.title + ".");
-      return;
-    }
-    if (node.browserTabId !== undefined && (!bridgeConnected || !node.browserSessionId || node.browserSessionId !== bridgeSessionId)) {
-      toast("This tab card belongs to another or disconnected Chrome profile. Opening the website URL instead.");
-    }
     openWebsiteUrl(node);
   }
 
-  function setBridgeConnected(connected, sessionId) {
-    bridgeConnected = false;
-    bridgeSessionId = "";
+  function updateBridgeStatus() {
     const title = $("#bridgeStatusTitle");
     const detail = $("#bridgeStatusText");
     const pill = $("#bridgeStatusPill");
     const panel = $(".bridge-status-large");
     const sidebar = $("#bridgeSidebarState");
     const connectedNow = nativeHostAvailable;
-    if (title) title.textContent = connectedNow ? "Nolane Windows Bridge connected" : "Windows bridge not connected";
+    const permissionDenied = nativeBridgePermission === "denied";
+    const failure = permissionDenied
+      ? "Loopback access is blocked. Open the site settings for nolane-x.github.io, set Loopback network access to Allow, then reload this page."
+      : nativeBridgeLastError;
+    if (title) title.textContent = connectedNow ? "Nolane Windows Bridge connected" :
+      failure ? "Windows bridge connection failed" : "Windows bridge not connected";
     if (detail) detail.textContent = connectedNow
-      ? "Windows is running in the background. Website cards use real WebView2 surfaces; no extension is needed."
-      : "Start the Windows background bridge, then allow this website to connect to the local companion once.";
-    if (pill) pill.textContent = connectedNow ? "Connected" : "Not connected";
+      ? "Windows is running in the background. Website cards use real WebView2 surfaces."
+      : failure || "Start the Windows background bridge, then connect from this page. The installer checks the local service before reporting success.";
+    if (pill) pill.textContent = connectedNow ? "Connected" : failure ? "Check required" : "Not connected";
     if (panel) panel.classList.toggle("connected", connectedNow);
     if (sidebar) sidebar.innerHTML = '<i class="status-dot' + (connectedNow ? ' green' : '') + '"></i> ' + (connectedNow ? "Windows bridge" : "Connect Windows");
     const footer = $("#bridgeFooterState");
-    if (footer) footer.textContent = connectedNow ? "Windows background bridge · Connected" : "No extension required · Windows bridge";
+    if (footer) footer.textContent = connectedNow ? "Windows background bridge · Connected" :
+      failure ? "Windows bridge · Troubleshooting required" : "Windows background bridge · Not connected";
     const connectButton = $("#connectWindowsBridgeButton");
     if (connectButton) {
-      connectButton.disabled = connectedNow || nativeBridgePermission === "denied";
+      connectButton.disabled = connectedNow || permissionDenied;
       connectButton.textContent = connectedNow ? "Connected" :
-        nativeBridgePermission === "denied" ? "Enable loopback access in site settings" : "Connect Windows bridge";
-    }
-  }
-
-  function addBrowserTabsToWorkspace(tabs, sessionId) {
-    if (!Array.isArray(tabs) || !tabs.length) return;
-    if (typeof sessionId !== "string" || sessionId.length < 20 || sessionId.length > 80) return toast("The companion did not provide a valid browser profile identity.", "error");
-    const valid = tabs.map((tab) => {
-      if (!tab || !Number.isInteger(tab.id)) return null;
-      try {
-        return {
-          id: tab.id,
-          windowId: Number.isInteger(tab.windowId) ? tab.windowId : undefined,
-          url: normalizeUrl(tab.url),
-          title: String(tab.title || hostOf(tab.url)).slice(0, 120)
-        };
-      } catch (_) { return null; }
-    }).filter(Boolean);
-    if (!valid.length) return toast("No supported web tabs were selected.", "error");
-
-    const rect = canvas.getBoundingClientRect();
-    const center = worldPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-    let added = 0;
-    let updated = 0;
-    valid.forEach((tab, index) => {
-      const exactMatch = nodes.find((node) => node.type === "website" && node.browserTabId === tab.id && node.browserSessionId === sessionId);
-      const tabOrigin = new URL(tab.url).origin;
-      const manualCardMatch = nodes.find((node) => node.type === "website" &&
-        node.browserTabId === undefined && node.browserSessionId === undefined &&
-        (() => { try { return new URL(node.url).origin === tabOrigin; } catch (_) { return false; } })());
-      const existing = exactMatch || manualCardMatch;
-      if (existing) {
-        existing.url = tab.url;
-        existing.title = tab.title || hostOf(tab.url);
-        existing.browserTabId = tab.id;
-        existing.browserWindowId = tab.windowId;
-        existing.browserSessionId = sessionId;
-        existing.description = "Linked to its original Chrome tab. Start a Live Chrome Surface from the Companion to display and control it here.";
-        updated += 1;
-        return;
-      }
-      if (nodes.length >= MAX_NODES) return;
-      const column = index % 3;
-      const row = Math.floor(index / 3);
-      nodes.push({
-        id: uid(),
-        type: "website",
-        title: tab.title || hostOf(tab.url),
-        url: tab.url,
-        description: "Linked to its original Chrome tab. Start a Live Chrome Surface from the Companion to display and control it here.",
-        browserTabId: tab.id,
-        browserWindowId: tab.windowId,
-        browserSessionId: sessionId,
-        x: Math.round(center.x - 600 + column * 420),
-        y: Math.round(center.y - 170 + row * 330),
-        w: 390,
-        h: 300,
-        z: ++zCounter,
-        createdAt: new Date().toISOString()
-      });
-      added += 1;
-    });
-    activeView = "canvas";
-    $("#searchInput").value = "";
-    renderNodes();
-    scheduleSave();
-    toast("Added " + added + " Chrome tab(s)" + (updated ? " and updated " + updated + " existing card(s)." : " to this workspace."));
-  }
-
-  function handleCompanionMessage(event) {
-    if (event.source !== window || event.origin !== location.origin) return;
-    const message = event.data;
-    if (!message || message.source !== "nolane-companion") return;
-    if (message.type === "COMPANION_READY") {
-      setBridgeConnected(!!message.browserSessionId, message.browserSessionId || "");
-    } else if (message.type === "LIVE_SURFACE_START") {
-      startLiveSurface(message).catch((error) => toast(error.message || "Could not start the live surface.", "error"));
-    } else if (message.type === "LIVE_SURFACE_REFRESH") {
-      const entry = [...liveSurfaces.entries()].find(([, surface]) => surface.surfaceId === message.surfaceId);
-      if (entry) void refreshLiveVideo(entry[0], null, false);
-      else toast("That live surface is no longer mounted. Analyze the website again.", "error");
-    } else if (message.type === "LIVE_SURFACE_STOPPED") {
-      if (typeof message.surfaceId === "string") {
-        stoppedLiveSurfaceIds.add(message.surfaceId);
-        if (stoppedLiveSurfaceIds.size > 128) stoppedLiveSurfaceIds.delete(stoppedLiveSurfaceIds.values().next().value);
-      }
-      stopLiveSurfaceById(message.surfaceId, message.reason || "Live Chrome surface disconnected.", false);
-    } else if (message.type === "LIVE_VIEWPORT_UPDATE") {
-      const surface = [...liveSurfaces.values()].find((item) => item.surfaceId === message.surfaceId);
-      if (surface && message.viewport && Number.isFinite(message.viewport.width) && Number.isFinite(message.viewport.height)) {
-        surface.viewport = { width: Math.max(1, message.viewport.width), height: Math.max(1, message.viewport.height) };
-      }
-    } else if (message.type === "LIVE_INPUT_RESULT") {
-      const entry = [...liveSurfaces.entries()].find(([, surface]) => surface.surfaceId === message.surfaceId);
-      if (entry) {
-        const [nodeId, surface] = entry;
-        surface.inputStatus = message.ok ? "ready" : "blocked";
-        surface.inputError = message.ok ? "" : String(message.error || "Chrome rejected this input.");
-        const card = $$(".node", world).find((element) => element.dataset.id === nodeId);
-        const status = card?.querySelector(".live-input-status");
-        if (status) {
-          status.dataset.inputState = surface.inputStatus;
-          status.textContent = message.ok ? "INPUT OK" : "INPUT BLOCKED";
-          status.title = message.ok
-            ? "Chrome acknowledged this input command."
-            : surface.inputError + " Use Focus source if the browser blocks remote input.";
-        }
-        if (!message.ok) {
-          toast("Website input was not delivered: " + surface.inputError + " Use Focus source to continue.", "error");
-        }
-      }
-    } else if (message.type === "TABS_IMPORTED") {
-      setBridgeConnected(!!message.browserSessionId, message.browserSessionId || "");
-      addBrowserTabsToWorkspace(message.tabs, message.browserSessionId);
-    } else if (message.type === "TAB_FOCUSED") {
-      if (message.ok) toast("Chrome tab focused.");
-      else {
-        const node = nodes.find((item) => item.type === "website" && item.browserTabId === message.tabId && item.browserSessionId === message.browserSessionId);
-        if (node) {
-          node.browserTabId = undefined;
-          node.browserWindowId = undefined;
-          node.browserSessionId = undefined;
-          scheduleSave();
-          renderNodes();
-          openWebsiteUrl(node);
-        }
-        toast("The original tab is no longer available. Opened its URL instead.", "error");
-      }
+        permissionDenied ? "Enable loopback access in site settings" :
+        failure ? "Try connecting again" : "Connect Windows bridge";
     }
   }
 
@@ -1982,11 +1332,12 @@
       nativeBridgePermission = permission.state;
       permission.onchange = () => {
         nativeBridgePermission = permission.state;
-        setBridgeConnected(false, "");
+        if (nativeBridgePermission === "granted") nativeBridgeLastError = "";
+        updateBridgeStatus();
         if (nativeBridgePermission === "granted" && !nativeHostAvailable) connectWindowsBridge();
       };
     } catch (_) { nativeBridgePermission = "unknown"; }
-    setBridgeConnected(false, "");
+    updateBridgeStatus();
   }
 
   function connectWindowsBridge() {
@@ -1997,6 +1348,14 @@
     try { socket = new WebSocket("ws://127.0.0.1:43172/bridge", "nolane.infinite.v2"); }
     catch (_) { return toast("Could not open the local connection. Check that the Windows bridge is running.", "error"); }
     nativeBridgeSocket = socket;
+    nativeBridgeLastError = "";
+    updateBridgeStatus();
+    let handshakeTimer = window.setTimeout(() => {
+      if (nativeBridgeSocket !== socket || nativeHostAvailable || socket.readyState !== WebSocket.OPEN) return;
+      nativeBridgeLastError = "The local service accepted the socket but did not finish the Nolane handshake. Check the Windows host log, then restart the bridge.";
+      updateBridgeStatus();
+      socket.close(4000, "Nolane handshake timed out");
+    }, 10000);
     socket.addEventListener("open", () => {
       socket.send(JSON.stringify({ type: "nolane.bridge.hello", protocol: 2, page: location.href }));
     }, { once: true });
@@ -2005,30 +1364,51 @@
       try { message = JSON.parse(event.data); } catch (_) { return; }
       handleNativeHostMessage(message);
       if (message.type === "nolane.native.ready") {
+        window.clearTimeout(handshakeTimer);
+        handshakeTimer = 0;
+        nativeBridgeLastError = "";
+        updateBridgeStatus();
         sendNativeBridgeMessage({ type: "nolane.workspace.visibility", protocol: 2, visible: document.visibilityState === "visible" });
         scheduleNativeSurfaceSync();
       }
     });
     socket.addEventListener("error", () => {
-      if (!nativeHostAvailable) setBridgeConnected(false, "");
+      if (!nativeHostAvailable) {
+        nativeBridgeLastError = "The browser could not reach 127.0.0.1:43172. Check that Nolane.DesktopHost.exe is running and that Loopback network access is allowed for this site.";
+        updateBridgeStatus();
+      }
     });
     socket.addEventListener("close", () => {
+      if (handshakeTimer) window.clearTimeout(handshakeTimer);
       if (nativeBridgeSocket === socket) nativeBridgeSocket = null;
       const wasConnected = nativeHostAvailable;
+      if (!wasConnected && !nativeBridgeLastError && nativeBridgePermission !== "denied") {
+        nativeBridgeLastError = "The local WebSocket was closed before the Windows host announced that it was ready. Run Diagnose-NolaneInfinite.cmd from the Windows ZIP.";
+      }
       nativeHostAvailable = false;
       nativeHostReadyNotified = false;
+      nativeWorkspaceSnapshotProtocol = false;
+      clearNativeWorkspaceSnapshotRetry();
+      nativeWorkspaceSnapshotPendingRevision = 0;
+      nativeWorkspaceIdsDirty = true;
+      nativeProfileUsageDirty = true;
+      refreshNativeWorkspaceIdsSnapshot();
       nativeSurfaceStates.clear();
       renderNodes();
-      setBridgeConnected(false, "");
+      updateBridgeStatus();
       if (wasConnected) toast("Windows background bridge disconnected.", "error");
       queueWindowsBridgeReconnect();
     }, { once: true });
   }
 
   function queueWindowsBridgeReconnect() {
-    if (nativeBridgeReconnectTimer || nativeBridgePermission !== "granted" ||
-        document.visibilityState !== "visible" || nativeBridgeReconnectAttempts >= 8) return;
-    const delay = Math.min(15000, 800 * Math.pow(1.7, nativeBridgeReconnectAttempts++));
+    if (nativeBridgeReconnectTimer || nativeHostAvailable || nativeBridgeLastError ||
+        nativeBridgePermission !== "granted" || document.visibilityState !== "visible") return;
+    // The background host may start after the website or restart for a WebView2 runtime update.
+    // Keep retrying with a bounded 30-second delay instead of exhausting a small fixed attempt count.
+    const exponent = Math.min(nativeBridgeReconnectAttempts, 8);
+    nativeBridgeReconnectAttempts = Math.min(nativeBridgeReconnectAttempts + 1, 8);
+    const delay = Math.min(30000, 800 * Math.pow(1.7, exponent));
     nativeBridgeReconnectTimer = window.setTimeout(() => {
       nativeBridgeReconnectTimer = 0;
       connectWindowsBridge();
@@ -2046,8 +1426,6 @@
   function deleteNode(id) {
     const node = nodes.find((item) => item.id === id);
     if (!node) return;
-    const liveSurface = liveSurfaces.get(id);
-    if (liveSurface) stopLiveSurfaceById(liveSurface.surfaceId, null, true, false);
     nodes = nodes.filter((item) => item.id !== id);
     if (selectedId === id) selectedId = null;
     renderNodes();
@@ -2077,30 +1455,39 @@
 
   function pointerMove(event) {
     if (dragState) {
-      const node = nodes.find((item) => item.id === dragState.id);
+      const node = spatialIndex.get(dragState.id);
       if (!node) return;
-      node.x = Math.round(dragState.x + (event.clientX - dragState.pointerX) / view.scale);
-      node.y = Math.round(dragState.y + (event.clientY - dragState.pointerY) / view.scale);
-      const element = $('.node[data-id="' + CSS.escape(node.id) + '"]', world);
-      if (element) { element.style.left = node.x + "px"; element.style.top = node.y + "px"; }
-      updateMinimap();
+      node.x = normalizeCanvasCoordinate(
+        Math.round(dragState.x + (event.clientX - dragState.pointerX) / view.scale), dragState.x
+      );
+      node.y = normalizeCanvasCoordinate(
+        Math.round(dragState.y + (event.clientY - dragState.pointerY) / view.scale), dragState.y
+      );
+      spatialIndex.upsert(node);
+      const element = renderedNodeElements.get(node.id);
+      if (element) positionCanvasNodeElement(element, node);
+      updateMinimap(true);
       scheduleNativeSurfaceSync();
       return;
     }
     if (resizeState) {
-      const node = nodes.find((item) => item.id === resizeState.id);
+      const node = spatialIndex.get(resizeState.id);
       if (!node) return;
       node.w = Math.round(clamp(resizeState.w + (event.clientX - resizeState.pointerX) / view.scale, 230, 1800));
       node.h = Math.round(clamp(resizeState.h + (event.clientY - resizeState.pointerY) / view.scale, 150, 1200));
-      const element = $('.node[data-id="' + CSS.escape(node.id) + '"]', world);
+      spatialIndex.upsert(node);
+      const element = renderedNodeElements.get(node.id);
       if (element) { element.style.width = node.w + "px"; element.style.height = node.h + "px"; }
-      updateMinimap();
+      updateMinimap(true);
       scheduleNativeSurfaceSync();
       return;
     }
     if (panState) {
-      view.x = panState.x + (event.clientX - panState.pointerX);
-      view.y = panState.y + (event.clientY - panState.pointerY);
+      view = normalizeCanvasView({
+        x: panState.x + (event.clientX - panState.pointerX),
+        y: panState.y + (event.clientY - panState.pointerY),
+        scale: view.scale
+      });
       applyView();
     }
   }
@@ -2132,9 +1519,10 @@
     const host = hostOf(url);
     const node = {
       id: uid(), type: "website", title: (title || host).trim().slice(0, 120) || host, url,
-      description: "Open this site in Chrome, then use Browser Companion to stream its real tab into this workspace.",
+      description: "Connect the Windows background bridge to use a native browser surface in this workspace.",
       embedMode: "safe",
-      x: Math.round(point.x - 190), y: Math.round(point.y - 145), w: 390, h: 300,
+      x: normalizeCanvasCoordinate(Math.round(point.x - 190)),
+      y: normalizeCanvasCoordinate(Math.round(point.y - 145)), w: 390, h: 300,
       z: ++zCounter, createdAt: new Date().toISOString()
     };
     nodes.push(node);
@@ -2153,7 +1541,8 @@
     const node = {
       id: editingId || uid(), type: "note", title: (title || "Untitled note").trim().slice(0, 120) || "Untitled note",
       content: String(content || "").slice(0, 12000), color: color || "lavender",
-      x: Math.round(point.x - 170), y: Math.round(point.y - 130), w: 350, h: 260,
+      x: normalizeCanvasCoordinate(Math.round(point.x - 170)),
+      y: normalizeCanvasCoordinate(Math.round(point.y - 130)), w: 350, h: 260,
       z: ++zCounter, createdAt: new Date().toISOString()
     };
     if (editingId) {
@@ -2218,38 +1607,72 @@
     }
   }
 
-  function updateMinimap() {
+  function updateMinimap(geometryChanged) {
+    if (geometryChanged) minimapGeometryDirty = true;
+    if (minimapFrame) return;
+    minimapFrame = requestAnimationFrame(() => { minimapFrame = 0; drawMinimap(); });
+  }
+
+  function drawMinimap() {
     const content = $("#minimapContent");
-    if (!content || $("#minimap").classList.contains("hidden")) return;
-    const valid = nodes.filter((node) => node && Number.isFinite(node.x));
-    content.querySelectorAll(".minimap-node").forEach((el) => el.remove());
-    if (!valid.length) return;
-    const minX = Math.min(...valid.map((n) => n.x));
-    const minY = Math.min(...valid.map((n) => n.y));
-    const maxX = Math.max(...valid.map((n) => n.x + n.w));
-    const maxY = Math.max(...valid.map((n) => n.y + n.h));
-    const spanX = Math.max(1, maxX - minX);
-    const spanY = Math.max(1, maxY - minY);
-    const bounds = content.getBoundingClientRect();
-    const width = bounds.width || 154;
-    const height = bounds.height || 83;
-    valid.forEach((node) => {
-      const marker = document.createElement("span");
-      marker.className = "minimap-node" + (node.type === "note" ? " note" : "");
-      marker.style.left = ((node.x - minX) / spanX * (width - 8) + 4) + "px";
-      marker.style.top = ((node.y - minY) / spanY * (height - 8) + 4) + "px";
-      marker.style.width = Math.max(3, node.w / spanX * (width - 8)) + "px";
-      marker.style.height = Math.max(3, node.h / spanY * (height - 8)) + "px";
-      content.appendChild(marker);
-    });
+    const minimapCanvas = $("#minimapCanvas");
     const viewport = $("#minimapViewport");
+    if (!content || !minimapCanvas || !viewport || $("#minimap").classList.contains("hidden")) return;
+    const bounds = content.getBoundingClientRect();
+    const width = bounds.width || 154, height = bounds.height || 83;
+    const pixelRatio = clamp(Number(window.devicePixelRatio) || 1, 1, 2);
+    const pixelWidth = Math.max(1, Math.round(width * pixelRatio));
+    const pixelHeight = Math.max(1, Math.round(height * pixelRatio));
+    const resized = minimapCanvas.width !== pixelWidth || minimapCanvas.height !== pixelHeight;
+    if (resized) {
+      minimapCanvas.width = pixelWidth;
+      minimapCanvas.height = pixelHeight;
+      minimapGeometryDirty = true;
+    }
+    const context = minimapCanvas.getContext("2d");
+    if (!context) return;
+
+    if (minimapGeometryDirty || !minimapGeometryCache) {
+      context.clearRect(0, 0, pixelWidth, pixelHeight);
+      const valid = nodes.filter((node) => node && Number.isFinite(node.x) && Number.isFinite(node.y) &&
+        Number.isFinite(node.w) && Number.isFinite(node.h));
+      if (!valid.length) {
+        minimapGeometryCache = null;
+        minimapGeometryDirty = false;
+        viewport.hidden = true;
+        return;
+      }
+      const minX = Math.min(...valid.map((node) => node.x));
+      const minY = Math.min(...valid.map((node) => node.y));
+      const maxX = Math.max(...valid.map((node) => node.x + node.w));
+      const maxY = Math.max(...valid.map((node) => node.y + node.h));
+      const spanX = Math.max(1, maxX - minX), spanY = Math.max(1, maxY - minY);
+      const pad = 4, mapWidth = Math.max(1, width - pad * 2), mapHeight = Math.max(1, height - pad * 2);
+      context.save();
+      context.scale(pixelRatio, pixelRatio);
+      for (const node of valid) {
+        context.fillStyle = node.type === "note" ? "rgba(182, 154, 117, 0.88)" : "rgba(131, 113, 213, 0.82)";
+        const x = pad + (node.x - minX) / spanX * mapWidth;
+        const y = pad + (node.y - minY) / spanY * mapHeight;
+        context.fillRect(x, y, Math.max(2, node.w / spanX * mapWidth), Math.max(2, node.h / spanY * mapHeight));
+      }
+      context.restore();
+      minimapGeometryCache = { minX, minY, spanX, spanY, pad, mapWidth, mapHeight };
+      minimapGeometryDirty = false;
+    }
+
+    const geometry = minimapGeometryCache;
+    if (!geometry) {
+      viewport.hidden = true;
+      return;
+    }
     const rect = canvas.getBoundingClientRect();
-    const worldLeft = -view.x / view.scale;
-    const worldTop = -view.y / view.scale;
-    viewport.style.left = ((worldLeft - minX) / spanX * (width - 8) + 4) + "px";
-    viewport.style.top = ((worldTop - minY) / spanY * (height - 8) + 4) + "px";
-    viewport.style.width = clamp((rect.width / view.scale) / spanX * (width - 8), 8, width - 8) + "px";
-    viewport.style.height = clamp((rect.height / view.scale) / spanY * (height - 8), 8, height - 8) + "px";
+    const worldLeft = -view.x / view.scale, worldTop = -view.y / view.scale;
+    viewport.hidden = false;
+    viewport.style.left = (geometry.pad + (worldLeft - geometry.minX) / geometry.spanX * geometry.mapWidth) + "px";
+    viewport.style.top = (geometry.pad + (worldTop - geometry.minY) / geometry.spanY * geometry.mapHeight) + "px";
+    viewport.style.width = clamp((rect.width / view.scale) / geometry.spanX * geometry.mapWidth, 8, geometry.mapWidth) + "px";
+    viewport.style.height = clamp((rect.height / view.scale) / geometry.spanY * geometry.mapHeight, 8, geometry.mapHeight) + "px";
   }
 
   function toast(message, kind) {
@@ -2283,20 +1706,16 @@
       let importedSpaces = [];
       let importedActiveId = "personal";
       if (Array.isArray(data.spaces) && data.spaces.length) {
-        importedSpaces = data.spaces.map(normalizeSpace).filter(Boolean).slice(0, 12);
+        importedSpaces = normalizeSpaceCollection(data.spaces);
         if (!importedSpaces.length) throw new Error("No valid workspaces were found in this file.");
         importedActiveId = importedSpaces.some((space) => space.id === data.activeSpaceId) ? data.activeSpaceId : importedSpaces[0].id;
       } else if (Array.isArray(data.nodes)) {
-        const importedNodes = data.nodes.map(validateNode).filter(Boolean).slice(0, MAX_NODES);
+        const importedNodes = normalizeNodeCollection(data.nodes);
         importedSpaces = [{
           id: "personal",
           name: "My workspace",
           nodes: importedNodes,
-          view: {
-            x: Number(data.view?.x) || 25,
-            y: Number(data.view?.y) || 0,
-            scale: clamp(Number(data.view?.scale) || 1, MIN_SCALE, MAX_SCALE)
-          }
+          view: normalizeCanvasView(data.view)
         }];
         importedActiveId = "personal";
       } else {
@@ -2332,7 +1751,6 @@
     $("#profilesButton")?.addEventListener("click", () => sendNativePanelCommand("profiles"));
     $("#bridgeButton").addEventListener("click", () => { $("#bridgeDialog").showModal(); refreshWindowsBridgePermission(); });
     $("#connectWindowsBridgeButton")?.addEventListener("click", connectWindowsBridge);
-    window.addEventListener("message", handleCompanionMessage);
     initializeWindowsBridge();
     $("#helpButton").addEventListener("click", () => $("#helpDialog").showModal());
     $("#importButton").addEventListener("click", () => fileInput.click());
@@ -2367,6 +1785,11 @@
       updateMinimap();
     });
     $("#searchInput").addEventListener("input", updateViewFilter);
+    $("#searchInput").addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      focusSearchResult(event.shiftKey);
+    });
     $$(".nav-item").forEach((button) => button.addEventListener("click", () => changeView(button.dataset.view)));
     $("#newSpaceBtn").addEventListener("click", createSpace);
     $("#workspaceMenu").addEventListener("click", () => toast("Choose a space from the sidebar. Use the menu beside a space to rename it."));
@@ -2402,19 +1825,22 @@
       if (event.code === "Space") { spacePressed = false; canvas.classList.remove("space-pan"); }
     });
     window.addEventListener("blur", () => { spacePressed = false; canvas.classList.remove("space-pan"); pointerUp(); });
-    window.addEventListener("resize", updateMinimap);
+    window.addEventListener("resize", () => {
+      scheduleCanvasVirtualization();
+      updateMinimap();
+      scheduleNativeSurfaceSync();
+    });
+    if (typeof ResizeObserver === "function") {
+      canvasResizeObserver = new ResizeObserver(() => {
+        scheduleCanvasVirtualization();
+        updateMinimap();
+        scheduleNativeSurfaceSync();
+      });
+      canvasResizeObserver.observe(canvas);
+    }
     window.addEventListener("pagehide", () => {
-      for (const surface of liveSurfaces.values()) {
-        window.postMessage({
-          source: "nolane-workspace",
-          type: "LIVE_SURFACE_STOP",
-          surfaceId: surface.surfaceId,
-          browserSessionId: surface.browserSessionId
-        }, location.origin);
-        surface.stream.getTracks().forEach((track) => track.stop());
-        surface.audioContext?.close().catch(() => {});
-      }
-      liveSurfaces.clear();
+      clearNativeWorkspaceSnapshotRetry();
+      nativeBridgeSocket?.close(1000, "Workspace page closed");
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(workspaceSnapshot())); } catch (_) {}
     });
   }
