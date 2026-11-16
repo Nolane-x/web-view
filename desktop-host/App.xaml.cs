@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using Microsoft.UI.Xaml;
 using WinRT.Interop;
@@ -43,7 +44,7 @@ public partial class App : Application
 
         try
         {
-            _instanceMutex = new Mutex(true, @"Local\\NolaneInfiniteBackgroundBridge", out var createdNew);
+            _instanceMutex = new Mutex(true, @"Local\NolaneInfiniteBackgroundBridge", out var createdNew);
             if (!createdNew)
             {
                 HostDiagnostics.Write("A second instance was prevented by the single-instance mutex.");
