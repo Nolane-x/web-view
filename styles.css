@@ -418,3 +418,15 @@ kbd { font-family: var(--sans); font-size: 9px; border: 1px solid rgba(255,255,2
 .bridge-setup-steps strong { color: var(--text); font-size: 9px; }
 .bridge-setup-steps p { margin: 0; color: var(--muted); font-size: 8.5px; line-height: 1.6; }
 .bridge-setup-steps code { color: #d7dce6; font-size: 8px; }
+
+
+.bridge-troubleshooting-note {
+  margin: 12px 0 0;
+  color: #8792a5;
+  font-size: 9px;
+  line-height: 1.6;
+}
+.bridge-troubleshooting-note code {
+  color: #c3b7fa;
+  font-size: 9px;
+}
