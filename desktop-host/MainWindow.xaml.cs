@@ -350,16 +350,32 @@ public sealed partial class MainWindow : Window
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
+        var stage = "startup";
+        HostDiagnostics.Initialize();
+        HostDiagnostics.Write("MainWindow loaded; beginning native bridge startup.");
+
         try
         {
+            stage = "webview2-runtime-detection";
             string runtimeVersion;
-            try { runtimeVersion = CoreWebView2Environment.GetAvailableBrowserVersionString(); }
+            try
+            {
+                runtimeVersion = CoreWebView2Environment.GetAvailableBrowserVersionString();
+                HostDiagnostics.Write("WebView2 Runtime detected: " + runtimeVersion);
+            }
             catch (Exception error)
             {
-                StatusText.Text = "WebView2 Runtime missing: " + error.Message;
+                var message = "Microsoft Edge WebView2 Runtime is unavailable. Install the Evergreen Runtime, then restart Nolane Infinite. " + error.Message;
+                StatusText.Text = message;
+                HostDiagnostics.WriteException(stage, error);
+                _trayNotification?.Invoke(
+                    "Nolane needs WebView2 Runtime",
+                    "The browser engine is unavailable. Install the Microsoft Edge WebView2 Evergreen Runtime, then restart Nolane. See the local host log for details.");
                 HideOverlayWindow();
                 return;
             }
+
+            stage = "user-data-initialization";
             var userData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "Nolane", "NativeWebView2", "UserData");
             Directory.CreateDirectory(userData);
@@ -369,36 +385,52 @@ public sealed partial class MainWindow : Window
             LoadBrowserLibrary();
             RefreshDownloadsUi();
             RefreshLibraryUi();
+            HostDiagnostics.Write("User-data directories and local browser metadata loaded.");
+
+            stage = "webview2-environment-creation";
             _environment = await CoreWebView2Environment.CreateWithOptionsAsync(null, userData, new CoreWebView2EnvironmentOptions());
+            HostDiagnostics.Write("WebView2 environment created successfully.");
             _environment.NewBrowserVersionAvailable += (_, _) => DispatcherQueue.TryEnqueue(() =>
             {
                 if (_runtimeUpdateAvailable) return;
                 _runtimeUpdateAvailable = true;
                 const string updateMessage = "A newer WebView2 Runtime is ready. Choose Restart bridge from the Nolane tray menu to apply it. Open browser cards will close.";
                 StatusText.Text = "WebView2 update ready · restart the background bridge to apply it.";
+                HostDiagnostics.Write("A newer WebView2 Runtime version is ready.");
                 _trayNotification?.Invoke("WebView2 update ready", updateMessage);
             });
             _environment.BrowserProcessExited += (_, _) => DispatcherQueue.TryEnqueue(() =>
             {
+                HostDiagnostics.Write("The shared WebView2 browser process exited.");
                 foreach (var surface in _surfaces.Values.ToArray())
                     PublishSurfaceStatus(surface.Id, "error", "The shared WebView2 process exited. Restart the background bridge.");
                 HideOverlayWindow();
             });
+
+            stage = "loopback-bridge-listener";
             _bridgeServer = new LocalBridgeServer();
             _bridgeServer.ClientConnected += () => DispatcherQueue.TryEnqueue(OnBridgeClientConnected);
             _bridgeServer.ClientDisconnected += () => DispatcherQueue.TryEnqueue(OnBridgeClientDisconnected);
             _bridgeServer.MessageReceived += json => DispatcherQueue.TryEnqueue(() => HandleBridgeMessage(json));
             _bridgeServer.Start();
+            HostDiagnostics.Write("Loopback WebSocket listener started on 127.0.0.1:43172.");
+
+            stage = "overlay-timer";
             _overlayTimer = DispatcherQueue.CreateTimer();
             _overlayTimer.Interval = TimeSpan.FromMilliseconds(250);
             _overlayTimer.Tick += (_, _) => RefreshOverlayActivation();
             _overlayTimer.Start();
             StatusText.Text = $"Nolane background bridge ready · WebView2 {runtimeVersion}";
+            HostDiagnostics.Write("Nolane background bridge startup completed successfully.");
             HideOverlayWindow();
         }
         catch (Exception ex)
         {
-            StatusText.Text = "Background bridge startup failed: " + ex.Message;
+            StatusText.Text = "Background bridge startup failed during " + stage + ": " + ex.Message;
+            HostDiagnostics.WriteException(stage, ex);
+            _trayNotification?.Invoke(
+                "Nolane bridge startup failed",
+                "Startup failed during " + stage + ". Open the Nolane host log in Local AppData and run the diagnostics script from the install ZIP.");
             HideOverlayWindow();
         }
     }
