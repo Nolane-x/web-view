@@ -53,6 +53,16 @@ $lines.Add("- Allow Loopback network access (the permission for 127.0.0.1).")
 $lines.Add("- Reload the Nolane page, then click Connect Windows bridge.")
 $lines.Add("- Do not use a localhost development server; the host only trusts the published GitHub Pages origin.")
 $lines.Add("")
+$lines.Add("RECENT INSTALLER LOG")
+$latestInstallerLog = Get-ChildItem -LiteralPath $logDirectory -Filter "installer-*.log" -File -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if ($latestInstallerLog) {
+    $lines.AddRange([string[]](Get-Content -LiteralPath $latestInstallerLog.FullName -Tail 35))
+}
+else {
+    $lines.Add("No installer log found.")
+}
+$lines.Add("")
 $lines.Add("RECENT HOST LOG")
 if (Test-Path -LiteralPath $hostLog) {
     $lines.AddRange([string[]](Get-Content -LiteralPath $hostLog -Tail 80))
